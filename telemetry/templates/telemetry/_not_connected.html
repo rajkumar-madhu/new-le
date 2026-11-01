@@ -1,0 +1,7 @@
+{% load le %}<div class="panel tm-nc" role="status">
+  <div class="tile">{% icon "plug" 22 %}</div>
+  <div><h2>{{ nc_title }} not connected</h2>
+    <p>{{ nc_text }}</p>
+    <p>Set <code>{{ nc_env }}</code>{% if nc_extra %} {{ nc_extra }}{% endif %} on the LinkedEye server and restart it.{% if not nc_keep %} Nothing is shown until then – this page never displays made-up data.{% endif %}</p>
+  </div>
+</div>

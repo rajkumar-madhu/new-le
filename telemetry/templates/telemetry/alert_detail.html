@@ -1,0 +1,75 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}{{ a.alertname }} · Alert Manager{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'telemetry:alertmanager' as parent %}{% include "telemetry/_crumbs.html" with crumb_parent="Alert Manager" crumb_parent_url=parent crumb_here=a.alertname %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head host-head">
+  <div class="glyph {% if a.status == 'firing' %}g-crit{% else %}g-teal{% endif %}">{% icon "bell" 30 %}</div>
+  <div style="min-width:0"><h1>{{ a.alertname }}</h1>
+    <div class="meta">{% include "telemetry/_alert_status.html" with st=a.status %}<span class="sev t-{{ a.severity_tone }}">{{ a.severity|default:"no severity" }}</span>
+      {% if a.instance %}{% if "/" not in a.instance %}<a class="chip mute mono" href="{% url 'telemetry:host_detail' a.instance %}" title="Host metrics">{{ a.instance }}</a>{% else %}<span class="chip mute mono">{{ a.instance }}</span>{% endif %}{% endif %}
+      {% if a.job %}<span class="chip">job: {{ a.job }}</span>{% endif %}
+      {% if a.site %}<span class="chip purple">{{ a.site }}</span>{% endif %}
+      {% if a.acknowledged %}<span class="tag ack">Acknowledged by {{ a.acknowledged_by.get_username|default:"a deleted user" }} · {{ a.acknowledged_at|short_dt }}</span>{% endif %}
+      {% if a.is_example %}<span class="tag ex">example</span>{% endif %}
+    </div></div>
+  <div class="actions">
+    {% if can_operate %}
+      {% if a.acknowledged %}
+      <form method="post" action="{% url 'telemetry:alert_unack' a.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn" type="submit">{% icon "x" 16 %}Remove acknowledgement</button></form>
+      {% elif a.status == 'firing' %}
+      <form method="post" action="{% url 'telemetry:alert_ack' a.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn primary" type="submit">{% icon "check" 16 %}Acknowledge</button></form>
+      {% endif %}
+    {% endif %}
+    {% with gu=a.generator_url|safe_http %}{% if gu %}<a class="btn" href="{{ gu }}" target="_blank" rel="noopener noreferrer">{% icon "external" 16 %}Source</a>{% endif %}{% endwith %}
+  </div>
+</div>
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Summary</h2></div>
+      <p style="margin:0 0 6px"><b>{{ a.summary|default:"No summary annotation." }}</b></p>
+      {% if a.description %}<p style="margin:0;white-space:pre-line;overflow-wrap:anywhere">{{ a.description }}</p>{% endif %}
+    </div>
+    <div class="tm-kv-grid">
+      <div class="panel"><div class="panel-h"><h2>Labels ({{ labels|length }})</h2></div>
+        <div class="table-wrap dense borderless tm-table"><table><tbody>{% for k, v in labels %}
+          <tr><td class="mono">{{ k }}</td><td class="wrap mono"><a href="{% url 'telemetry:alertmanager' %}?tab=all&amp;label={{ k|urlencode }}%3D{{ v|urlencode }}" title="Alerts with this label">{{ v }}</a></td></tr>
+        {% empty %}<tr><td class="empty">No labels.</td></tr>{% endfor %}</tbody></table></div></div>
+      <div class="panel"><div class="panel-h"><h2>Annotations ({{ annotations|length }})</h2></div>
+        <div class="table-wrap dense borderless tm-table"><table><tbody>{% for k, v in annotations %}
+          <tr><td class="mono">{{ k }}</td><td class="wrap">{% if v|safe_http %}<a href="{{ v|safe_http }}" target="_blank" rel="noopener noreferrer">{{ v|truncatechars:120 }}</a>{% else %}{{ v }}{% endif %}</td></tr>
+        {% empty %}<tr><td class="empty">No annotations.</td></tr>{% endfor %}</tbody></table></div></div>
+    </div>
+    <div class="panel"><div class="panel-h"><h2>Event History</h2></div>
+      <div class="table-wrap dense tm-table"><table>
+        <thead><tr><th>Time</th><th>Severity</th><th>Event</th></tr></thead>
+        <tbody>{% for e in events %}
+          <tr><td>{{ e.occurred_at|short_dt }}</td><td>{% badge e.severity %}</td><td class="wrap">{{ e.title }}</td></tr>
+        {% empty %}<tr><td colspan="3" class="empty">No events emitted for this alert yet.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Details</h2></div>
+      <dl class="kv">
+        <dt>Status</dt><dd>{{ a.get_status_display }}</dd>
+        <dt>Started</dt><dd>{{ a.starts_at|date:"Y-m-d H:i:s"|default:"–" }}</dd>
+        <dt>{% if a.status == 'resolved' %}Resolved{% else %}Ends{% endif %}</dt><dd>{{ a.ends_at|date:"Y-m-d H:i:s"|default:"–" }}</dd>
+        <dt>Duration</dt><dd>{{ a.duration_seconds|hduration }}</dd>
+        <dt>Last received</dt><dd>{{ a.last_received_at|date:"Y-m-d H:i:s" }} ({{ a.last_received_at|since }})</dd>
+        <dt>Notifications</dt><dd>{{ a.receive_count }} received · fired {{ a.fire_count }} time{{ a.fire_count|pluralize }}</dd>
+        <dt>Receiver</dt><dd>{{ a.receiver|default:"–" }}</dd>
+        <dt>Fingerprint</dt><dd class="mono">{{ a.fingerprint }}</dd>
+        <dt>Event key</dt><dd class="mono">{{ a.event_fingerprint }}</dd>
+      </dl></div>
+    <div class="panel"><div class="panel-h"><h2>Service Desk</h2></div>
+      {% if incidents is None %}<p class="t-mute" style="margin:0">{% icon "plug" 14 %} Service Desk not connected.</p>
+      {% else %}<ul class="problem-list">{% for t in incidents %}
+        <li><div class="body">{% if t.url %}<a class="who" href="{{ t.url }}">{{ t.number }}</a>{% else %}<span class="who">{{ t.number }}</span>{% endif %} <span class="tag">{{ t.priority }}</span><div class="what">{{ t.title|truncatechars:90 }}</div></div><span class="when">{% badge t.status %}</span></li>
+      {% empty %}<li class="t-mute">No incident linked. Critical and page alerts open one automatically.</li>{% endfor %}</ul>{% endif %}
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

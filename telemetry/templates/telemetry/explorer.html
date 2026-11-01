@@ -1,0 +1,115 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}Metrics Explorer{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "telemetry/_crumbs.html" with crumb_here="Metrics Explorer" %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head">
+  <div class="glyph g-purple">{% icon "analytics" 30 %}</div>
+  <div><h1>Metrics Explorer</h1><p>Run PromQL range queries against Prometheus, chart them and save the ones you use{% if prom_configured %} <span class="src">· {{ prom_host }}</span>{% endif %}</p></div>
+</div>
+
+{% if not prom_configured %}
+  {% include "telemetry/_not_connected.html" with nc_title="Prometheus" nc_env="LINKEDEYE_PROMETHEUS_URL" nc_extra="(for example http://prometheus.internal:9090)" nc_text="Queries run server-side against the Prometheus HTTP API; the browser never talks to Prometheus directly. You can still write and save queries." %}
+{% endif %}
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel tm-query">
+      <div class="panel-h"><h2>Query</h2>{% if loaded %}<div class="right"><span class="chip">{% icon "book" 13 %} {{ loaded.name }}</span></div>{% endif %}</div>
+      <form method="get" action="{% url 'telemetry:explorer' %}" id="q-form">
+        <div class="field"><label for="q">PromQL expression</label>
+          <textarea id="q" name="expr" rows="3" maxlength="{{ limits.chars }}" spellcheck="false" autocomplete="off" placeholder='e.g. sum by (job) (up)' required>{{ q }}</textarea>
+          <span class="counter" id="q-count" aria-live="polite">{{ q|length }} / {{ limits.chars }}</span></div>
+        <div class="row">
+          <div class="field"><label for="range">Range</label>
+            <select id="range" name="range">{% for k, l, s in ranges %}<option value="{{ k }}"{% if k == range_key %} selected{% endif %}>Last {{ l }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="step">Step</label><input id="step" type="text" name="step" value="{{ step_raw }}" placeholder="auto" aria-describedby="step-hint"></div>
+          <div class="grow"></div>
+          <button class="btn primary" type="submit">{% icon "play" 15 %}Run query</button>
+        </div>
+        <p class="tm-limits" id="step-hint">Limits: {{ limits.chars }} characters · range up to 7 days · at most {{ limits.points }} points per series (step is raised if needed) · {{ limits.series }} series shown{% if limits.timeout %} · {{ limits.timeout|floatformat:0 }} s timeout{% endif %}.</p>
+      </form>
+      {% if not q %}<div class="tm-examples" aria-label="Examples">{% for label, ex in examples %}<a class="chip mute" href="?expr={{ ex|urlencode }}&amp;range={{ range_key }}" title="{{ ex }}">{{ label }}</a>{% endfor %}</div>{% endif %}
+    </div>
+
+    {% if policy_error %}<p class="tm-note" role="alert">{% icon "alert" 15 %}<span>{{ policy_error }}</span></p>{% endif %}
+    {% if error %}{% include "telemetry/_error.html" with err_message=error %}{% endif %}
+    {% for n in notes %}<p class="tm-note info">{% icon "info" 15 %}<span>{{ n }}</span></p>{% endfor %}
+
+    {% if result %}
+    <div class="panel">
+      <div class="panel-h"><h2>Result</h2><div class="right tm-meta">{{ result.total }} series · step {{ step }}s · {{ points }} points max</div></div>
+      {% if result.chart %}<div class="chart tm-chart tall" data-chart="line" data-src="r-chart"></div>{{ result.chart|json_script:"r-chart" }}
+      {% else %}<div class="no-data">The query returned no series for this range.</div>{% endif %}
+    </div>
+    {% if result.series %}
+    <div class="panel">
+      <div class="panel-h"><h2>Last Values ({{ result.series|length }}{% if result.total > result.series|length %} of {{ result.total }}{% endif %})</h2></div>
+      <div class="table-wrap dense tm-table"><table>
+        <thead><tr><th>Series</th><th class="num">Last</th><th class="num">Min</th><th class="num">Max</th><th class="num">Points</th><th>At</th></tr></thead>
+        <tbody>{% for s in result.series %}
+          <tr><td class="wrap mono"><i class="series-swatch" style="background:{{ s.color }}"></i>{{ s.name }}</td>
+            <td class="num"><b>{{ s.last|hnum }}</b></td><td class="num">{{ s.min|hnum }}</td><td class="num">{{ s.max|hnum }}</td>
+            <td class="num">{{ s.points }}</td><td>{% if s.last_ts %}{{ s.last_ts|from_unix|short_dt }}{% else %}–{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Saved Queries ({{ saved|length }})</h2></div>
+      {% if saved %}<ul class="tm-saved">{% for s in saved %}
+        <li class="{% if loaded and loaded.pk == s.pk %}on{% endif %}">
+          <div class="q"><a href="?saved={{ s.pk }}">{{ s.name }}</a>{% if s.shared %}<span class="tag">shared</span>{% endif %}
+            <code title="{{ s.promql }}">{{ s.promql }}</code>
+            <small>{{ s.range_key }} · {% if s.owner %}{{ s.owner.get_username }}{% else %}example{% endif %}{% if s.description %} · {{ s.description }}{% endif %}</small></div>
+          {% if can_operate %}{% if s.owner_id == request.user.pk or can_admin %}
+          <form method="post" action="{% url 'telemetry:query_delete' s.pk %}" data-confirm="Delete the saved query “{{ s.name }}”?">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ s.name }}">{% icon "trash" 14 %}</button></form>
+          {% endif %}{% endif %}
+        </li>{% endfor %}</ul>
+      {% else %}<p class="t-mute" style="margin:0">No saved queries yet.{% if can_operate %} Run a query and save it below.{% endif %}</p>{% endif %}
+    </div>
+
+    <div class="panel" id="save">
+      <div class="panel-h"><h2>Save Query</h2></div>
+      {% if can_operate %}
+      <form method="post" action="{% url 'telemetry:query_save' %}" id="save-form">{% csrf_token %}
+        <input type="hidden" name="promql" id="save-promql" value="{{ q }}">
+        <input type="hidden" name="range" id="save-range" value="{{ range_key }}">
+        <div class="form-grid">
+          <div class="field full"><label for="save-name">Name <span class="req">*</span></label><input id="save-name" type="text" name="name" maxlength="120" required value="{% if loaded and loaded.owner_id == request.user.pk %}{{ loaded.name }}{% endif %}"></div>
+          <div class="field full"><label for="save-desc">Description</label><input id="save-desc" type="text" name="description" maxlength="300" value="{% if loaded and loaded.owner_id == request.user.pk %}{{ loaded.description }}{% endif %}"></div>
+          <div class="field full tm-save-foot"><label class="inline-check"><span class="switch"><input type="checkbox" name="shared"{% if loaded and loaded.shared and loaded.owner_id == request.user.pk %} checked{% endif %}><span></span></span>Share with everyone</label>
+            <button class="btn primary sm" type="submit">{% icon "check" 15 %}Save</button></div>
+        </div>
+        <p class="tm-limits">Saves the expression in the query box and the selected range. A query with the same name is updated.</p>
+      </form>
+      {% else %}<p class="t-mute" style="margin:0">Only operators can save queries.</p>{% endif %}
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var ta = document.getElementById('q'), count = document.getElementById('q-count'), max = {{ limits.chars }};
+  if (ta && count) ta.addEventListener('input', function () {
+    count.textContent = ta.value.length + ' / ' + max;
+    count.classList.toggle('over', ta.value.length >= max);
+  });
+  if (ta) ta.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.getElementById('q-form').submit(); }
+  });
+  var save = document.getElementById('save-form');
+  if (save) save.addEventListener('submit', function (e) {
+    document.getElementById('save-promql').value = ta.value;
+    document.getElementById('save-range').value = document.getElementById('range').value;
+    if (!ta.value.trim()) { e.preventDefault(); window.alert('Enter a PromQL expression first.'); ta.focus(); }
+  });
+})();
+</script>
+{% endblock %}

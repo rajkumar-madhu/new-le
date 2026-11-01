@@ -1,0 +1,1 @@
+{% load le %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Monitoring</span>{% icon "chevron-right" 14 %}{% if crumb_parent_url %}<a href="{{ crumb_parent_url }}">{{ crumb_parent }}</a>{% icon "chevron-right" 14 %}<span>{{ crumb_here }}</span>{% else %}<a href="{{ request.path }}">{{ crumb_here }}</a>{% endif %}</nav>

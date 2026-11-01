@@ -1,0 +1,93 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}Nagios Status{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "telemetry/_crumbs.html" with crumb_here="Nagios Status" %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head">
+  <div class="glyph g-teal">{% icon "heartbeat" 30 %}</div>
+  <div><h1>Nagios Status</h1><p>Host and service states from Nagios Core{% if configured %} <span class="src">· {{ nagios_host }}{% if status.program %} · Nagios {{ status.program }}{% endif %}</span>{% endif %}</p></div>
+  {% if configured %}<div class="actions">
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}format=csv">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}refresh=1">{% icon "refresh" 17 %}Refresh</a>
+  </div>{% endif %}
+</div>
+
+{% if not configured %}
+  {% include "telemetry/_not_connected.html" with nc_title="Nagios" nc_env="NAGIOS_URL" nc_extra="(environment variable LINKEDEYE_NAGIOS_URL, e.g. https://nagios.internal/nagios) and, for basic auth, NAGIOS_USER / NAGIOS_PASSWORD" nc_text="Host and service states are read from Nagios Core's statusjson.cgi (hostlist and servicelist) and cached for 30 seconds." %}
+{% else %}
+{% if error %}{% include "telemetry/_error.html" with err_title="Nagios query failed" err_message=error %}{% endif %}
+
+<section class="kpis tm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "server" 22 %}</div><div class="kpi-body"><div class="label">Hosts</div><div class="value">{{ summary.hosts }}</div></div></div><div class="sub">{{ summary.host_counts.up }} up{% if summary.host_counts.pending %} · {{ summary.host_counts.pending }} pending{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Hosts Down</div><div class="value{% if summary.host_counts.down %} t-crit{% endif %}">{{ summary.host_counts.down }}</div></div></div><div class="sub">{{ summary.host_counts.unreachable }} unreachable</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Services OK</div><div class="value">{{ summary.service_counts.ok }}</div></div></div><div class="sub">of {{ summary.services }} service{{ summary.services|pluralize }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Critical</div><div class="value{% if summary.service_counts.critical %} t-crit{% endif %}">{{ summary.service_counts.critical }}</div></div></div><div class="sub">Service checks</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warning</div><div class="value">{{ summary.service_counts.warning }}</div></div></div><div class="sub">{{ summary.service_counts.unknown }} unknown</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "user" 22 %}</div><div class="kpi-body"><div class="label">Unhandled</div><div class="value">{{ summary.unhandled }}</div></div></div><div class="sub">Not acked, no downtime</div></div>
+</section>
+{% if status.query_time %}<p class="tm-meta" style="margin:-4px 0 0">Nagios data as of {{ status.query_time|date:"Y-m-d H:i:s" }} · refreshed at most every 30 s</p>{% endif %}
+
+{% if status %}
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>Host Problems ({{ summary.host_problems|length }})</h2>
+      <div class="right"><div class="chart" data-chart="donut" data-src="d-hosts" style="width:56px" aria-label="Host states"></div></div></div>
+    <ul class="problem-list">{% for h in summary.host_problems|slice:":10" %}
+      <li><span class="t-{{ h.state|nagios_tone }}">{% ficon "x-circle" 16 %}</span>
+        <div class="body"><span class="who">{{ h.name }}</span> {% badge h.state h.state|nagios_label %}{% if h.acknowledged %}<span class="tag ack">ack</span>{% endif %}{% if h.downtime %}<span class="tag">downtime</span>{% endif %}
+          <div class="what">{{ h.output|default:"No output" }}</div></div>
+        <span class="when" title="Last state change">{{ h.last_change|since }}</span></li>
+    {% empty %}<li class="t-mute">{% ficon "check-circle" 16 "t-ok" %} All hosts are up.</li>{% endfor %}</ul>
+    {% if summary.host_problems|length > 10 %}<a class="view-all" href="?tab=hosts&amp;problems=1">View all {{ summary.host_problems|length }}</a>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Service Problems ({{ summary.service_problems|length }})</h2>
+      <div class="right"><div class="chart" data-chart="donut" data-src="d-services" style="width:56px" aria-label="Service states"></div></div></div>
+    <ul class="problem-list">{% for s in summary.service_problems|slice:":10" %}
+      <li><span class="t-{{ s.state|nagios_tone }}">{% if s.state == 'warning' %}{% ficon "alert" 16 %}{% elif s.state == 'unknown' %}{% ficon "help" 16 %}{% else %}{% ficon "x-circle" 16 %}{% endif %}</span>
+        <div class="body"><span class="who">{{ s.host }}</span> · {{ s.service }} {% badge s.state s.state|nagios_label %}{% if s.acknowledged %}<span class="tag ack">ack</span>{% endif %}{% if s.downtime %}<span class="tag">downtime</span>{% endif %}
+          <div class="what">{{ s.output|default:"No output" }}</div></div>
+        <span class="when" title="Last state change">{{ s.last_change|since }}</span></li>
+    {% empty %}<li class="t-mute">{% ficon "check-circle" 16 "t-ok" %} All services are OK.</li>{% endfor %}</ul>
+    {% if summary.service_problems|length > 10 %}<a class="view-all" href="?tab=services&amp;problems=1">View all {{ summary.service_problems|length }}</a>{% endif %}
+  </div>
+</section>
+
+<div class="panel">
+  <nav class="tabs" aria-label="Status lists">
+    <a href="?{{ tab_query.urlencode }}{% if tab_query.urlencode %}&amp;{% endif %}tab=services" class="{% if tab == 'services' %}on{% endif %}">Services<span class="n">{{ summary.services }}</span></a>
+    <a href="?{{ tab_query.urlencode }}{% if tab_query.urlencode %}&amp;{% endif %}tab=hosts" class="{% if tab == 'hosts' %}on{% endif %}">Hosts<span class="n">{{ summary.hosts }}</span></a>
+  </nav>
+  <form class="toolbar tm-filters" method="get" style="margin-top:12px">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ q }}" placeholder="Search {% if tab == 'hosts' %}host or output{% else %}host, service or output{% endif %}…" aria-label="Search"></label>
+    <select name="state" data-autosubmit aria-label="State"><option value="">All States</option>{% for v, l in states %}<option value="{{ v }}"{% if state == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <label class="inline-check"><span class="switch"><input type="checkbox" name="problems" value="1" data-autosubmit{% if only_problems %} checked{% endif %}><span></span></span>Problems only</label>
+    {% if filtered %}<a class="btn icon blue" href="?tab={{ tab }}" title="Clear filters" aria-label="Clear filters">{% icon "x" 16 %}</a>{% endif %}
+  </form>
+  <div class="table-wrap dense tm-table" style="margin-top:12px"><table>
+    {% if tab == 'hosts' %}
+    <thead><tr><th>Host</th><th>State</th><th>Output</th><th>Last check</th><th>Duration</th><th>Attempt</th></tr></thead>
+    <tbody>{% for h in page %}
+      <tr><td><b>{{ h.name }}</b>{% if h.acknowledged %}<span class="tag ack">ack</span>{% endif %}{% if h.downtime %}<span class="tag">downtime</span>{% endif %}{% if h.flapping %}<span class="tag">flapping</span>{% endif %}</td>
+        <td>{% badge h.state h.state|nagios_label %}</td><td class="wrap">{{ h.output|default:"–" }}</td>
+        <td>{{ h.last_check|since }}</td><td>{{ h.last_change|since }}</td>
+        <td>{% if h.attempt %}{{ h.attempt }}/{{ h.max_attempts }}{% if not h.hard %} <span class="t-mute">soft</span>{% endif %}{% else %}–{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">{% if filtered %}No hosts match.{% else %}Nagios reports no hosts.{% endif %}</td></tr>{% endfor %}</tbody>
+    {% else %}
+    <thead><tr><th>Host</th><th>Service</th><th>State</th><th>Output</th><th>Last check</th><th>Since</th><th>Attempt</th></tr></thead>
+    <tbody>{% for s in page %}
+      <tr><td><b>{{ s.host }}</b></td><td>{{ s.service }}{% if s.acknowledged %}<span class="tag ack">ack</span>{% endif %}{% if s.downtime %}<span class="tag">downtime</span>{% endif %}{% if s.flapping %}<span class="tag">flapping</span>{% endif %}</td>
+        <td>{% badge s.state s.state|nagios_label %}</td><td class="wrap">{{ s.output|default:"–" }}</td>
+        <td>{{ s.last_check|since }}</td><td>{{ s.last_change|since }}</td>
+        <td>{% if s.attempt %}{{ s.attempt }}/{{ s.max_attempts }}{% if not s.hard %} <span class="t-mute">soft</span>{% endif %}{% else %}–{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">{% if filtered %}No services match.{% else %}Nagios reports no services.{% endif %}</td></tr>{% endfor %}</tbody>
+    {% endif %}
+  </table></div>
+  {% include "core/_pager.html" with pager_noun=tab %}
+</div>
+{{ host_donut|json_script:"d-hosts" }}{{ service_donut|json_script:"d-services" }}
+{% endif %}
+{% endif %}
+</div>
+{% endblock %}

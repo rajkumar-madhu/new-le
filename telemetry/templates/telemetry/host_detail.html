@@ -1,0 +1,84 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}{{ ci.name|default:instance }} · Infrastructure{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'telemetry:infrastructure' as parent %}{% include "telemetry/_crumbs.html" with crumb_parent="Infrastructure" crumb_parent_url=parent crumb_here=instance %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head host-head">
+  <div class="glyph">{% icon "server" 30 %}</div>
+  <div style="min-width:0"><h1>{{ ci.name|default:instance }}</h1>
+    <div class="meta">
+      {% if host %}<span class="badge {{ host.health|health_tone }}">{{ host.health|health_label }}</span>{% endif %}
+      {% if ci %}<span class="chip mute mono">{{ instance }}</span>{% endif %}
+      {% if host.job %}<span class="chip">job: {{ host.job }}</span>{% endif %}
+      {% if ci_url %}<a class="chip teal" href="{{ ci_url }}">CMDB: {{ ci.name }}</a>{% endif %}
+      {% if site %}<span class="chip purple">{{ site }}</span>{% endif %}
+    </div></div>
+  <div class="actions">
+    <nav class="seg" aria-label="Time range">{% for k, l in ranges %}<a href="?range={{ k }}" class="{% if k == range_key %}on{% endif %}">{{ k }}</a>{% endfor %}</nav>
+    <a class="btn" href="{% url 'telemetry:explorer' %}?expr={{ explore_q|urlencode }}&amp;range={{ range_key }}">{% icon "analytics" 17 %}Explore</a>
+  </div>
+</div>
+
+{% if not prom_configured %}
+  {% include "telemetry/_not_connected.html" with nc_title="Prometheus" nc_env="LINKEDEYE_PROMETHEUS_URL" nc_text="Host metrics come from node_exporter via Prometheus." %}
+{% elif error %}
+  {% include "telemetry/_error.html" with err_message=error %}
+{% elif not host %}
+  <div class="panel tm-nc" role="status"><div class="tile">{% icon "help" 22 %}</div>
+    <div><h2>Host not found in Prometheus</h2><p>No node_exporter target has <code>instance="{{ instance }}"</code> in a job matching <code>.*node.*</code>. It may have been removed from the scrape configuration. <a href="{% url 'telemetry:infrastructure' %}">Back to Infrastructure</a></p></div></div>
+{% else %}
+{% grade "cpu" host.cpu as gc %}{% grade "memory" host.memory as gm %}{% grade "disk" host.disk as gd %}{% grade "load" host.load_per_core as gl %}
+<section class="kpis tm-kpis" aria-label="Current values">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile {% if host.up == 0 %}s-crit{% else %}s-ok{% endif %}">{% icon "heartbeat" 22 %}</div><div class="kpi-body"><div class="label">Scrape</div><div class="value">{% if host.up == 0 %}<span class="t-crit">Down</span>{% else %}Up{% endif %}</div></div></div><div class="sub">up{job="{{ host.job }}"}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "cpu" 22 %}</div><div class="kpi-body"><div class="label">CPU</div><div class="value t-{{ gc }}">{{ host.cpu|pct1 }}</div></div></div><div class="sub">{% if host.cores %}{{ host.cores|floatformat:0 }} cores{% else %}–{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "memory" 22 %}</div><div class="kpi-body"><div class="label">Memory</div><div class="value t-{{ gm }}">{{ host.memory|pct1 }}</div></div></div><div class="sub">of {{ host.mem_total|hbytes }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "hdd" 22 %}</div><div class="kpi-body"><div class="label">Root Disk</div><div class="value t-{{ gd }}">{{ host.disk|pct1 }}</div></div></div><div class="sub">Used on /</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "gauge" 22 %}</div><div class="kpi-body"><div class="label">Load (1/5/15)</div><div class="value t-{{ gl }}">{{ host.load1|hnum }}</div></div></div><div class="sub">{{ host.load5|hnum }} · {{ host.load15|hnum }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Uptime</div><div class="value">{{ host.uptime|hduration }}</div></div></div><div class="sub">Rx {{ host.rx|hrate }} · Tx {{ host.tx|hrate }}</div></div>
+</section>
+
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>CPU Busy</h2><div class="right tm-meta">step {{ host.charts.step }}s</div></div>
+    {% if host.charts.has.cpu %}<div class="chart tm-chart" data-chart="line" data-src="c-cpu"></div>{% else %}<div class="no-data">No CPU samples in this range</div>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Memory Used</h2></div>
+    {% if host.charts.has.memory %}<div class="chart tm-chart" data-chart="line" data-src="c-mem"></div>{% else %}<div class="no-data">No memory samples in this range</div>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Load Average</h2><div class="right legend"><span><i style="background:#1565f0"></i>1m</span><span><i style="background:#16a34a"></i>5m</span><span><i style="background:#f59e0b"></i>15m</span></div></div>
+    {% if host.charts.has.load %}<div class="chart tm-chart" data-chart="line" data-src="c-load"></div>{% else %}<div class="no-data">No load samples in this range</div>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Network Throughput</h2><div class="right legend"><span><i style="background:#0891b2"></i>Receive</span><span><i style="background:#db2777"></i>Transmit</span></div></div>
+    {% if host.charts.has.net %}<div class="chart tm-chart" data-chart="line" data-src="c-net"></div>{% else %}<div class="no-data">No network samples in this range</div>{% endif %}</div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel"><div class="panel-h"><h2>Filesystems ({{ host.filesystems|length }})</h2></div>
+    <div class="table-wrap dense tm-table"><table>
+      <thead><tr><th>Mount</th><th>Device</th><th>Type</th><th class="num">Size</th><th class="num">Free</th><th>Used</th></tr></thead>
+      <tbody>{% for f in host.filesystems %}
+        <tr><td class="mono">{{ f.mountpoint }}</td><td class="mono">{{ f.device }}</td><td>{{ f.fstype }}</td>
+          <td class="num">{{ f.size|hbytes }}</td><td class="num">{{ f.avail|hbytes }}</td>
+          <td><span class="metric"><span class="util"><i class="{{ f.grade }}" style="width:{{ f.used_pct|clamp100 }}%"></i></span><span class="t-{{ f.grade }}">{{ f.used_pct|pct1 }}</span></span></td></tr>
+      {% empty %}<tr><td colspan="6" class="empty">No filesystem metrics (node_filesystem_*) for this host.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>System</h2></div>
+      <dl class="kv">
+        <dt>Node name</dt><dd>{{ host.nodename|default:"–" }}</dd>
+        <dt>OS</dt><dd>{{ host.os|default:"–" }}</dd>
+        <dt>Kernel</dt><dd>{{ host.kernel|default:"–" }}</dd>
+        <dt>Architecture</dt><dd>{{ host.arch|default:"–" }}</dd>
+        <dt>CPU cores</dt><dd>{% if host.cores %}{{ host.cores|floatformat:0 }}{% else %}–{% endif %}</dd>
+        <dt>Memory</dt><dd>{{ host.mem_total|hbytes }}</dd>
+        <dt>CMDB item</dt><dd>{% if ci_url %}<a href="{{ ci_url }}">{{ ci.name }}</a>{% else %}<span class="t-mute">Not linked – set this instance as a CI's Prometheus instance</span>{% endif %}</dd>
+      </dl></div>
+    <div class="panel"><div class="panel-h"><h2>Alerts for this instance</h2><div class="right"><a class="view-all" href="{% url 'telemetry:alertmanager' %}?tab=all&amp;q={{ instance|urlencode }}">View all</a></div></div>
+      <ul class="problem-list">{% for a in alerts %}
+        <li><span class="sev t-{{ a.severity_tone }}">{{ a.severity|default:"none" }}</span>
+          <div class="body"><a class="who" href="{% url 'telemetry:alert_detail' a.pk %}">{{ a.alertname }}</a><div class="what">{{ a.summary|default:a.description|truncatechars:120 }}</div></div>
+          <span class="when">{% include "telemetry/_alert_status.html" with st=a.status %}</span></li>
+      {% empty %}<li class="t-mute">No Alertmanager alerts received for {{ instance }}.</li>{% endfor %}</ul></div>
+  </div>
+</section>
+{{ host.charts.cpu|json_script:"c-cpu" }}{{ host.charts.memory|json_script:"c-mem" }}{{ host.charts.load|json_script:"c-load" }}{{ host.charts.net|json_script:"c-net" }}
+{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}Alert Manager{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "telemetry/_crumbs.html" with crumb_here="Alert Manager" %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head">
+  <div class="glyph g-crit">{% icon "bell" 30 %}</div>
+  <div><h1>Alert Manager</h1><p>Alerts pushed by Prometheus Alertmanager; critical alerts open Service Desk incidents automatically</p></div>
+  <div class="actions">
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}format=csv">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="#receiver">{% icon "plug" 17 %}Receiver setup</a>
+  </div>
+</div>
+
+{% if not token_set %}
+  {% include "telemetry/_not_connected.html" with nc_title="Alertmanager webhook" nc_env="LINKEDEYE_ALERTMANAGER_WEBHOOK_TOKEN" nc_extra="to a long random secret" nc_text="The receiver refuses every request until a bearer token is configured, so no alerts can arrive yet. Alerts already stored below remain visible." nc_keep=True %}
+{% endif %}
+
+<section class="kpis tm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "flame" 22 %}</div><div class="kpi-body"><div class="label">Firing</div><div class="value">{{ kpis.firing }}</div></div></div><div class="sub">Active alerts</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Critical</div><div class="value{% if kpis.critical %} t-crit{% endif %}">{{ kpis.critical }}</div></div></div><div class="sub">severity critical / page</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warning</div><div class="value">{{ kpis.warning }}</div></div></div><div class="sub">severity warning</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "user" 22 %}</div><div class="kpi-body"><div class="label">Needs Ack</div><div class="value">{{ kpis.unacked }}</div></div></div><div class="sub">Firing, nobody on it yet</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Resolved 24h</div><div class="value">{{ kpis.resolved24 }}</div></div></div><div class="sub">Recovered alerts</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last Received</div><div class="value" style="font-size:20px">{{ kpis.last|since }}</div></div></div><div class="sub">{% if kpis.last %}{{ kpis.last|short_dt }}{% else %}Nothing received yet{% endif %}</div></div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel">
+    <nav class="tabs" aria-label="Alert state">{% for k, l, n in tabs %}<a href="?tab={{ k }}" class="{% if k == tab %}on{% endif %}">{{ l }}<span class="n">{{ n }}</span></a>{% endfor %}</nav>
+    <form class="toolbar tm-filters" method="get" style="margin-top:12px">
+      <input type="hidden" name="tab" value="{{ tab }}">
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+      {% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}
+      {% if label %}<input type="hidden" name="label" value="{{ label.0 }}={{ label.1 }}">{% endif %}
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search alert, instance, job, summary…" aria-label="Search alerts"></label>
+      <select name="severity" data-autosubmit aria-label="Severity"><option value="">All Severities</option>{% for v, l in severities %}<option value="{{ v }}"{% if request.GET.severity == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="alertname" data-autosubmit aria-label="Alert name"><option value="">All Alerts</option>{% for n in alertnames %}<option{% if request.GET.alertname == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+      <select name="ack" data-autosubmit aria-label="Acknowledgement"><option value="">Any Ack State</option><option value="no"{% if request.GET.ack == 'no' %} selected{% endif %}>Unacknowledged</option><option value="yes"{% if request.GET.ack == 'yes' %} selected{% endif %}>Acknowledged</option></select>
+      {% if filtered %}<a class="btn icon blue" href="?tab={{ tab }}" title="Clear filters" aria-label="Clear filters">{% icon "x" 16 %}</a>{% endif %}
+    </form>
+    {% if label %}<p class="tm-bulk"><span class="tm-meta">Label filter</span><a class="chip on" href="?{% for k, v in query.items %}{% if k != 'label' %}{{ k }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}" title="Remove label filter">{{ label.0 }}={{ label.1 }} ✕</a></p>{% endif %}
+
+    <form method="post" action="{% url 'telemetry:alert_ack_bulk' %}" id="bulk">{% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
+    <div class="table-wrap dense tm-table" style="margin-top:12px"><table>
+      <thead><tr>{% if can_operate %}<th class="cb"><input type="checkbox" data-check-all="ids" aria-label="Select all alerts on this page"></th>{% endif %}<th>Severity</th><th>Alert</th><th>Instance</th><th>Started</th><th>Status</th><th>Ack</th>{% if can_operate %}<th></th>{% endif %}</tr></thead>
+      <tbody>
+      {% for a in page %}
+        <tr class="{% if a.status == 'firing' and not a.acknowledged %}unacked{% endif %}">
+          {% if can_operate %}<td class="cb"><input type="checkbox" name="ids" value="{{ a.pk }}" aria-label="Select {{ a.alertname }}"></td>{% endif %}
+          <td><span class="sev t-{{ a.severity_tone }}">{{ a.severity|default:"none" }}</span></td>
+          <td class="wrap"><a href="{% url 'telemetry:alert_detail' a.pk %}"><b>{{ a.alertname }}</b></a>{% if a.is_example %}<span class="tag ex">example</span>{% endif %}
+            {% if a.summary %}<span class="sub">{{ a.summary|truncatechars:110 }}</span>{% endif %}
+            {% if a.extra_labels %}<div class="chips" style="margin-top:4px">{% for k, v in a.extra_labels|slice:":4" %}<a class="chip mute" href="?tab={{ tab }}&amp;label={{ k|urlencode }}%3D{{ v|urlencode }}" title="Filter by {{ k }}={{ v }}">{{ k }}={{ v }}</a>{% endfor %}{% if a.extra_labels|length > 4 %}<span class="chip mute">+{{ a.extra_labels|length|add:"-4" }}</span>{% endif %}</div>{% endif %}</td>
+          <td><span class="mono">{{ a.instance|default:"–" }}</span>{% if a.job %}<span class="sub">{{ a.job }}</span>{% endif %}</td>
+          <td title="{{ a.starts_at|date:'Y-m-d H:i:s' }}">{{ a.starts_at|short_dt }}<span class="sub">for {{ a.duration_seconds|hduration }}</span></td>
+          <td>{% include "telemetry/_alert_status.html" with st=a.status %}</td>
+          <td>{% if a.acknowledged %}<span class="tag ack" title="{{ a.acknowledged_at|date:'Y-m-d H:i' }}">{{ a.acknowledged_by.get_username|default:"acknowledged" }}</span>{% else %}<span class="t-mute">–</span>{% endif %}</td>
+          {% if can_operate %}<td><div class="row-actions">{% if not a.acknowledged and a.status == 'firing' %}<button class="btn icon blue" type="submit" formaction="{% url 'telemetry:alert_ack' a.pk %}" title="Acknowledge" aria-label="Acknowledge {{ a.alertname }}">{% icon "check" 15 %}</button>{% endif %}<a class="btn icon" href="{% url 'telemetry:alert_detail' a.pk %}" title="Details" aria-label="Details for {{ a.alertname }}">{% icon "eye" 15 %}</a></div></td>{% endif %}
+        </tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">{% if filtered %}No alerts match the filters.{% elif tab == 'firing' %}No alerts are firing.{% if not kpis.last %} Nothing has been received yet – see Receiver setup.{% endif %}{% else %}No alerts.{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% if can_operate and page.paginator.count %}<div class="tm-bulk"><button class="btn sm primary" type="submit">{% icon "check" 14 %}Acknowledge selected</button><span class="tm-meta">Acknowledging records who is handling an alert; it does not silence it in Alertmanager.</span></div>{% endif %}
+    </form>
+    {% include "core/_pager.html" with pager_noun="alerts" %}
+  </div>
+
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Top Firing Alerts</h2></div>
+      {% if top_alerts %}<div class="hbar">{% for t in top_alerts %}
+        <a class="lbl" href="?tab=firing&amp;alertname={{ t.alertname|urlencode }}" title="{{ t.alertname }}">{{ t.alertname }}</a><span class="track"><i class="crit" style="width:{% widthratio t.n top_alerts.0.n 100 %}%"></i></span><span class="val">{{ t.n }}</span>
+      {% endfor %}</div>{% else %}<p class="t-mute" style="margin:0">Nothing firing.</p>{% endif %}
+    </div>
+    <div class="panel tm-receiver" id="receiver"><div class="panel-h"><h2>Receiver</h2><div class="right">{% if token_set %}<span class="badge ok">{% ficon "check-circle" 14 %}Token configured</span>{% else %}<span class="badge crit">{% ficon "x-circle" 14 %}Disabled</span>{% endif %}</div></div>
+      <dl class="kv">
+        <dt>Webhook URL</dt><dd><code>{{ receiver_url }}</code></dd>
+        <dt>Auth</dt><dd><code>Authorization: Bearer &lt;token&gt;</code></dd>
+        <dt>Token</dt><dd>{% if token_set %}Configured (value hidden){% else %}Set <code>LINKEDEYE_ALERTMANAGER_WEBHOOK_TOKEN</code>{% endif %}</dd>
+        <dt>Limits</dt><dd>JSON webhook v4, up to 1 MB per notification</dd>
+      </dl>
+      <h3>alertmanager.yml</h3>
+<pre class="code">receivers:
+  - name: linkedeye
+    webhook_configs:
+      - url: {{ receiver_url }}
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/linkedeye.token</pre>
+      <h3>Test with curl</h3>
+<pre class="code">curl -sS -X POST '{{ receiver_url }}' \
+  -H "Authorization: Bearer $LINKEDEYE_ALERTMANAGER_WEBHOOK_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"version":"4","status":"firing","receiver":"linkedeye",
+       "alerts":[{"status":"firing","fingerprint":"test0001",
+         "labels":{"alertname":"LinkedEyeTest","severity":"warning",
+                   "instance":"test:9100","job":"node"},
+         "annotations":{"summary":"Test alert from curl"},
+         "startsAt":"2026-01-01T00:00:00Z"}]}'</pre>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('.pg-telemetry [data-check-all]').forEach(function (all) {
+  var boxes = function () { return document.querySelectorAll('input[name="' + all.dataset.checkAll + '"]'); };
+  all.addEventListener('change', function () { boxes().forEach(function (b) { b.checked = all.checked; }); });
+});
+</script>
+{% endblock %}

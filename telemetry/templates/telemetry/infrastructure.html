@@ -1,0 +1,95 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}Infrastructure{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "telemetry/_crumbs.html" with crumb_here="Infrastructure" %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head">
+  <div class="glyph">{% icon "server" 30 %}</div>
+  <div><h1>Infrastructure</h1><p>Hosts reporting through Prometheus node_exporter{% if prom_configured %} <span class="src">· {{ prom_host }}</span>{% endif %}</p></div>
+  <div class="actions">
+    {% if prom_configured %}
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}format=csv">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}refresh=1">{% icon "refresh" 17 %}Refresh</a>
+    {% endif %}
+    <a class="btn primary" href="{% url 'telemetry:explorer' %}">{% icon "analytics" 17 %}Metrics Explorer</a>
+  </div>
+</div>
+
+{% if not prom_configured %}
+  {% include "telemetry/_not_connected.html" with nc_title="Prometheus" nc_env="LINKEDEYE_PROMETHEUS_URL" nc_extra="(for example http://prometheus.internal:9090)" nc_text="Host inventory, CPU, memory, disk, load, network and uptime come from node_exporter metrics in Prometheus (targets in jobs whose name contains node)." %}
+{% else %}
+{% if error %}{% include "telemetry/_error.html" with err_message=error %}{% endif %}
+
+<section class="kpis tm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "server" 22 %}</div><div class="kpi-body"><div class="label">Hosts</div><div class="value">{{ summary.total }}</div></div></div><div class="sub">{{ jobs|length }} node job{{ jobs|length|pluralize }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Up</div><div class="value">{{ summary.up }}</div></div></div><div class="sub">{{ summary.healthy }} healthy</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value{% if summary.down %} t-crit{% endif %}">{{ summary.down }}</div></div></div><div class="sub">Scrape failing (up == 0)</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warn / Crit</div><div class="value">{{ summary.warning }} <small>/</small> <span class="{% if summary.critical %}t-crit{% endif %}">{{ summary.critical }}</span></div></div></div><div class="sub">Over CPU/mem/disk/load limits</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "cpu" 22 %}</div><div class="kpi-body"><div class="label">Avg CPU</div><div class="value">{{ summary.avg_cpu|pct1 }}</div></div></div><div class="sub">Busy, 5 min rate</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "memory" 22 %}</div><div class="kpi-body"><div class="label">Avg Memory</div><div class="value">{{ summary.avg_memory|pct1 }}</div></div></div><div class="sub">Used (MemAvailable)</div></div>
+</section>
+
+{% if summary.total %}
+<section class="grid g-3">
+  <div class="panel"><div class="panel-h"><h2>Host Health</h2></div>
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
+      <div class="donut-legend">
+        <span><i class="dot fill-ok"></i>Healthy</span><b>{{ summary.counts.healthy }}</b>
+        <span><i class="dot fill-warn"></i>Warning</span><b>{{ summary.counts.warning }}</b>
+        <span><i class="dot fill-crit"></i>Critical</span><b>{{ summary.counts.critical }}</b>
+        <span><i class="dot" style="background:#7f1d1d"></i>Down</span><b>{{ summary.counts.down }}</b>
+        {% if summary.counts.unknown %}<span><i class="dot" style="background:#cbd5e1"></i>No data</span><b>{{ summary.counts.unknown }}</b>{% endif %}
+      </div></div></div>
+  <div class="panel"><div class="panel-h"><h2>Top CPU</h2><div class="right tm-meta">warn {{ thresholds.cpu.0|floatformat:0 }}% · crit {{ thresholds.cpu.1|floatformat:0 }}%</div></div>
+    {% if top_cpu %}<div class="hbar">{% for h in top_cpu %}{% grade "cpu" h.cpu as g %}
+      <a class="lbl" href="{% url 'telemetry:host_detail' h.instance %}" title="{{ h.instance }}">{{ h.ci_name|default:h.instance }}</a><span class="track"><i class="{{ g }}" style="width:{{ h.cpu|clamp100 }}%"></i></span><span class="val t-{{ g }}">{{ h.cpu|pct1 }}</span>
+    {% endfor %}</div>{% else %}<p class="empty">No CPU metrics yet.</p>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Top Root Disk</h2><div class="right tm-meta">warn {{ thresholds.disk.0|floatformat:0 }}% · crit {{ thresholds.disk.1|floatformat:0 }}%</div></div>
+    {% if top_disk %}<div class="hbar">{% for h in top_disk %}{% grade "disk" h.disk as g %}
+      <a class="lbl" href="{% url 'telemetry:host_detail' h.instance %}" title="{{ h.instance }}">{{ h.ci_name|default:h.instance }}</a><span class="track"><i class="{{ g }}" style="width:{{ h.disk|clamp100 }}%"></i></span><span class="val t-{{ g }}">{{ h.disk|pct1 }}</span>
+    {% endfor %}</div>{% else %}<p class="empty">No filesystem metrics yet.</p>{% endif %}</div>
+</section>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-h"><h2>Hosts ({{ page.paginator.count }})</h2>{% if spark_error %}<div class="right"><span class="tm-meta t-warn" title="{{ spark_error }}">Sparklines unavailable</span></div>{% endif %}</div>
+  <form class="toolbar tm-filters" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    {% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search instance, CI name or job…" aria-label="Search hosts"></label>
+    <select name="health" data-autosubmit aria-label="Health"><option value="">All Health</option>{% for v, l in health_choices %}<option value="{{ v }}"{% if request.GET.health == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="job" data-autosubmit aria-label="Job"><option value="">All Jobs</option>{% for j in jobs %}<option{% if request.GET.job == j %} selected{% endif %}>{{ j }}</option>{% endfor %}</select>
+    {% if filtered %}<a class="btn icon blue" href="{% url 'telemetry:infrastructure' %}" title="Clear filters" aria-label="Clear filters">{% icon "x" 16 %}</a>{% endif %}
+  </form>
+  <div class="table-wrap dense tm-table" style="margin-top:12px"><table>
+    <thead><tr><th>Host</th><th>Job</th><th>Health</th><th>CPU</th><th>Memory</th><th>Disk /</th><th class="num">Load 1m</th><th class="num">Net Rx</th><th class="num">Net Tx</th><th class="num">Uptime</th><th>CPU (1 h)</th><th></th></tr></thead>
+    <tbody>
+    {% for h in page %}
+      <tr>
+        <td><a class="host-name" href="{% url 'telemetry:host_detail' h.instance %}">{{ h.ci_name|default:h.instance }}</a>
+          {% if h.ci_name %}<span class="sub mono">{{ h.instance }}</span>{% endif %}
+          {% if h.ci_url %}<span class="sub"><a href="{{ h.ci_url }}">CMDB</a>{% if h.site %} · {{ h.site }}{% endif %}</span>{% endif %}</td>
+        <td>{{ h.job|default:"–" }}</td>
+        <td><span class="badge {{ h.health|health_tone }}">{{ h.health|health_label }}</span></td>
+        {% grade "cpu" h.cpu as gc %}{% grade "memory" h.memory as gm %}{% grade "disk" h.disk as gd %}{% grade "load" h.load_per_core as gl %}
+        <td><span class="metric"><span class="util"><i class="{{ gc }}" style="width:{{ h.cpu|clamp100 }}%"></i></span><span class="t-{{ gc }}">{{ h.cpu|pct1 }}</span></span></td>
+        <td><span class="metric"><span class="util"><i class="{{ gm }}" style="width:{{ h.memory|clamp100 }}%"></i></span><span class="t-{{ gm }}">{{ h.memory|pct1 }}</span></span></td>
+        <td><span class="metric"><span class="util"><i class="{{ gd }}" style="width:{{ h.disk|clamp100 }}%"></i></span><span class="t-{{ gd }}">{{ h.disk|pct1 }}</span></span></td>
+        <td class="num t-{{ gl }}" title="{% if h.cores %}{{ h.cores|floatformat:0 }} cores{% endif %}">{{ h.load1|hnum }}{% if h.cores %} <span class="t-mute">/ {{ h.cores|floatformat:0 }}</span>{% endif %}</td>
+        <td class="num">{{ h.rx_text }}</td>
+        <td class="num">{{ h.tx_text }}</td>
+        <td class="num">{{ h.uptime_text }}</td>
+        <td>{% if h.spark %}<div class="chart spark" data-chart="spark" data-src="{{ h.spark_id }}"></div>{{ h.spark|json_script:h.spark_id }}{% else %}<span class="t-mute">–</span>{% endif %}</td>
+        <td><a class="btn icon blue" href="{% url 'telemetry:host_detail' h.instance %}" title="Host details" aria-label="Details for {{ h.instance }}">{% icon "eye" 15 %}</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="12" class="empty">{% if error %}No data – see the error above.{% elif filtered %}No hosts match the filters.{% else %}Prometheus has no targets in a job matching <code>.*node.*</code>. Add node_exporter scrape jobs (for example <code>job_name: node</code>) to see hosts here.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="hosts" %}
+</div>
+{{ donut|json_script:"d-donut" }}
+{% endif %}
+</div>
+{% endblock %}

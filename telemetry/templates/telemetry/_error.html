@@ -1,0 +1,4 @@
+{% load le %}<div class="panel tm-nc err" role="alert">
+  <div class="tile">{% icon "alert" 22 %}</div>
+  <div><h2>{{ err_title|default:"Prometheus query failed" }}</h2><p>{{ err_message }}</p></div>
+</div>

@@ -1,0 +1,92 @@
+{% extends "core/base.html" %}{% load le static telemetry_tags %}
+{% block title %}Prometheus Metrics{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'telemetry/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "telemetry/_crumbs.html" with crumb_here="Prometheus Metrics" %}{% endblock %}
+{% block content %}
+<div class="pg-telemetry">
+<div class="head">
+  <div class="glyph g-warn">{% icon "flame" 30 %}</div>
+  <div><h1>Prometheus Metrics</h1><p>Scrape targets, their health and last scrape{% if prom_configured %} <span class="src">· {{ prom_host }}</span>{% endif %}</p></div>
+  <div class="actions">
+    {% if prom_configured %}
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}format=csv">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="?{{ query.urlencode }}{% if query.urlencode %}&amp;{% endif %}refresh=1">{% icon "refresh" 17 %}Refresh</a>
+    {% endif %}
+    <a class="btn primary" href="{% url 'telemetry:explorer' %}">{% icon "analytics" 17 %}Metrics Explorer</a>
+  </div>
+</div>
+
+{% if not prom_configured %}
+  {% include "telemetry/_not_connected.html" with nc_title="Prometheus" nc_env="LINKEDEYE_PROMETHEUS_URL" nc_extra="(for example http://prometheus.internal:9090)" nc_text="Scrape targets and their health are read from the Prometheus HTTP API (/api/v1/targets)." %}
+{% else %}
+{% if error %}{% include "telemetry/_error.html" with err_message=error %}{% endif %}
+
+<section class="kpis tm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "radar" 22 %}</div><div class="kpi-body"><div class="label">Targets</div><div class="value">{{ kpis.total }}</div></div></div><div class="sub">{{ kpis.jobs }} job{{ kpis.jobs|pluralize }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Up</div><div class="value">{{ kpis.up }}</div></div></div><div class="sub">Last scrape succeeded</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value{% if kpis.down %} t-crit{% endif %}">{{ kpis.down }}</div></div></div><div class="sub">{% if kpis.unknown %}{{ kpis.unknown }} not scraped yet{% else %}Last scrape failed{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Avg Scrape</div><div class="value">{{ kpis.avg_duration|ms_from_s }}</div></div></div><div class="sub" title="{{ kpis.slowest.url }}">{% if kpis.slowest %}Slowest {{ kpis.slowest.duration|ms_from_s }} ({{ kpis.slowest.job }}){% else %}–{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Head Series</div><div class="value">{{ stats.head_series|hnum }}</div></div></div><div class="sub">{% if stats.ingest_rate is not None %}{{ stats.ingest_rate|hnum }} samples/s{% else %}Self-metrics not scraped{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "bell" 22 %}</div><div class="kpi-body"><div class="label">Rule Alerts</div><div class="value">{% if stats.rule_alerts_firing is None %}–{% else %}{{ stats.rule_alerts_firing }}{% endif %}</div></div></div><div class="sub">{% if stats.rule_alerts_pending %}{{ stats.rule_alerts_pending }} pending{% else %}Firing in Prometheus{% endif %}</div></div>
+</section>
+{% if stats.error %}<p class="tm-note">{% icon "info" 15 %}<span>Some Prometheus statistics are unavailable: {{ stats.error }}</span></p>{% endif %}
+
+{% if kpis.total %}
+<section class="grid g-3">
+  <div class="panel"><div class="panel-h"><h2>Target Health</h2></div>
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
+      <div class="donut-legend">
+        <span><i class="dot fill-ok"></i>Up</span><b>{{ kpis.up }}</b>
+        <span><i class="dot fill-crit"></i>Down</span><b>{{ kpis.down }}</b>
+        <span><i class="dot" style="background:#cbd5e1"></i>Unknown</span><b>{{ kpis.unknown }}</b>
+      </div></div></div>
+  <div class="panel"><div class="panel-h"><h2>Jobs</h2></div>
+    <div class="table-wrap dense borderless tm-table"><table>
+      <thead><tr><th>Job</th><th>Up</th><th class="num">Avg scrape</th></tr></thead>
+      <tbody>{% for j in jobs|slice:":8" %}
+        <tr><td><a href="?job={{ j.job|urlencode }}">{{ j.job }}</a></td>
+          <td><span class="metric"><span class="util"><i class="{% if j.down %}crit{% else %}ok{% endif %}" style="width:{{ j.up_pct|clamp100 }}%"></i></span><span class="{% if j.down %}t-crit{% endif %}">{{ j.up }}/{{ j.total }}</span></span></td>
+          <td class="num">{{ j.avg_duration|ms_from_s }}</td></tr>
+      {% endfor %}</tbody></table></div>
+    {% if jobs|length > 8 %}<p class="tm-meta" style="margin:8px 0 0">+ {{ jobs|length|add:"-8" }} more – use the job filter below.</p>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Down Targets</h2>{% if kpis.down %}<div class="right"><a class="view-all" href="?health=down">View all</a></div>{% endif %}</div>
+    <ul class="problem-list">{% for t in down_targets %}
+      <li><span class="t-crit">{% ficon "x-circle" 16 %}</span><div class="body"><div class="who">{{ t.instance }} <span class="tag">{{ t.job }}</span></div><div class="what">{{ t.error|default:"Scrape failed"|truncatechars:140 }}</div></div><span class="when">{{ t.last_scrape|since }}</span></li>
+    {% empty %}<li class="t-mute">{% ficon "check-circle" 16 "t-ok" %} Every target's last scrape succeeded.</li>{% endfor %}</ul></div>
+</section>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-h"><h2>Scrape Targets ({{ page.paginator.count }})</h2><div class="right tm-meta">Grouped by job</div></div>
+  <form class="toolbar tm-filters" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search instance, URL, label or error…" aria-label="Search targets"></label>
+    <select name="health" data-autosubmit aria-label="Health"><option value="">All Health</option>{% for v, l in healths %}<option value="{{ v }}"{% if request.GET.health == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="job" data-autosubmit aria-label="Job"><option value="">All Jobs</option>{% for j in jobs %}<option{% if request.GET.job == j.job %} selected{% endif %}>{{ j.job }}</option>{% endfor %}</select>
+    {% if filtered %}<a class="btn icon blue" href="{% url 'telemetry:prometheus' %}" title="Clear filters" aria-label="Clear filters">{% icon "x" 16 %}</a>{% endif %}
+  </form>
+  <div class="table-wrap dense tm-table" style="margin-top:12px"><table>
+    <thead><tr><th>Endpoint</th><th>Health</th><th>Labels</th><th>Last scrape</th><th class="num">Duration</th><th>Error</th></tr></thead>
+    <tbody>
+    {% for g in groups %}
+      <tr class="grp"><td colspan="6">{{ g.job|default:"(no job)" }}{% if g.summary %}<span class="chip {% if g.summary.down %}crit{% elif g.summary.up == 0 %}mute{% else %}ok{% endif %}">{{ g.summary.up }}/{{ g.summary.total }} up</span>{% endif %}</td></tr>
+      {% for t in g.rows %}
+      <tr>
+        <td><span class="mono" title="{{ t.url }}">{{ t.url|default:t.instance|truncatechars:70 }}</span><span class="sub">{{ t.instance }}</span></td>
+        <td>{% badge t.health %}</td>
+        <td><div class="chips">{% for k, v in t.labels|slice:":6" %}<span class="chip mute" title="{{ k }}={{ v }}">{{ k }}={{ v }}</span>{% endfor %}{% if t.labels|length > 6 %}<span class="chip mute">+{{ t.labels|length|add:"-6" }}</span>{% endif %}</div></td>
+        <td title="{{ t.last_scrape|date:'Y-m-d H:i:s' }}">{{ t.last_scrape|since }}</td>
+        <td class="num">{{ t.duration|ms_from_s }}</td>
+        <td class="err">{{ t.error|default:"" }}</td>
+      </tr>
+      {% endfor %}
+    {% empty %}
+      <tr><td colspan="6" class="empty">{% if error %}No data – see the error above.{% elif filtered %}No targets match the filters.{% else %}Prometheus reports no active scrape targets.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="targets" %}
+</div>
+{{ donut|json_script:"d-donut" }}
+{% endif %}
+</div>
+{% endblock %}
