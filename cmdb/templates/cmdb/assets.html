@@ -19,7 +19,7 @@
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "server" 22 %}</div><div class="kpi-body"><div class="label">Hardware Assets</div><div class="value">{{ total }}</div></div></div><div class="sub">{{ active }} active</div></div>
   <a class="kpi stacked cm-kpi-link" href="?lifecycle=warranty_90"><div class="kpi-top"><div class="tile s-warn">{% icon "shield-alert" 22 %}</div><div class="kpi-body"><div class="label">Warranty ending</div><div class="value">{{ warranty_due }}</div></div></div><div class="sub">Within 90 days</div></a>
   <a class="kpi stacked cm-kpi-link" href="?lifecycle=warranty_expired"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Out of warranty</div><div class="value">{{ warranty_expired }}</div></div></div><div class="sub">Not retired</div></a>
-  <a class="kpi stacked cm-kpi-link" href="{% url 'cmdb:lifecycle' %}?window=180"><div class="kpi-top"><div class="tile s-purple">{% icon "calendar-range" 22 %}</div><div class="kpi-body"><div class="label">End of life ≤ 180 days</div><div class="value">{{ eol_due }}</div></div></div><div class="sub">Including already past EOL</div></a>
+  <a class="kpi stacked cm-kpi-link" href="?lifecycle=eol_due"><div class="kpi-top"><div class="tile s-purple">{% icon "calendar-range" 22 %}</div><div class="kpi-body"><div class="label">End of life ≤ 180 days</div><div class="value">{{ eol_due }}</div></div></div><div class="sub">Including already past EOL</div></a>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "tag" 22 %}</div><div class="kpi-body"><div class="label">Recorded Value</div><div class="value">{% if value is not None %}{{ currency }}{{ value|floatformat:"0g" }}{% else %}–{% endif %}</div></div></div><div class="sub">Purchase cost, not retired</div></div>
 </section>
 
@@ -52,8 +52,8 @@
       <td class="num">{% if c.cost is not None %}{{ c.cost|floatformat:"0g" }}{% else %}–{% endif %}</td>
       <td><div class="row-actions">
         <a class="btn icon" href="{{ c.get_absolute_url }}" title="View" aria-label="View {{ c.name }}">{% icon "eye" 15 %}</a>
-        {% if can_operate %}<a class="btn icon blue" href="{% url 'cmdb:item_edit' c.pk %}?next={{ request.get_full_path|urlencode }}" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>{% endif %}
-        {% if can_admin %}<form method="post" action="{% url 'cmdb:item_delete' c.pk %}" data-confirm="Delete “{{ c.name }}” and its relationships?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ c.name }}">{% icon "trash" 15 %}</button></form>{% endif %}
+        {% if c.can_edit %}<a class="btn icon blue" href="{% url 'cmdb:item_edit' c.pk %}?next={{ request.get_full_path|urlencode }}" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>{% endif %}
+        {% if c.can_delete %}<form method="post" action="{% url 'cmdb:item_delete' c.pk %}" data-confirm="Delete “{{ c.name }}” and its relationships?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ c.name }}">{% icon "trash" 15 %}</button></form>{% endif %}
       </div></td>
     </tr>{% empty %}<tr><td colspan="11" class="empty">{% if filtered %}No assets match these filters.{% else %}No hardware assets yet.{% if can_operate %} <a href="{% url 'cmdb:item_create' %}?type=server">Add one</a> or <a href="{% url 'cmdb:assets_import' %}">import a CSV</a>.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   {% include "core/_pager.html" with pager_noun="assets" %}

@@ -232,11 +232,12 @@ def _safe_reverse(name, *args):
         return ""
 
 
-def recent_incidents(ci_names, limit=5, fingerprints=()):
+def recent_incidents(ci_names, limit=5, fingerprints=(), user=None):
     """Recent incidents raised against any of `ci_names` (or carrying one of `fingerprints`, e.g. the
     ``url:<pk>`` fingerprint of a linked URL check) via the Service Desk module.
 
     Returns None when Service Desk is not installed / not migrated (callers show "not connected").
+    With `user`, tickets are limited to the user's sites.
     """
     try:
         Ticket = apps.get_model("servicedesk", "Ticket")
@@ -258,6 +259,9 @@ def recent_incidents(ci_names, limit=5, fingerprints=()):
             qs = qs.filter(tenant_key=tenant())
         if "kind" in fields:
             qs = qs.filter(kind="incident")
+        if user is not None and "site" in fields:
+            from core.access import scope_by_site
+            qs = scope_by_site(qs, user, field="site")
         order = "-opened_at" if "opened_at" in fields else ("-created_at" if "created_at" in fields else "-pk")
         items = list(qs.order_by(order)[:limit])
         if hasattr(qs, "open"):
@@ -299,10 +303,28 @@ def ci_fingerprints(cis):
 
 # ----------------------------------------------------------------------------- permissions
 def can_manage(user, perm, site):
-    """`perm` on the CI's site. Global ("All Sites") records need the role on every site."""
+    """`perm` on the CI's site. Global ("All Sites") records need the role on every site.
+
+    ``can(user, perm)`` without a site answers "anywhere", so a user who is a viewer on all sites and an
+    operator on one would pass it; the global role is what ``role_for(user, "All Sites")`` returns
+    (memberships without a site, or the staff/no-membership defaults).
+    """
     from core.access import can, visible_sites
     if user is None:
         return False
     if not site or site == "All Sites":
-        return can(user, perm) and visible_sites(user) is None
+        return can(user, perm, "All Sites") and visible_sites(user) is None
     return can(user, perm, site)
+
+
+MAX_PK = 2 ** 63 - 1
+
+
+def as_pk(value):
+    """`value` as a database id, or None when it is not a number or out of range (SQLite raises
+    OverflowError and PostgreSQL a DataError for ids beyond a 64-bit integer)."""
+    s = str(value or "").strip()
+    if not s.isdigit() or len(s) > 19:
+        return None
+    n = int(s)
+    return n if 0 < n <= MAX_PK else None

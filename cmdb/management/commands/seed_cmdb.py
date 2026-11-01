@@ -160,8 +160,11 @@ class Command(BaseCommand):
     def _ci(self, tenant, name, **fields):
         fields.setdefault("attributes", {"example": True})
         fields["description"] = MARK + fields.get("description", "")
-        obj, created = ConfigurationItem.objects.get_or_create(tenant_key=tenant, name=name, defaults=fields)
-        return obj, created
+        # names are unique case-insensitively in the CMDB: reuse "oms" rather than adding "OMS" next to it
+        obj = ConfigurationItem.objects.filter(tenant_key=tenant, name__iexact=name).first()
+        if obj is not None:
+            return obj, False
+        return ConfigurationItem.objects.create(tenant_key=tenant, name=name, **fields), True
 
     def _seed(self, tenant):
         from domainmonitor.models import Domain

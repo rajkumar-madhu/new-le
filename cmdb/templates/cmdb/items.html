@@ -53,8 +53,8 @@
         <td><div class="row-actions">
           <a class="btn icon" href="{{ c.get_absolute_url }}" title="View" aria-label="View {{ c.name }}">{% icon "eye" 15 %}</a>
           <a class="btn icon blue" href="{% url 'cmdb:topology' %}?root={{ c.pk }}" title="Topology" aria-label="Topology around {{ c.name }}">{% icon "share" 15 %}</a>
-          {% if can_operate %}<a class="btn icon blue" href="{% url 'cmdb:item_edit' c.pk %}" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>{% endif %}
-          {% if can_admin %}<form method="post" action="{% url 'cmdb:item_delete' c.pk %}" data-confirm="Delete “{{ c.name }}” and its relationships?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ c.name }}">{% icon "trash" 15 %}</button></form>{% endif %}
+          {% if c.can_edit %}<a class="btn icon blue" href="{% url 'cmdb:item_edit' c.pk %}" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>{% endif %}
+          {% if c.can_delete %}<form method="post" action="{% url 'cmdb:item_delete' c.pk %}" data-confirm="Delete “{{ c.name }}” and its relationships?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ c.name }}">{% icon "trash" 15 %}</button></form>{% endif %}
         </div></td>
       </tr>
     {% empty %}

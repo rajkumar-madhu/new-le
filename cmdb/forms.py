@@ -8,6 +8,24 @@ from . import services
 from .models import CIStatus, CIType, ConfigurationItem, Environment, License, Relationship, Software
 
 MAX_IMPORT_BYTES = 2 * 1024 * 1024
+
+
+class BoundedModelChoiceField(forms.ModelChoiceField):
+    """Rejects ids beyond a 64-bit integer as an invalid choice (the database would raise an overflow error)."""
+
+    def to_python(self, value):
+        if value not in self.empty_values and str(value).strip().lstrip("-").isdigit() and services.as_pk(value) is None:
+            raise forms.ValidationError(self.error_messages["invalid_choice"], code="invalid_choice")
+        return super().to_python(value)
+
+
+class BoundedModelMultipleChoiceField(forms.ModelMultipleChoiceField):
+    def _check_values(self, value):
+        for v in value or ():
+            if str(v).strip().lstrip("-").isdigit() and services.as_pk(v) is None:
+                raise forms.ValidationError(self.error_messages["invalid_choice"], code="invalid_choice",
+                                            params={"value": str(v)[:30]})
+        return super()._check_values(value)
 MAX_IMPORT_ROWS = 5000
 
 
@@ -71,6 +89,7 @@ class CIForm(forms.ModelForm):
             "url_checks": forms.CheckboxSelectMultiple(),
             "domains": forms.CheckboxSelectMultiple(),
         }
+        field_classes = {"url_checks": BoundedModelMultipleChoiceField, "domains": BoundedModelMultipleChoiceField}
         labels = {"ci_type": "Type", "ip_address": "IP Address", "url_checks": "Linked URL checks",
                   "domains": "Linked domains", "prometheus_instance": "Prometheus instance", "cost": "Cost"}
 
@@ -142,6 +161,7 @@ class RelationshipForm(forms.ModelForm):
         model = Relationship
         fields = ["source", "rel_type", "target", "origin", "confidence", "note"]
         labels = {"source": "Source CI", "target": "Target CI", "rel_type": "Relationship"}
+        field_classes = {"source": BoundedModelChoiceField, "target": BoundedModelChoiceField}
         widgets = {"note": forms.TextInput(attrs={"placeholder": "Optional note"}),
                    "confidence": forms.NumberInput(attrs={"min": 0, "max": 100})}
 
@@ -171,10 +191,17 @@ class SoftwareForm(forms.ModelForm):
                    "name": forms.TextInput(attrs={"placeholder": "e.g. PostgreSQL"}),
                    "category": forms.TextInput(attrs={"placeholder": "e.g. Database", "list": "cmdb-sw-categories"})}
         labels = {"installs": "Installed on"}
+        field_classes = {"installs": BoundedModelMultipleChoiceField}
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["installs"].queryset = services.ci_queryset(user).exclude(ci_type=CIType.BUSINESS_DOMAIN).order_by("name")
+        qs = services.ci_queryset(user).exclude(ci_type=CIType.BUSINESS_DOMAIN)
+        if user is not None:
+            # only items the user may change; installs on other items are kept untouched by save()
+            sites = {s for s in qs.order_by().values_list("site", flat=True).distinct()
+                     if services.can_manage(user, "operate", s)}
+            qs = qs.filter(site__in=sites)
+        self.fields["installs"].queryset = qs.order_by("name")
         self.fields["installs"].required = False
 
     def clean(self):
@@ -209,6 +236,7 @@ class LicenseForm(forms.ModelForm):
                    "product": forms.TextInput(attrs={"placeholder": "e.g. Red Hat Enterprise Linux"}),
                    "license_type": forms.TextInput(attrs={"placeholder": "Subscription, Perpetual…"})}
         labels = {"software": "Software (usage source)", "reference": "Contract / PO reference"}
+        field_classes = {"software": BoundedModelChoiceField}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

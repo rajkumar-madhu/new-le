@@ -101,7 +101,7 @@
             <td><a href="{{ s.ci.get_absolute_url }}">{{ s.name }}</a></td><td>{{ s.ci.get_ci_type_display }}</td>
             <td>{% include "cmdb/_health.html" with state=s.health %}</td>
             <td>{{ s.metrics.availability|pct }}</td><td>{{ s.metrics.response|ms }}</td>
-            <td{% if s.metrics.errors >= 1 %} class="t-crit"{% endif %}>{{ s.metrics.errors|pct:1 }}</td>
+            <td{% if s.hot.errors %} class="t-crit"{% endif %}>{{ s.metrics.errors|pct:1 }}</td>
             <td>{{ s.metrics.latency|ms }}</td><td>{{ s.checks }}</td>
           </tr>{% empty %}<tr><td colspan="8" class="empty">No services in this domain.</td></tr>{% endfor %}</tbody></table></div>
       {% elif details.tab == "incidents" %}
@@ -122,8 +122,8 @@
                 <td><a href="{{ s.ci.get_absolute_url }}">{{ s.name }}</a></td>
                 <td>{% include "cmdb/_health.html" with state=s.health %}</td>
                 <td>{{ s.metrics.availability|pct }}</td>
-                <td{% if s.metrics.errors >= 1 %} class="t-crit"{% endif %}>{{ s.metrics.errors|pct:1 }}</td>
-                <td{% if s.health == "critical" or s.health == "warning" %} class="t-crit"{% endif %}>{{ s.metrics.latency|ms }}</td>
+                <td{% if s.hot.errors %} class="t-crit"{% endif %}>{{ s.metrics.errors|pct:1 }}</td>
+                <td{% if s.hot.latency %} class="t-crit"{% endif %}>{{ s.metrics.latency|ms }}</td>
               </tr>{% empty %}<tr><td colspan="5" class="empty">No services in this domain.</td></tr>{% endfor %}</tbody></table></div>
             {% if dom.services > details.rows|length %}<div class="hm-more"><a class="view-all" href="?{{ keep.urlencode }}{% if not keep.domain %}&amp;domain={{ dom.name|urlencode }}{% endif %}&amp;tab=services#hm-details">View Full Services {% icon "arrow-right" 13 %}</a></div>{% endif %}
           </div>

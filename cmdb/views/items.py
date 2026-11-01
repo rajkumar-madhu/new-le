@@ -6,14 +6,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from core.access import require
+from core.access import require, visible_sites
 from core.audit import audit
 from core.events import emit
 
 from .. import csvio, services
 from ..forms import CIForm, ImportForm, RelationshipForm
 from ..models import HARDWARE_TYPES, SERVICE_TYPES, CIStatus, CIType, Environment, Relationship, RelType
-from .common import csv_response, days_class, need_site, paginate, perms, query_without_page, safe_next
+from .common import csv_response, days_class, mark_row_perms, need_site, paginate, perms, query_without_page, safe_next
 
 
 # ----------------------------------------------------------------------------- list
@@ -30,18 +30,28 @@ def filter_items(request, qs):
             qs = qs.filter(**{field: v})
     dom = g.get("domain", "").strip()
     if dom:
-        qs = qs.filter(Q(business_domain__iexact=dom) | Q(ci_type=CIType.BUSINESS_DOMAIN, name__iexact=dom))
+        # same membership rule as the heatmap (services.domain_members): business_domain text, or part_of the domain CI
+        part_of = Relationship.objects.filter(rel_type=RelType.PART_OF, target__ci_type=CIType.BUSINESS_DOMAIN,
+                                              target__name__iexact=dom).values("source_id")
+        qs = qs.filter(Q(business_domain__iexact=dom) | Q(ci_type=CIType.BUSINESS_DOMAIN, name__iexact=dom)
+                       | Q(pk__in=part_of))
     return qs
 
 
 @require("view")
 def items(request):
     base = services.ci_queryset(request.user)
-    qs = filter_items(request, base).annotate(n_out=Count("outgoing", distinct=True), n_in=Count("incoming", distinct=True))
+    if visible_sites(request.user) is None:
+        out_f = in_f = None
+    else:   # count only links to items the user can see (as the detail and relationships pages do)
+        out_f, in_f = Q(outgoing__target__in=base), Q(incoming__source__in=base)
+    qs = filter_items(request, base).annotate(n_out=Count("outgoing", filter=out_f, distinct=True),
+                                              n_in=Count("incoming", filter=in_f, distinct=True))
     page = paginate(request, qs.order_by("name"))
     health = services.link_health(page.object_list)
     for c in page:
         c.health = health.get(c.pk, "unknown")
+    mark_row_perms(request, page)
     counts = dict(base.order_by().values_list("ci_type").annotate(n=Count("pk")))
     status_counts = dict(base.order_by().values_list("status").annotate(n=Count("pk")))
     linked = base.filter(Q(url_checks__isnull=False) | Q(domains__isnull=False)).distinct().count()
@@ -50,7 +60,7 @@ def items(request):
         "type_counts": [(v, l, counts.get(v, 0)) for v, l in CIType.choices if counts.get(v)],
         "active": status_counts.get("active", 0), "maintenance": status_counts.get("maintenance", 0),
         "retired": status_counts.get("retired", 0), "linked": linked,
-        "relationships": Relationship.objects.filter(source__in=base).count(),
+        "relationships": Relationship.objects.filter(source__in=base, target__in=base).count(),
         "types": CIType.choices, "statuses": CIStatus.choices, "envs": Environment.choices,
         "sites": base.order_by("site").values_list("site", flat=True).distinct(),
         "domains": services.domain_names(request.user),
@@ -63,10 +73,17 @@ def items(request):
 # ----------------------------------------------------------------------------- detail
 @require("view")
 def item_detail(request, pk):
-    ci = get_object_or_404(services.ci_queryset(request.user).prefetch_related("url_checks", "domains"), pk=pk)
+    visible = services.ci_queryset(request.user)
+    ci = get_object_or_404(visible.prefetch_related("url_checks", "domains"), pk=pk)
     edges = services.edges_for()
-    outgoing = list(ci.outgoing.select_related("target").order_by("rel_type", "target__name"))
-    incoming = list(ci.incoming.select_related("source").order_by("rel_type", "source__name"))
+    outgoing = ci.outgoing.select_related("target").order_by("rel_type", "target__name")
+    incoming = ci.incoming.select_related("source").order_by("rel_type", "source__name")
+    if visible_sites(request.user) is not None:
+        # site-scoped users only see (and traverse through) items on their sites
+        vis = set(visible.values_list("pk", flat=True))
+        edges = [e for e in edges if e[1] in vis and e[2] in vis]
+        outgoing, incoming = outgoing.filter(target__in=visible), incoming.filter(source__in=visible)
+    outgoing, incoming = list(outgoing), list(incoming)
     impact = services.impacted(ci, edges=edges)
     deps = services.dependencies(ci, edges=edges)
     checks = services.check_rows(ci)
@@ -78,6 +95,7 @@ def item_detail(request, pk):
         r.target.health = health.get(r.target_id, "unknown")
     for r in incoming:
         r.source.health = health.get(r.source_id, "unknown")
+    mark_row_perms(request, outgoing + incoming, site_of=lambda r: r.source.site)   # delete needs admin on the source
     host = None
     if ci.prometheus_instance:
         from core import prometheus
@@ -91,7 +109,7 @@ def item_detail(request, pk):
                 for col, label in (("cpu", "CPU"), ("memory", "Memory"), ("disk", "Disk"), ("network", "Network"))]}
         else:
             host = {"connected": False}
-    incidents = services.recent_incidents([ci.name], limit=6, fingerprints=services.ci_fingerprints([ci]))
+    incidents = services.recent_incidents([ci.name], limit=6, fingerprints=services.ci_fingerprints([ci]), user=request.user)
     form = RelationshipForm(user=request.user, initial={"source": ci.pk})
     ctx = {
         "ci": ci, "outgoing": outgoing, "incoming": incoming, "impact": impact, "deps": deps, "checks": checks,
@@ -149,7 +167,7 @@ def item_form(request, pk=None):
         form = CIForm(instance=ci, user=request.user, initial=initial)
     return render(request, "cmdb/item_form.html", {
         "form": form, "ci": ci, "domains": services.domain_names(request.user),
-        "next": request.GET.get("next") or request.POST.get("next", ""), **perms(request)})
+        "next": safe_next(request, ""), **perms(request)})
 
 
 @require_POST
@@ -218,8 +236,9 @@ def filter_relationships(request, qs):
         qs = qs.filter(rel_type=g["type"])
     if g.get("origin") in ("manual", "discovered"):
         qs = qs.filter(origin=g["origin"])
-    if g.get("ci", "").isdigit():
-        qs = qs.filter(Q(source_id=g["ci"]) | Q(target_id=g["ci"]))
+    if g.get("ci"):
+        pk = services.as_pk(g["ci"])
+        qs = qs.filter(Q(source_id=pk) | Q(target_id=pk)) if pk else qs.none()
     return qs
 
 
@@ -232,9 +251,14 @@ def _rel_scope(request):
 def relationships(request):
     base = _rel_scope(request)
     page = paginate(request, filter_relationships(request, base).order_by("source__name", "rel_type", "target__name"))
+    mark_row_perms(request, page, site_of=lambda r: r.source.site)
     by_type = dict(base.order_by().values_list("rel_type").annotate(n=Count("pk")))
-    form = RelationshipForm(user=request.user, initial={"source": request.GET.get("source") or None})
+    ci_pk = services.as_pk(request.GET.get("ci"))
+    ci_filter = services.ci_queryset(request.user).filter(pk=ci_pk).first() if ci_pk else None
+    source = services.as_pk(request.GET.get("source")) or (ci_filter.pk if ci_filter else None)
+    form = RelationshipForm(user=request.user, initial={"source": source})
     return render(request, "cmdb/relationships.html", {
+        "ci_filter": ci_filter,
         "page": page, "query": query_without_page(request), "total": base.count(),
         "by_type": [(v, l, by_type.get(v, 0)) for v, l in RelType.choices],
         "discovered": base.filter(origin="discovered").count(), "form": form, "types": RelType.choices,

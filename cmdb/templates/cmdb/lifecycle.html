@@ -32,13 +32,14 @@
       <form method="get"><input type="hidden" name="window" value="{{ window }}"><select name="kind" data-autosubmit aria-label="Milestone"><option value="">All milestones</option><option{% if kind == "Warranty end" %} selected{% endif %}>Warranty end</option><option{% if kind == "End of life" %} selected{% endif %}>End of life</option><option{% if kind == "License expiry" %} selected{% endif %}>License expiry</option></select></form></div></div>
   <div class="table-wrap dense"><table class="cm-table">
     <thead><tr><th>Date</th><th>When</th><th>Milestone</th><th>Item</th><th>Type</th><th>Vendor</th><th>Site</th><th>Owner</th></tr></thead>
-    <tbody>{% for e in events %}<tr>
+    <tbody>{% for e in page %}<tr>
       <td>{{ e.date|date:"d M Y" }}</td>
       <td class="{% if e.days < 0 %}t-crit{% elif e.days <= 30 %}t-warn{% else %}t-mute{% endif %}">{% include "cmdb/_days.html" with d=e.days %}</td>
       <td>{% if e.kind == "End of life" %}<span class="chip crit">End of life</span>{% elif e.kind == "Warranty end" %}<span class="chip warn">Warranty end</span>{% else %}<span class="chip purple">License expiry</span>{% endif %}</td>
       <td><a class="cm-name" href="{{ e.url }}"><span class="cm-ic">{% icon e.icon 15 %}</span>{{ e.name }}</a></td>
       <td>{{ e.type }}</td><td>{{ e.vendor|default:"–" }}</td><td>{{ e.site|default:"–" }}</td><td>{{ e.owner|default:"–" }}</td>
     </tr>{% empty %}<tr><td colspan="8" class="empty">Nothing in this window.</td></tr>{% endfor %}</tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="milestones" %}
 </div>
 </div>
 {{ timeline|json_script:"lc-timeline" }}

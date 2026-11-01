@@ -63,11 +63,14 @@ def _scan():
         flag, days = ci_flag(ci)
         if flag == ci.lifecycle_flag:
             continue
+        stale = days is not None and days < -STALE_DAYS
+        if emitted >= MAX_EVENTS and not stale:
+            continue   # keep the old flag so the next run emits this change instead of losing it
         previous = ci.lifecycle_flag
         ci.lifecycle_flag = flag
         ConfigurationItem.objects.filter(pk=ci.pk).update(lifecycle_flag=flag)
         changed += 1
-        if emitted >= MAX_EVENTS or (days is not None and days < -STALE_DAYS):
+        if stale:
             continue
         if flag:
             date = ci.eol_date if flag.startswith("eol") else ci.warranty_end
@@ -83,10 +86,13 @@ def _scan():
         flag, days = license_flag(lic)
         if flag == lic.alert_flag:
             continue
+        stale = days is not None and days < -STALE_DAYS
+        if emitted >= MAX_EVENTS and not stale:
+            continue
         previous = lic.alert_flag
         License.objects.filter(pk=lic.pk).update(alert_flag=flag)
         changed += 1
-        if emitted >= MAX_EVENTS or (days is not None and days < -STALE_DAYS):
+        if stale:
             continue
         if flag == "expired":
             title = f"License {lic.product} expired on {lic.expiry.isoformat()}"

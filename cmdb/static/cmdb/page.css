@@ -95,7 +95,8 @@
 .pg-cmdb .cm-cols { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .pg-cmdb .cm-nc { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--mute-bg);
   color: var(--ink-2); font-size: 13px; }
-.pg-cmdb .cm-nc .ic { margin-top: 1px; }
+.pg-cmdb .cm-nc .ic { margin-top: 1px; flex: none; }
+.pg-cmdb .cm-nc > span, .pg-cmdb .cm-nc code { min-width: 0; overflow-wrap: anywhere; }
 .pg-cmdb .cm-nc.t-crit { background: var(--crit-bg); color: var(--crit-ink); }
 
 /* detail page */
@@ -434,3 +435,9 @@
   max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: #fff; }
 .pg-cmdb .cm-form .field > div > div > label { display: flex; gap: 8px; align-items: center; font-weight: 400; font-size: 13.5px; padding: 3px 0; cursor: pointer; justify-content: flex-start; }
 .pg-cmdb .cm-form .field > div > div > label:has(input:checked) { color: var(--primary); font-weight: 500; }
+
+/* long CI names in breadcrumbs wrap instead of widening the page on phones */
+@media (max-width: 700px) {
+  .crumbs { flex-wrap: wrap; row-gap: 2px; }
+  .crumbs > a, .crumbs > span { overflow-wrap: anywhere; }
+}

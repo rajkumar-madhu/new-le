@@ -321,7 +321,8 @@ def build(user, domain="", service="", host="", window=DEFAULT_WINDOW):
         probe_note = "" if (s.url_checks.all() or s.domains.all()) else "no linked checks"
         cells = [_cell(col, m[col], pooled.base_ms, probe_note if col in PROBE_COLS else
                        ("" if insts and not prom_error and prom_on else prom_note)) for col, _l in COLUMNS]
-        return {"ci": s, "name": s.name, "cells": cells, "metrics": m, "samples": pooled, "instances": insts,
+        hot = {c["col"]: c["state"] in ("warning", "critical") for c in cells}
+        return {"ci": s, "name": s.name, "cells": cells, "metrics": m, "samples": pooled, "instances": insts, "hot": hot,
                 "health": services.worst(c["state"] for c in cells), "checks": len(s.url_checks.all()) + len(s.domains.all())}
 
     rows, domains_tbl = [], []
@@ -362,6 +363,9 @@ def build(user, domain="", service="", host="", window=DEFAULT_WINDOW):
     }
 
 
+MAX_CHAIN_STEPS = 20000
+
+
 def domain_chain(dom, edges, ci_map, health, max_len=6):
     """Longest dependency path among a domain's services and what they rely on (for the mini topology)."""
     members = {r["ci"].pk for r in dom["service_rows"]}
@@ -369,12 +373,14 @@ def domain_chain(dom, edges, ci_map, health, max_len=6):
         members.add(dom["ci"].pk)
     adj = services.dependency_adjacency(edges)
     best = []
+    budget = [MAX_CHAIN_STEPS]   # bounds the search on dense graphs (it is exponential in max_len)
 
     def dfs(node, path):
         nonlocal best
+        budget[0] -= 1
         if len(path) > len(best):
             best = list(path)
-        if len(path) >= max_len:
+        if len(path) >= max_len or budget[0] <= 0:
             return
         for nxt, rt in adj.get(node, ()):
             if nxt in path or nxt not in ci_map:

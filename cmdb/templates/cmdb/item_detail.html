@@ -39,7 +39,7 @@
           <td>{% include "cmdb/_health.html" with state=r.target.health %}</td>
           <td>{{ r.get_origin_display }}{% if r.confidence < 100 %} <span class="t-mute">({{ r.confidence }}%)</span>{% endif %}</td>
           <td class="wrap cm-note">{{ r.note|default:"–" }}</td>
-          {% if can_admin %}<td><form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}#relationships"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form></td>{% endif %}
+          {% if can_admin %}<td>{% if r.can_delete %}<form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}#relationships"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form>{% endif %}</td>{% endif %}
         </tr>{% empty %}<tr><td colspan="7" class="empty">No outgoing relationships.</td></tr>{% endfor %}</tbody></table></div>
       <h3 class="cm-h3">Incoming <small class="t-mute">… → {{ ci.name }}</small></h3>
       <div class="table-wrap dense"><table>
@@ -51,7 +51,7 @@
           <td>{% include "cmdb/_health.html" with state=r.source.health %}</td>
           <td>{{ r.get_origin_display }}{% if r.confidence < 100 %} <span class="t-mute">({{ r.confidence }}%)</span>{% endif %}</td>
           <td class="wrap cm-note">{{ r.note|default:"–" }}</td>
-          {% if can_admin %}<td><form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}#relationships"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form></td>{% endif %}
+          {% if can_admin %}<td>{% if r.can_delete %}<form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}#relationships"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form>{% endif %}</td>{% endif %}
         </tr>{% empty %}<tr><td colspan="7" class="empty">No incoming relationships.</td></tr>{% endfor %}</tbody></table></div>
       {% if can_edit %}
       <details class="cm-add"{% if not outgoing and not incoming %} open{% endif %}><summary>{% icon "plus" 14 %}Add relationship</summary>
@@ -59,7 +59,7 @@
           <input type="hidden" name="next" value="{{ request.path }}#relationships"><input type="hidden" name="origin" value="manual"><input type="hidden" name="confidence" value="100">
           <div class="field"><label for="rf-source">Source</label><select id="rf-source" name="source" required>{% for o in rel_form.fields.source.queryset %}<option value="{{ o.pk }}"{% if o.pk == ci.pk %} selected{% endif %}>{{ o.name }}</option>{% endfor %}</select></div>
           <div class="field"><label for="rf-type">Relationship</label><select id="rf-type" name="rel_type">{% for v, l in rel_types %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
-          <div class="field"><label for="rf-target">Target</label><select id="rf-target" name="target" required><option value="">Choose…</option>{% for o in rel_form.fields.target.queryset %}{% if o.pk != ci.pk %}<option value="{{ o.pk }}">{{ o.name }}</option>{% endif %}{% endfor %}</select></div>
+          <div class="field"><label for="rf-target">Target</label><select id="rf-target" name="target" required><option value="">Choose…</option>{% for o in rel_form.fields.target.queryset %}<option value="{{ o.pk }}">{{ o.name }}</option>{% endfor %}</select></div>
           <div class="field"><label for="rf-note">Note</label><input id="rf-note" type="text" name="note" maxlength="300" placeholder="Optional"></div>
           <div class="field cm-relform-go"><button class="btn primary sm" type="submit">Add</button></div>
         </form>
@@ -135,8 +135,8 @@
 
     {% if host %}<div class="panel">
       <div class="panel-h"><h2>Host Metrics</h2><small>node_exporter · {{ ci.prometheus_instance }}</small></div>
-      {% if not host.connected %}<p class="cm-nc">{% icon "plug" 16 %}Prometheus not connected. Set <code>LINKEDEYE_PROMETHEUS_URL</code> to show CPU, memory, disk and network.</p>
-      {% elif host.error %}<p class="cm-nc t-crit">{% icon "alert" 16 %}{{ host.error }}</p>
+      {% if not host.connected %}<p class="cm-nc">{% icon "plug" 16 %}<span>Prometheus not connected. Set <code>LINKEDEYE_PROMETHEUS_URL</code> to show CPU, memory, disk and network.</span></p>
+      {% elif host.error %}<p class="cm-nc t-crit">{% icon "alert" 16 %}<span>{{ host.error }}</span></p>
       {% else %}<div class="cm-metrics">{% for m in host.metrics %}<div class="cm-metric s-{{ m.state }}"><small>{{ m.label }}</small><b>{{ m.text }}</b></div>{% endfor %}</div>{% endif %}
     </div>{% endif %}
 

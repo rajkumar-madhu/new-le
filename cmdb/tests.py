@@ -588,3 +588,372 @@ class SeedTests(TestCase):
         self.assertEqual(self.client.get(reverse("cmdb:topology")).status_code, 200)
         call_command("seed_cmdb", "--clear", stdout=out)
         self.assertEqual((ConfigurationItem.objects.count(), Software.objects.count(), License.objects.count()), (0, 0, 0))
+
+
+@override_settings(LINKEDEYE_TENANT=T, PROMETHEUS_URL="")
+class RegressionTests(TestCase):
+    """Bugs found by end-to-end testing."""
+
+    def setUp(self):
+        self.mum = Site.objects.create(name="Mumbai (NSE)", code="mum")
+        self.siteop = User.objects.create_user("siteop")
+        Membership.objects.create(user=self.siteop, site=self.mum, role="operator")
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "pw")
+        self.viewer = User.objects.create_user("viewer")
+        self.dr_host = ci("dr-oms-01", "server", site="DR Site", owner="Infra")
+        self.dr_svc = ci("Reference Site", "service", site="DR Site")
+        self.platform = ci("Platform", "business_domain", site="All Sites")
+        self.mum_db = ci("PostgreSQL", "database", site="Mumbai (NSE)")
+        rel(self.dr_svc, self.dr_host, "runs_on")
+        rel(self.dr_svc, self.platform, "part_of")
+        rel(self.mum_db, self.platform, "part_of")
+
+    def _upload(self, text):
+        return SimpleUploadedFile("cis.csv", text.encode(), content_type="text/csv")
+
+    def test_import_cannot_take_over_item_on_other_site(self):
+        self.client.force_login(self.siteop)
+        r = self.client.post(reverse("cmdb:items_import"),
+                             {"file": self._upload("name,site,owner\ndr-oms-01,Mumbai (NSE),pwned\n"), "update_existing": "on"})
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "a site you cannot manage")
+        self.dr_host.refresh_from_db()
+        self.assertEqual((self.dr_host.site, self.dr_host.owner), ("DR Site", "Infra"))
+        self.assertTrue(AuditEvent.objects.filter(action="import", result="failed").exists())
+        # the same user may still update items on their own site
+        r = self.client.post(reverse("cmdb:items_import"),
+                             {"file": self._upload("name,type,site,owner\nPostgreSQL,database,Mumbai (NSE),DBA\n"),
+                              "update_existing": "on"})
+        self.assertEqual(r.status_code, 302)
+        self.mum_db.refresh_from_db()
+        self.assertEqual(self.mum_db.owner, "DBA")
+
+    def test_import_reports_unknown_choice_once(self):
+        from . import csvio
+        res = csvio.import_cis(self._upload("name,type\nX,toaster\n"), self.admin)
+        self.assertEqual(len(res["errors"]), 1)
+        self.assertIn("unknown type", res["errors"][0][1])
+        self.assertNotIn("required", res["errors"][0][1])
+
+    def test_detail_does_not_leak_items_from_other_sites(self):
+        self.client.force_login(self.siteop)
+        r = self.client.get(reverse("cmdb:item_detail", args=[self.platform.pk]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "PostgreSQL")
+        self.assertNotContains(r, "Reference Site")
+        self.assertNotContains(r, "dr-oms-01")
+        # an unscoped admin still sees the whole graph
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("cmdb:item_detail", args=[self.platform.pk]))
+        self.assertContains(r, "Reference Site")
+        self.assertContains(r, "dr-oms-01")
+
+    def test_recent_incidents_scoped_to_user_sites(self):
+        if not _has_model("servicedesk", "Ticket"):
+            self.skipTest("servicedesk not installed")
+        from servicedesk.models import Ticket
+        Ticket.objects.create(tenant_key=T, kind="incident", title="Mumbai DB slow", ci_name="PostgreSQL", site="Mumbai (NSE)")
+        Ticket.objects.create(tenant_key=T, kind="incident", title="DR DB slow", ci_name="PostgreSQL", site="DR Site")
+        mine = services.recent_incidents(["PostgreSQL"], user=self.siteop)
+        self.assertEqual([i["title"] for i in mine["items"]], ["Mumbai DB slow"])
+        self.assertEqual(mine["open"], 1)
+        self.assertEqual(len(services.recent_incidents(["PostgreSQL"], user=self.admin)["items"]), 2)
+
+    def test_cancel_link_never_echoes_unsafe_next(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("cmdb:item_create") + "?next=javascript:alert(document.cookie)")
+        self.assertNotContains(r, "javascript:")
+        r = self.client.get(reverse("cmdb:item_create") + "?next=https://evil.example/")
+        self.assertNotContains(r, "evil.example")
+        r = self.client.get(reverse("cmdb:item_create") + "?next=/assets/")
+        self.assertContains(r, 'value="/assets/"')
+
+    def test_lifecycle_job_keeps_changes_beyond_the_cap_for_next_run(self):
+        soon = timezone.localdate() + timedelta(days=5)
+        for i in range(5):
+            ci(f"host-{i}", warranty_end=soon)
+        with mock.patch.object(jobs, "MAX_EVENTS", 2):
+            jobs.lifecycle_scan()
+            self.assertEqual(Event.objects.filter(source="cmdb", kind="lifecycle").count(), 2)
+            jobs.lifecycle_scan()
+            self.assertEqual(Event.objects.filter(source="cmdb", kind="lifecycle").count(), 4)
+            jobs.lifecycle_scan()
+        self.assertEqual(Event.objects.filter(source="cmdb", kind="lifecycle").count(), 5)
+        self.assertFalse(ConfigurationItem.objects.filter(name__startswith="host-", lifecycle_flag="").exists())
+        jobs.lifecycle_scan()
+        self.assertEqual(Event.objects.filter(source="cmdb", kind="lifecycle").count(), 5)
+
+    def test_viewer_license_links_do_not_lead_to_403(self):
+        lic = License.objects.create(tenant_key=T, product="RHEL sub", seats=0,
+                                     expiry=timezone.localdate() + timedelta(days=10))
+        sw = Software.objects.create(tenant_key=T, name="RHEL")
+        lic.software = sw
+        lic.save()
+        sw.installs.add(self.mum_db)
+        edit = reverse("cmdb:license_edit", args=[lic.pk])
+        self.client.force_login(self.viewer)
+        for url in (reverse("cmdb:licenses"), reverse("cmdb:lifecycle"), reverse("cmdb:software_detail", args=[sw.pk])):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            self.assertNotContains(r, edit)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("cmdb:licenses")), edit)
+
+    def test_lifecycle_list_is_paginated(self):
+        soon = timezone.localdate() + timedelta(days=5)
+        for i in range(30):
+            ci(f"box-{i:02d}", warranty_end=soon)
+        self.client.force_login(self.viewer)
+        r = self.client.get(reverse("cmdb:lifecycle"))
+        self.assertEqual(r.context["page"].paginator.count, 30)
+        self.assertEqual(len(r.context["page"].object_list), 25)
+        r = self.client.get(reverse("cmdb:lifecycle") + "?page=2")
+        self.assertContains(r, "box-29")
+
+    def test_software_form_only_offers_manageable_items_and_keeps_others(self):
+        sw = Software.objects.create(tenant_key=T, name="Agent")
+        sw.installs.add(self.platform.pk and ci("global-host", site="All Sites"))
+        from .forms import SoftwareForm
+        form = SoftwareForm(user=self.siteop)
+        offered = set(form.fields["installs"].queryset.values_list("name", flat=True))
+        self.assertEqual(offered, {"PostgreSQL"})
+        self.client.force_login(self.siteop)
+        r = self.client.post(reverse("cmdb:software_edit", args=[sw.pk]),
+                             {"name": "Agent", "version": "", "installs": [self.mum_db.pk]})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(set(sw.installs.values_list("name", flat=True)), {"global-host", "PostgreSQL"})
+
+    def test_domain_chain_is_bounded_on_dense_graphs(self):
+        # a complete layered DAG: unbounded DFS would explore every path
+        layers = [[ci(f"n{l}-{i}", "application", business_domain="Dense") for i in range(8)] for l in range(7)]
+        for a, b in zip(layers, layers[1:]):
+            for x in a:
+                for y in b:
+                    rel(x, y, "depends_on")
+        d = hm.build(self.admin)
+        dom = next(x for x in d["domains"] if x["name"] == "Dense")
+        visits = []
+        real = services.dependency_adjacency
+
+        class Counting(dict):
+            def get(self, key, default=None):
+                visits.append(key)
+                return super().get(key, default)
+
+        with mock.patch.object(services, "dependency_adjacency", lambda edges: Counting(real(edges))), \
+                mock.patch.object(hm, "MAX_CHAIN_STEPS", 300):
+            chain = hm.domain_chain(dom, d["edges"], d["ci_map"], {})
+        self.assertLessEqual(len(visits), 300 + 6)   # unbounded this graph needs ~40,000 steps
+        self.assertEqual(len(chain), 6)
+
+    def test_seed_reuses_existing_item_with_different_case(self):
+        ci("oms", "application")
+        call_command("seed_cmdb", stdout=io.StringIO())
+        self.assertEqual(ConfigurationItem.objects.filter(name__iexact="oms").count(), 1)
+
+    def test_list_actions_follow_the_row_site(self):
+        self.client.force_login(self.siteop)
+        edit_global, edit_mine = reverse("cmdb:item_edit", args=[self.platform.pk]), reverse("cmdb:item_edit", args=[self.mum_db.pk])
+        r = self.client.get(reverse("cmdb:items"))
+        self.assertContains(r, edit_mine)
+        self.assertNotContains(r, edit_global)
+        host = ci("mum-host", "server", site="Mumbai (NSE)")
+        glob = ci("glob-host", "server", site="All Sites")
+        r = self.client.get(reverse("cmdb:assets"))
+        self.assertContains(r, reverse("cmdb:item_edit", args=[host.pk]))
+        self.assertNotContains(r, reverse("cmdb:item_edit", args=[glob.pk]))
+        sw = Software.objects.create(tenant_key=T, name="Agent")
+        sw.installs.add(host, glob)
+        r = self.client.get(reverse("cmdb:software_detail", args=[sw.pk]))
+        self.assertContains(r, f'name="remove" value="{host.pk}"')
+        self.assertNotContains(r, f'name="remove" value="{glob.pk}"')
+        self.assertNotContains(r, f'<option value="{self.platform.pk}"')
+        # a site admin only gets delete buttons for relationships whose source is on their site
+        sadmin = User.objects.create_user("sadmin")
+        Membership.objects.create(user=sadmin, site=self.mum, role="admin")
+        other = ci("dr-db", "database", site="All Sites")
+        r1 = rel(self.mum_db, other, "connects_to")
+        r2 = rel(other, self.mum_db, "depends_on")
+        self.client.force_login(sadmin)
+        r = self.client.get(reverse("cmdb:relationships"))
+        self.assertContains(r, reverse("cmdb:relationship_delete", args=[r1.pk]))
+        self.assertNotContains(r, reverse("cmdb:relationship_delete", args=[r2.pk]))
+        r = self.client.get(reverse("cmdb:item_detail", args=[self.mum_db.pk]))
+        self.assertContains(r, reverse("cmdb:relationship_delete", args=[r1.pk]))
+        self.assertNotContains(r, reverse("cmdb:relationship_delete", args=[r2.pk]))
+
+    def test_asset_kpis_match_the_lists_they_link_to(self):
+        today = timezone.localdate()
+        ci("eol-past", "server", eol_date=today - timedelta(days=3))
+        ci("eol-soon", "server", eol_date=today + timedelta(days=100))
+        ci("eol-retired", "server", eol_date=today - timedelta(days=3), status="retired")
+        ci("wty-out-retired", "server", warranty_end=today - timedelta(days=3), status="retired")
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("cmdb:assets"))
+        self.assertEqual(r.context["eol_due"], 2)
+        self.assertContains(r, 'href="?lifecycle=eol_due"')
+        r = self.client.get(reverse("cmdb:assets") + "?lifecycle=eol_due")
+        self.assertEqual({c.name for c in r.context["page"]}, {"eol-past", "eol-soon"})
+        r = self.client.get(reverse("cmdb:assets") + "?lifecycle=warranty_expired")
+        self.assertEqual(r.context["page"].paginator.count, r.context["warranty_expired"])
+
+    def test_top_services_highlight_follows_metric_grade(self):
+        from urlchecker.models import UrlCheck
+        svc = ci("Pay API", "service", business_domain="Payments")
+        chk = UrlCheck.objects.create(tenant_key=T, name="pay", url="https://pay.example/", degraded_ms=1000)
+        svc.url_checks.add(chk)
+        now = timezone.now()
+        for i in range(10):
+            UrlResult.objects.create(url_check=chk, checked_at=now - timedelta(minutes=i), status="online",
+                                     http_status=200, response_ms=100)
+        ci("Idle API", "service", business_domain="Payments", prometheus_instance="idle:9100")   # CPU critical, no probes
+        self.client.force_login(self.admin)
+        with override_settings(PROMETHEUS_URL="http://prom.example:9090"), \
+                mock.patch.object(hm, "host_metrics", return_value=({"idle:9100": {"cpu": 99.0}}, "")):
+            r = self.client.get(reverse("cmdb:heatmap") + "?domain=Payments")
+        self.assertEqual({x["name"]: x["health"] for x in r.context["details"]["rows"]}["Idle API"], "critical")
+        rows = {x["name"]: x for x in r.context["details"]["rows"]}
+        self.assertFalse(rows["Pay API"]["hot"]["latency"])
+        self.assertFalse(rows["Idle API"]["hot"]["latency"])    # no data is grey, never red
+        self.assertNotContains(r, '<td class="t-crit">–</td>')
+
+
+@override_settings(LINKEDEYE_TENANT=T, PROMETHEUS_URL="")
+class AdversarialQATests(TestCase):
+    """Bugs found by the second end-to-end (adversarial) pass."""
+
+    HUGE = "99999999999999999999999"
+
+    def setUp(self):
+        self.mum = Site.objects.create(name="Mumbai (NSE)", code="mum")
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "pw")
+        self.operator = User.objects.create_user("operator", is_staff=True)
+        # viewer on every site, operator on one: must not manage "All Sites" records
+        self.mixed = User.objects.create_user("mixed")
+        Membership.objects.create(user=self.mixed, site=None, role="viewer")
+        Membership.objects.create(user=self.mixed, site=self.mum, role="operator")
+        self.glob = ci("Trading", "business_domain", site="All Sites")
+        self.mum_host = ci("mum-host-01", "server", site="Mumbai (NSE)")
+        self.svc = ci("OMS", "application", site="Mumbai (NSE)")
+        self.sw = Software.objects.create(tenant_key=T, name="RHEL", version="9")
+
+    def test_all_sites_records_need_the_global_role(self):
+        self.assertFalse(services.can_manage(self.mixed, "operate", "All Sites"))
+        self.assertTrue(services.can_manage(self.mixed, "operate", "Mumbai (NSE)"))
+        self.assertFalse(services.can_manage(self.mixed, "operate", "DR Site"))
+        self.assertTrue(services.can_manage(self.operator, "operate", "All Sites"))
+        self.client.force_login(self.mixed)
+        self.assertEqual(self.client.get(reverse("cmdb:item_edit", args=[self.glob.pk])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("cmdb:item_edit", args=[self.mum_host.pk])).status_code, 200)
+        r = self.client.post(reverse("cmdb:item_create"), {"name": "global-x", "ci_type": "server", "status": "active",
+                                                           "environment": "prod", "site": "All Sites"})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(ConfigurationItem.objects.filter(name="global-x").exists())
+        r = self.client.get(reverse("cmdb:items"))
+        rows = {c.name: c for c in r.context["page"]}
+        self.assertFalse(rows["Trading"].can_edit)
+        self.assertTrue(rows["mum-host-01"].can_edit)
+
+    def test_out_of_range_ids_are_not_server_errors(self):
+        self.client.force_login(self.admin)
+        for name in ("item_detail", "item_edit", "software_detail", "software_edit", "license_edit"):
+            self.assertEqual(self.client.get(f"/{'cmdb/items' if 'item' in name else 'assets/software' if 'software' in name else 'assets/licenses'}/{self.HUGE}/"
+                                             + ("edit/" if "edit" in name else "")).status_code, 404, name)
+        self.assertEqual(self.client.post(f"/cmdb/items/{self.HUGE}/delete/").status_code, 404)
+        self.assertEqual(self.client.post(f"/cmdb/relationships/{self.HUGE}/delete/").status_code, 404)
+        r = self.client.get(reverse("cmdb:relationships") + f"?ci={self.HUGE}")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context["page"].paginator.count, 0)
+        self.assertEqual(self.client.get(reverse("cmdb:relationships_export") + f"?ci={self.HUGE}").status_code, 200)
+        self.assertEqual(self.client.get(reverse("cmdb:license_create") + f"?software={self.HUGE}").status_code, 200)
+        for data in ({"ci": self.HUGE}, {"remove": self.HUGE}):
+            r = self.client.post(reverse("cmdb:software_installs", args=[self.sw.pk]), data)
+            self.assertEqual(r.status_code, 302)
+        r = self.client.post(reverse("cmdb:relationship_create"), {"source": self.HUGE, "target": self.svc.pk,
+                                                                   "rel_type": "depends_on", "origin": "manual", "confidence": 1})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Relationship.objects.count(), 0)
+        r = self.client.post(reverse("cmdb:item_create"), {"name": "x1", "ci_type": "server", "status": "active",
+                                                           "environment": "prod", "site": "All Sites", "url_checks": [self.HUGE]})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.context["form"].errors.get("url_checks"))
+        r = self.client.post(reverse("cmdb:software_edit", args=[self.sw.pk]), {"name": "RHEL", "version": "9",
+                                                                               "installs": [self.HUGE]})
+        self.assertEqual(r.status_code, 200)
+        r = self.client.post(reverse("cmdb:license_create"), {"product": "p", "seats": 1, "software": self.HUGE})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.context["form"].errors.get("software"))
+
+    def test_detail_form_can_add_incoming_relationship(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("cmdb:item_detail", args=[self.mum_host.pk]))
+        target_select = r.content.decode().split('id="rf-target"')[1].split("</select>")[0]
+        self.assertIn(f'value="{self.mum_host.pk}"', target_select)   # "OMS runs on <this host>" is possible
+
+    def test_domain_filter_includes_part_of_members(self):
+        loose = ci("Settlement", "service", site="Mumbai (NSE)")   # no business_domain text
+        rel(loose, self.glob, "part_of")
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("cmdb:items") + "?domain=Trading")
+        self.assertEqual({c.name for c in r.context["page"]}, {"Trading", "Settlement"})
+        _dom, members = services.domain_members("Trading")
+        self.assertEqual({c.name for c in members}, {"Settlement"})
+
+    def test_import_reports_malformed_csv_instead_of_crashing(self):
+        self.client.force_login(self.admin)
+        text = "name,description\nok-row,fine\nbig-row," + "x" * 200000 + "\n"
+        r = self.client.post(reverse("cmdb:items_import"), {"file": SimpleUploadedFile("a.csv", text.encode())})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(any("not valid CSV" in m for _n, m in r.context["result"]["errors"]))
+        self.assertFalse(ConfigurationItem.objects.filter(name="ok-row").exists())
+        r = self.client.post(reverse("cmdb:items_import"), {"file": SimpleUploadedFile("h.csv", ("x" * 200000 + "\n").encode())})
+        self.assertEqual(r.status_code, 200)
+
+    def test_export_import_round_trip_keeps_formula_like_values(self):
+        c = ci("-backup", "server", site="Mumbai (NSE)", description="=1+1 is not a formula", owner="@ops")
+        self.client.force_login(self.admin)
+        body = self.client.get(reverse("cmdb:items_export") + "?q=backup").content
+        self.assertIn(b"'-backup", body)
+        r = self.client.post(reverse("cmdb:items_import"), {"file": SimpleUploadedFile("rt.csv", body), "update_existing": "on"})
+        self.assertEqual(r.status_code, 302, r.context and r.context["result"]["errors"])
+        self.assertFalse(ConfigurationItem.objects.filter(name="'-backup").exists())
+        c.refresh_from_db()
+        self.assertEqual((c.description, c.owner), ("=1+1 is not a formula", "@ops"))
+
+    def test_software_export_has_no_per_row_queries(self):
+        self.client.force_login(self.admin)
+
+        def count():
+            from django.db import connection
+            from django.test.utils import CaptureQueriesContext
+            with CaptureQueriesContext(connection) as q:
+                self.assertEqual(self.client.get(reverse("cmdb:software_export")).status_code, 200)
+            return len(q)
+        self.sw.installs.add(self.mum_host)
+        before = count()
+        for i in range(5):
+            Software.objects.create(tenant_key=T, name=f"sw{i}").installs.add(self.svc)
+        self.assertEqual(count(), before)
+        self.assertIn("mum-host-01", self.client.get(reverse("cmdb:software_export")).content.decode())
+
+    def test_relationship_list_names_the_item_filter(self):
+        rel(self.svc, self.mum_host, "runs_on")
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse("cmdb:relationships") + f"?ci={self.svc.pk}")
+        self.assertContains(r, "cm-ci-filter")
+        self.assertEqual(r.context["form"]["source"].value(), self.svc.pk)
+
+    def test_relationship_counts_ignore_items_on_hidden_sites(self):
+        siteop = User.objects.create_user("siteop2")
+        Membership.objects.create(user=siteop, site=self.mum, role="operator")
+        dr = ci("dr-db-01", "server", site="DR Site")
+        rel(self.svc, self.mum_host, "runs_on")
+        rel(self.svc, dr, "depends_on")
+        self.client.force_login(siteop)
+        r = self.client.get(reverse("cmdb:items"))
+        oms = next(c for c in r.context["page"] if c.name == "OMS")
+        self.assertEqual((oms.n_out, oms.n_in), (1, 0))
+        self.assertEqual(r.context["relationships"], 1)
+        self.client.force_login(self.admin)
+        oms = next(c for c in self.client.get(reverse("cmdb:items")).context["page"] if c.name == "OMS")
+        self.assertEqual(oms.n_out, 2)

@@ -4,24 +4,26 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.views.decorators.http import require_POST
 
-from core.access import require
+from core.access import can, require
 from core.audit import audit
 
 from .. import csvio, services
 from ..forms import LicenseForm, SoftwareForm
 from ..models import HARDWARE_TYPES, CIStatus, CIType, ConfigurationItem, Environment, License, Software
-from .common import csv_response, days_class, paginate, perms, query_without_page, safe_next
+from .common import csv_response, days_class, mark_row_perms, paginate, perms, query_without_page, safe_next, site_checker
 from .items import filter_items
 
 HW_CHOICES = [(v, l) for v, l in CIType.choices if v in HARDWARE_TYPES]
 LIFECYCLE_FILTERS = [("warranty_expired", "Warranty expired"), ("warranty_90", "Warranty ends ≤ 90 days"),
-                     ("eol_passed", "Past end of life"), ("eol_180", "EOL ≤ 180 days"), ("no_warranty", "No warranty date")]
+                     ("eol_passed", "Past end of life"), ("eol_180", "EOL ≤ 180 days"),
+                     ("eol_due", "Past EOL or EOL ≤ 180 days"), ("no_warranty", "No warranty date")]
 
 
 def _hardware(request):
@@ -35,6 +37,8 @@ def assets(request):
     today = timezone.localdate()
     qs = filter_items(request, base)
     lf = request.GET.get("lifecycle", "")
+    if lf in {k for k, _l in LIFECYCLE_FILTERS}:
+        qs = qs.exclude(status="retired")   # lifecycle filters concern live kit, like the KPI cards that link to them
     if lf == "warranty_expired":
         qs = qs.filter(warranty_end__lt=today)
     elif lf == "warranty_90":
@@ -43,6 +47,8 @@ def assets(request):
         qs = qs.filter(eol_date__lt=today)
     elif lf == "eol_180":
         qs = qs.filter(eol_date__gte=today, eol_date__lte=today + timedelta(days=180))
+    elif lf == "eol_due":
+        qs = qs.filter(eol_date__lte=today + timedelta(days=180))
     elif lf == "no_warranty":
         qs = qs.filter(warranty_end__isnull=True)
     vendor = request.GET.get("vendor", "").strip()
@@ -51,6 +57,7 @@ def assets(request):
     page = paginate(request, qs.order_by("name"))
     for c in page:
         c.w_cls, c.e_cls = days_class(c.warranty_days), days_class(c.eol_days, 180)
+    mark_row_perms(request, page)
     live = base.exclude(status="retired")
     type_counts = dict(base.order_by().values_list("ci_type").annotate(n=Count("pk")))
     ctx = {
@@ -126,9 +133,12 @@ def software_detail(request, pk):
     health = services.link_health(installs)
     for c in installs:
         c.health = health.get(c.pk, "unknown")
+    mark_row_perms(request, installs)
     licenses = list(sw.licenses.all().order_by("product"))
     seats = sum(l.seats for l in licenses)
-    candidates = visible.exclude(pk__in=[c.pk for c in installs]).exclude(ci_type=CIType.BUSINESS_DOMAIN).order_by("name")
+    may_edit = site_checker(request, "operate")
+    candidates = [c for c in visible.exclude(pk__in=[c.pk for c in installs]).exclude(ci_type=CIType.BUSINESS_DOMAIN).order_by("name")
+                  if may_edit(c.site)] if can(request.user, "operate") else []
     return render(request, "cmdb/software_detail.html", {
         "sw": sw, "installs": installs, "licenses": licenses, "seats": seats, "used": sw.installs.count(),
         "over": bool(licenses) and sw.installs.count() > seats, "candidates": candidates, **perms(request)})
@@ -160,17 +170,17 @@ def software_installs(request, pk):
     sw = get_object_or_404(_software(request), pk=pk)
     visible = services.ci_queryset(request.user)
     back = reverse("cmdb:software_detail", args=[sw.pk])
-    add, remove = request.POST.get("ci", ""), request.POST.get("remove", "")
-    if add.isdigit():
-        ci = get_object_or_404(visible, pk=int(add))
+    add, remove = services.as_pk(request.POST.get("ci")), services.as_pk(request.POST.get("remove"))
+    if add:
+        ci = get_object_or_404(visible, pk=add)
         if not services.can_manage(request.user, "operate", ci.site):
             messages.error(request, "You cannot change items on that site.")
             return redirect(back)
         sw.installs.add(ci)
         audit(request, "update", sw, action_detail="install added", ci=ci.name)
         messages.success(request, f"Recorded {sw} on {ci.name}.")
-    elif remove.isdigit():
-        ci = get_object_or_404(visible, pk=int(remove))
+    elif remove:
+        ci = get_object_or_404(visible, pk=remove)
         if not services.can_manage(request.user, "operate", ci.site):
             messages.error(request, "You cannot change items on that site.")
             return redirect(back)
@@ -197,9 +207,10 @@ def software_delete(request, pk):
 def software_export(request):
     resp, w = csv_response("software.csv")
     w.writerow(["name", "version", "vendor", "category", "installs", "licensed_seats", "installed_on"])
-    visible = services.ci_queryset(request.user)
-    for s in _software(request).prefetch_related("licenses").order_by("name", "version"):
-        hosts = list(s.installs.filter(pk__in=visible).order_by("name").values_list("name", flat=True))
+    visible = services.ci_queryset(request.user).order_by("name").only("pk", "name")
+    for s in _software(request).prefetch_related("licenses", Prefetch("installs", queryset=visible, to_attr="visible_installs")
+                                                 ).order_by("name", "version"):
+        hosts = [c.name for c in s.visible_installs]
         w.writerow([csvio.safe(s.name), csvio.safe(s.version), csvio.safe(s.vendor), csvio.safe(s.category), len(hosts),
                     sum(l.seats for l in s.licenses.all()), csvio.safe(";".join(hosts))])
     return resp
@@ -266,8 +277,8 @@ def license_form(request, pk=None):
             return redirect(safe_next(request, reverse("cmdb:licenses")))
     else:
         initial = {}
-        if lic is None and request.GET.get("software", "").isdigit():
-            initial["software"] = int(request.GET["software"])
+        if lic is None and services.as_pk(request.GET.get("software")):
+            initial["software"] = services.as_pk(request.GET["software"])
         form = LicenseForm(instance=lic, initial=initial)
     return render(request, "cmdb/form.html", {
         "form": form, "obj": lic, "kind": "License", "list_url": reverse("cmdb:licenses"), "list_label": "Licenses",
@@ -304,6 +315,7 @@ WINDOWS = [("30", "Next 30 days", 0, 30), ("90", "31–90 days", 31, 90), ("180"
 def lifecycle_events(request, include_licenses=True):
     """Every dated lifecycle milestone: warranty end and EOL of CIs, license expiry."""
     today = timezone.localdate()
+    can_edit_lic = can(request.user, "operate")
     out = []
     for c in services.ci_queryset(request.user).exclude(status="retired").filter(
             Q(warranty_end__isnull=False) | Q(eol_date__isnull=False)).order_by("name"):
@@ -315,7 +327,9 @@ def lifecycle_events(request, include_licenses=True):
     if include_licenses:
         for l in License.objects.filter(tenant_key=settings.LINKEDEYE_TENANT, expiry__isnull=False):
             out.append({"kind": "License expiry", "date": l.expiry, "days": (l.expiry - today).days, "name": l.product,
-                        "url": reverse("cmdb:license_edit", args=[l.pk]), "type": "License", "site": "",
+                        "url": (reverse("cmdb:license_edit", args=[l.pk]) if can_edit_lic
+                                else reverse("cmdb:licenses") + "?" + urlencode({"q": l.product})),
+                        "type": "License", "site": "",
                         "owner": l.vendor, "vendor": l.vendor, "icon": "key", "obj": l})
     out.sort(key=lambda e: (e["date"], e["name"].lower()))
     return out
@@ -368,7 +382,7 @@ def lifecycle(request):
         timeline.update({"yMax": peak, "yTicks": peak})
     hw = _hardware(request).exclude(status="retired")
     ctx = {
-        "events": shown, "window": win, "windows": [(k, l, counts[k]) for k, l, *_ in WINDOWS], "kind": kind,
+        "page": paginate(request, shown, 25), "window": win, "windows": [(k, l, counts[k]) for k, l, *_ in WINDOWS], "kind": kind,
         "timeline": timeline, "has_timeline": any(sum(s["values"]) for s in timeline["series"]),
         "k_warranty_expired": hw.filter(warranty_end__lt=today).count(),
         "k_warranty_90": hw.filter(warranty_end__gte=today, warranty_end__lte=today + timedelta(days=90)).count(),

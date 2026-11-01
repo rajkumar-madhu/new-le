@@ -28,6 +28,7 @@
       <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search source, target or note…" aria-label="Search relationships"></label>
       <select name="type" data-autosubmit aria-label="Relationship type"><option value="">All Types</option>{% for v, l in types %}<option value="{{ v }}"{% if request.GET.type == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
       <select name="origin" data-autosubmit aria-label="Origin"><option value="">All Origins</option><option value="manual"{% if request.GET.origin == 'manual' %} selected{% endif %}>Manual</option><option value="discovered"{% if request.GET.origin == 'discovered' %} selected{% endif %}>Discovered</option></select>
+      {% if ci_filter %}<span class="chip purple cm-ci-filter">Item: <a href="{{ ci_filter.get_absolute_url }}">{{ ci_filter.name }}</a></span>{% endif %}
       {% if filtered %}<a class="btn sm" href="{% url 'cmdb:relationships' %}">{% icon "x" 14 %}Clear</a>{% endif %}
     </form>
     <div class="table-wrap dense"><table>
@@ -39,7 +40,7 @@
         <td>{% if r.origin == "discovered" %}<span class="chip teal">Discovered</span>{% else %}<span class="chip mute">Manual</span>{% endif %}</td>
         <td class="num">{{ r.confidence }}%</td>
         <td class="wrap cm-note">{{ r.note|default:"–" }}</td>
-        {% if can_admin %}<td><form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form></td>{% endif %}
+        {% if can_admin %}<td>{% if r.can_delete %}<form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form>{% endif %}</td>{% endif %}
       </tr>{% empty %}<tr><td colspan="7" class="empty">{% if filtered %}No relationships match.{% else %}No relationships yet. Add one with the form.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
     {% include "core/_pager.html" with pager_noun="relationships" %}
   </div>

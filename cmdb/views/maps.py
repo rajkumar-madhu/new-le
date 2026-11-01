@@ -98,7 +98,7 @@ def heatmap_view(request):
         member_cis = [r["ci"] for r in sel["service_rows"]]
         names = [sel["name"]] + [c.name for c in member_cis]
         incidents = services.recent_incidents(names, limit=8 if tab == "incidents" else 5,
-                                              fingerprints=services.ci_fingerprints(member_cis))
+                                              fingerprints=services.ci_fingerprints(member_cis), user=request.user)
         health = services.link_health(d["ci_map"].values())
         health.update(hm.health_from_rows(domains))
         rows = sorted(sel["service_rows"], key=lambda r: r["name"].lower()) if tab == "services" else _top_services(sel["service_rows"])
