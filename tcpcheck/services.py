@@ -51,6 +51,11 @@ def role_label(user):
 
 
 # ------------------------------------------------------------------ evaluation
+def fmt_ms(v):
+    """Connect time for messages; matches the connect_ms template filter ("<1 ms" below half a millisecond)."""
+    return "<1 ms" if v < 0.5 else f"{v:.0f} ms"
+
+
 def evaluate(check, r):
     """Map a raw probe result to (status, message)."""
     if not r.ok:
@@ -61,8 +66,8 @@ def evaluate(check, r):
         got = f" (received “{r.banner[:60]}”)" if r.banner else " (nothing received)"
         return Status.DOWN, f"Banner did not contain “{check.expect_banner}”{got}"
     if r.response_ms is not None and r.response_ms > check.degraded_ms:
-        return Status.DEGRADED, f"Slow connect ({r.response_ms:.0f} ms > {check.degraded_ms} ms)"
-    msg = f"Connected in {r.response_ms:.0f} ms"
+        return Status.DEGRADED, f"Slow connect ({fmt_ms(r.response_ms)} > {check.degraded_ms} ms)"
+    msg = f"Connected in {fmt_ms(r.response_ms or 0)}"
     if check.expect_banner:
         msg += "; banner matched"
     return Status.ONLINE, msg
@@ -103,12 +108,13 @@ def save_result(check, r, now):
     return status
 
 
-def run_checks(items):
-    """Probe the checks in parallel, then store every result on this thread. Returns statuses in order."""
+def run_checks(items, workers=None):
+    """Probe the checks in parallel, then store every result on this thread. Returns statuses in order.
+    `workers` overrides settings.PROBE_WORKERS (interactive bulk runs use more, to bound the request time)."""
     items = list(items)
     if not items:
         return []
-    with ThreadPoolExecutor(max_workers=max(1, min(settings.PROBE_WORKERS, len(items)))) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, min(workers or settings.PROBE_WORKERS, len(items)))) as pool:
         raw = list(pool.map(_probe, items))
     now = timezone.now()
     out = []

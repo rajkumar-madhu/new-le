@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST
 
-from core.access import can, require
+from core.access import can, require, visible_sites
 from core.audit import audit
 
 from . import services, stats, uptime
@@ -22,6 +22,7 @@ from .forms import COMMON_PORTS, SlaForm, TcpCheckForm
 from .models import DEFAULT_SLA, SlaTarget, Status, TcpCheck, TcpResult
 
 RUN_ALL_LIMIT = 200
+RUN_ALL_WORKERS = 32        # "Run Check Now" waits for the whole batch: probe it wider than the scheduler does
 SORT_CHOICES = [("uptime", "lowest uptime"), ("sla", "SLA breaches"), ("name", "name"), ("type", "type"), ("site", "site")]
 FORM_FIELDS = ["name", "host", "port", "interval_seconds", "site", "tags", "expect_banner", "degraded_ms",
                "timeout_seconds", "description", "enabled"]
@@ -58,6 +59,17 @@ def _deny(request, text="You do not have permission to do that.", fallback=None)
         return JsonResponse({"error": text}, status=403)
     messages.error(request, text)
     return redirect(_next(request, fallback or reverse("tcpcheck:index")))
+
+
+def _cell(value):
+    """CSV cell safe to open in a spreadsheet: text starting with = + - @ (or a control char) is not a formula."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
+def _row(values):
+    return [_cell(v) for v in values]
 
 
 def _perms(request):
@@ -98,16 +110,21 @@ def _sites(request):
 # ------------------------------------------------------------------ Telnet Monitoring
 def _index_context(request, form, editing):
     scope = services.checks_for(request.user)
-    checks = list(scope.filter(enabled=True))
+    enabled = scope.filter(enabled=True)
+    checks = list(enabled)                # status counts / created dates; result queries use the subquery
     counts = stats.status_counts(checks)
     total = len(checks)
     pct = {k: (100.0 * v / total if total else 0) for k, v in counts.items()}
 
     page = Paginator(_filtered(request, scope), _per_page(request)).get_page(request.GET.get("page"))
     up24 = stats.uptime_map([c.pk for c in page], 24)
+    u = request.user
     for c in page:
         c.uptime24 = up24.get(c.pk)
-    avg = stats.avg_response(checks)
+        # site-scoped operators only get actions for checks on sites they manage
+        c.can_manage = services.can_manage(u, "operate", c.site)
+        c.can_delete = services.can_manage(u, "admin", c.site)
+    avg = stats.avg_response(enabled)
     week_ago = timezone.now() - timedelta(days=7)
     before = sum(1 for c in checks if c.created_at <= week_ago)
     all_events = request.GET.get("events") == "all"
@@ -118,18 +135,28 @@ def _index_context(request, form, editing):
         "page": page, "form": form, "editing": editing, "total": total, "counts": counts, "pct": pct,
         "disabled": scope.filter(enabled=False).count(),
         "avg_response": avg, "total_delta": _change(total, before) if before else None,
-        "avg_delta": _change(avg, stats.avg_response(checks, hours=24, offset_hours=24)),
-        "uptime7": stats.overall_uptime(checks, 24 * 7),
-        "donut": stats.donut(counts, total), "trend": stats.response_trend(checks),
-        "history": stats.daily_history(checks), "events": events, "all_events": all_events,
+        "avg_delta": _change(avg, stats.avg_response(enabled, hours=24, offset_hours=24)),
+        "uptime7": stats.overall_uptime(enabled, 24 * 7),
+        "donut": stats.donut(counts, total), "trend": stats.response_trend(enabled),
+        "history": stats.daily_history(enabled), "events": events, "all_events": all_events,
         "sites": _sites(request), "statuses": Status.choices, "ports": COMMON_PORTS,
         "query": _query(request), "query_noevents": _query(request, "events"),
     }
 
 
+def _initial_site(user):
+    """Default site for the add form: "All Sites" when the user may use it, else the first site they manage."""
+    if services.can_manage(user, "operate", "All Sites"):
+        return "All Sites"
+    for name in sorted(visible_sites(user) or ()):
+        if services.can_manage(user, "operate", name):
+            return name
+    return "All Sites"
+
+
 @require("view")
 def index(request):
-    form = TcpCheckForm()
+    form = TcpCheckForm(initial={"site": _initial_site(request.user)})
     return render(request, "tcpcheck/index.html", _index_context(request, form, None))
 
 
@@ -218,12 +245,14 @@ def run_now(request, pk):
     status = services.run_checks([obj])[0]
     obj.refresh_from_db()
     audit(request, "run", obj, status=str(status), response_ms=obj.last_response_ms, error=obj.last_error)
-    summary = f"{obj.name}: {Status(status).label}" + (f" – {obj.last_error}" if obj.last_error else
-                                                      f" in {obj.last_response_ms:.0f} ms" if obj.last_response_ms is not None else "")
+    summary = f"{obj.name}: {Status(status).label}" + (
+        f" – {obj.last_error}" if obj.last_error else
+        f" in {services.fmt_ms(obj.last_response_ms)}" if obj.last_response_ms is not None else "")
+    # also queued for JSON callers: the page's run buttons reload after the POST and show it there
+    (messages.success if status != Status.DOWN else messages.warning)(request, summary)
     if _wants_json(request):
         return JsonResponse({"status": status, "summary": summary, "response_ms": obj.last_response_ms,
                              "error": obj.last_error})
-    (messages.success if status != Status.DOWN else messages.warning)(request, summary)
     return redirect(_next(request, obj.get_absolute_url()))
 
 
@@ -232,13 +261,15 @@ def run_now(request, pk):
 def run_all(request):
     qs = _filtered(request, services.checks_for(request.user)).filter(enabled=True)
     items = [c for c in qs[:RUN_ALL_LIMIT] if services.can_manage(request.user, "operate", c.site)]
-    statuses = services.run_checks(items)
+    statuses = services.run_checks(items, workers=RUN_ALL_WORKERS)
     down = sum(1 for s in statuses if s == Status.DOWN)
     audit(request, "run", None, object_type="tcpcheck.tcpcheck", checks=len(items), down=down)
     summary = f"Checked {len(items)} TCP target(s): {len(items) - down} reachable, {down} down."
+    if not items:
+        summary = "No enabled TCP checks that you can run match these filters."
+    messages.success(request, summary)
     if _wants_json(request):
         return JsonResponse({"checked": len(items), "down": down, "summary": summary})
-    messages.success(request, summary)
     return redirect(_next(request, reverse("tcpcheck:index")))
 
 
@@ -308,11 +339,11 @@ def export_csv(request):
     rows = list(_filtered(request, services.checks_for(request.user)))
     up = stats.uptime_map([c.pk for c in rows], 24)
     for c in rows:
-        w.writerow([c.name, c.host, c.port, c.site, c.tags, "yes" if c.enabled else "no", c.last_status,
+        w.writerow(_row([c.name, c.host, c.port, c.site, c.tags, "yes" if c.enabled else "no", c.last_status,
                     "" if c.last_response_ms is None else round(c.last_response_ms, 1),
                     "" if c.pk not in up else f"{up[c.pk]:.3f}",
                     c.last_checked_at.isoformat() if c.last_checked_at else "", c.interval_seconds, c.expect_banner,
-                    c.last_error])
+                    c.last_error]))
     return resp
 
 
@@ -324,8 +355,8 @@ def history_csv(request, pk):
     w = csv.writer(resp)
     w.writerow(["checked_at", "status", "response_ms", "ip", "banner", "message"])
     for r in check.results.all().iterator():
-        w.writerow([r.checked_at.isoformat(), r.status, "" if r.response_ms is None else r.response_ms, r.ip or "",
-                    r.banner, r.message])
+        w.writerow(_row([r.checked_at.isoformat(), r.status, "" if r.response_ms is None else r.response_ms,
+                         r.ip or "", r.banner, r.message]))
     return resp
 
 
@@ -389,9 +420,9 @@ def uptime_export(request):
                 "sla_target", "sla_status", "last_checked"])
     fmt = lambda v: "" if v is None else f"{v:.3f}"  # noqa: E731
     for t in targets:
-        w.writerow([t.kind_label, t.name, t.address, t.site, t.status, fmt(t.up24), fmt(t.up7), fmt(t.up30),
-                    t.samples.get("30d", (0, 0))[1], f"{t.sla:.3f}", t.sla_state,
-                    t.last_checked_at.isoformat() if t.last_checked_at else ""])
+        w.writerow(_row([t.kind_label, t.name, t.address, t.site, t.status, fmt(t.up24), fmt(t.up7), fmt(t.up30),
+                         t.samples.get("30d", (0, 0))[1], f"{t.sla:.3f}", t.sla_state,
+                         t.last_checked_at.isoformat() if t.last_checked_at else ""]))
     return resp
 
 

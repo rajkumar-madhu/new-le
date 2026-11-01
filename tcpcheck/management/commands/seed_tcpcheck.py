@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from tcpcheck import services
-from tcpcheck.models import TcpCheck
+from tcpcheck.models import SlaTarget, TcpCheck
 
 EXAMPLES = [
     {"name": "Example – Cloudflare DNS (TCP 53)", "host": "1.1.1.1", "port": 53, "degraded_ms": 300,
@@ -33,7 +33,9 @@ class Command(BaseCommand):
     def handle(self, *args, run=False, remove=False, **opts):
         tenant = settings.LINKEDEYE_TENANT
         if remove:
-            n, _ = TcpCheck.objects.filter(tenant_key=tenant, name__in=[e["name"] for e in EXAMPLES]).delete()
+            qs = TcpCheck.objects.filter(tenant_key=tenant, name__in=[e["name"] for e in EXAMPLES])
+            SlaTarget.objects.filter(tenant_key=tenant, kind="tcp", object_id__in=list(qs.values_list("pk", flat=True))).delete()
+            n, _ = qs.delete()
             self.stdout.write(self.style.SUCCESS(f"Removed example TCP checks ({n} row(s) incl. history)."))
             return
         created = 0

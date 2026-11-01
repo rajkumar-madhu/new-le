@@ -549,3 +549,142 @@ class FilterTests(TestCase):
         self.assertEqual(connect_ms(0.2), "<1 ms")
         self.assertEqual(connect_ms(12.4), "12 ms")
         self.assertEqual(connect_ms(None), "–")
+
+
+# ------------------------------------------------------------------ regressions found in the end-to-end review
+class _SplitTelnetHandler(socketserver.BaseRequestHandler):
+    """Sends two Telnet option requests in separate packets, records every byte the client answers, then the banner."""
+
+    def handle(self):
+        import time
+        self.request.sendall(bytes([255, 253, 1]))            # IAC DO ECHO
+        time.sleep(0.15)
+        self.request.sendall(bytes([255, 251, 3]))            # IAC WILL SGA
+        time.sleep(0.15)
+        self.request.sendall(b"login: ")
+        got = b""
+        self.request.settimeout(0.5)
+        try:
+            while True:
+                chunk = self.request.recv(64)
+                if not chunk:
+                    break
+                got += chunk
+        except OSError:
+            pass
+        self.server.replies.append(got)
+
+
+@LOCAL
+class RegressionTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser("root", "r@example.com", "x")
+
+    def client_for(self, user):
+        c = Client(enforce_csrf_checks=True)
+        c.force_login(user)
+        return c
+
+    def token(self, c):
+        c.get(reverse("tcpcheck:index"))
+        return c.cookies["csrftoken"].value
+
+    def test_telnet_replies_are_sent_once(self):
+        """Each option request is refused exactly once, even when the banner arrives in several packets."""
+        srv = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _SplitTelnetHandler)
+        srv.daemon_threads, srv.replies = True, []
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            r = probe.tcp_probe("127.0.0.1", srv.server_address[1], 3, expect_banner="login:")
+            for _ in range(30):
+                if srv.replies:
+                    break
+                threading.Event().wait(0.1)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertTrue(r.banner_matched)
+        self.assertEqual(srv.replies[0], bytes([255, 252, 1, 255, 254, 3]))  # WONT ECHO, DONT SGA – no repeats
+
+    def test_legacy_ipv4_spellings_rejected(self):
+        for host in ("2130706433", "0x7f.1", "127.1", "0177.0.0.1", "0x7f000001"):
+            f = TcpCheckForm(data={"name": f"n-{host}", "host": host, "port": 22, "interval_seconds": 60,
+                                   "timeout_seconds": 5, "degraded_ms": 500, "enabled": "on"})
+            self.assertFalse(f.is_valid(), host)
+            self.assertIn("dotted-decimal", str(f.errors["host"]), host)
+        f = TcpCheckForm(data={"name": "ok", "host": "1e100.net", "port": 22, "interval_seconds": 60,
+                               "timeout_seconds": 5, "degraded_ms": 500})
+        self.assertTrue(f.is_valid(), f.errors)
+
+    def test_sub_millisecond_message_matches_ui(self):
+        c = make_check(name="Fast")
+        status, msg = services.evaluate(c, probe.ProbeResult(ok=True, response_ms=0.2))
+        self.assertEqual(status, Status.ONLINE)
+        self.assertEqual(msg, "Connected in <1 ms")
+        status, msg = services.evaluate(c, probe.ProbeResult(ok=True, response_ms=12.4))
+        self.assertEqual(msg, "Connected in 12 ms")
+
+    def test_csv_exports_neutralise_formulas(self):
+        chk = make_check(name="=HYPERLINK(\"http://evil\")", tags="+cmd", site="@site")
+        TcpResult.objects.create(tcp_check=chk, checked_at=timezone.now(), status="online", response_ms=1,
+                                 banner="=1+1", message="-x")
+        c = self.client_for(self.admin)
+        rows = list(csv.reader(io.StringIO(c.get(reverse("tcpcheck:export")).content.decode())))
+        self.assertEqual(rows[1][0], "'=HYPERLINK(\"http://evil\")")
+        self.assertEqual(rows[1][3], "'@site")
+        self.assertEqual(rows[1][4], "'+cmd")
+        rows = list(csv.reader(io.StringIO(c.get(reverse("tcpcheck:history_export", args=[chk.pk])).content.decode())))
+        self.assertEqual(rows[1][4:], ["'=1+1", "'-x"])
+        rows = list(csv.reader(io.StringIO(c.get(reverse("tcpcheck:uptime_export") + "?type=tcp").content.decode())))
+        self.assertEqual(rows[1][1], "'=HYPERLINK(\"http://evil\")")
+
+    def test_json_run_queues_message_for_the_reload(self):
+        chk = make_check(name="Closed", port=closed_port())
+        c = self.client_for(self.admin)
+        tok = self.token(c)
+        r = c.post(reverse("tcpcheck:run", args=[chk.pk]), HTTP_X_CSRFTOKEN=tok, HTTP_ACCEPT="application/json")
+        self.assertEqual(r.status_code, 200)
+        msgs = [str(m) for m in c.get(reverse("tcpcheck:index")).context["messages"]]
+        self.assertTrue(any("Closed: Down" in m for m in msgs), msgs)
+        c.post(reverse("tcpcheck:run_all"), HTTP_X_CSRFTOKEN=tok, HTTP_ACCEPT="application/json")
+        msgs = [str(m) for m in c.get(reverse("tcpcheck:index")).context["messages"]]
+        self.assertTrue(any("Checked 1 TCP target" in m for m in msgs), msgs)
+
+    def test_run_all_uses_wider_pool(self):
+        make_check(name="A", port=closed_port())
+        c = self.client_for(self.admin)
+        tok = self.token(c)
+        with mock.patch.object(services, "run_checks", wraps=services.run_checks) as rc:
+            c.post(reverse("tcpcheck:run_all"), HTTP_X_CSRFTOKEN=tok, HTTP_ACCEPT="application/json")
+        self.assertGreater(rc.call_args.kwargs.get("workers") or 0, 8)
+
+    def test_site_operator_sees_actions_only_for_their_sites(self):
+        dr = Site.objects.create(name="DR Site", code="dr")
+        u = User.objects.create_user("drop")
+        Membership.objects.create(user=u, site=dr, role="operator")
+        mine = make_check(name="Mine", site="DR Site")
+        shared = make_check(name="Shared", site="All Sites")
+        r = self.client_for(u).get(reverse("tcpcheck:index"))
+        html = r.content.decode()
+        self.assertIn(reverse("tcpcheck:run", args=[mine.pk]), html)
+        self.assertIn(reverse("tcpcheck:edit", args=[mine.pk]), html)
+        self.assertIn(reverse("tcpcheck:detail", args=[shared.pk]), html)          # visible …
+        self.assertNotIn(reverse("tcpcheck:run", args=[shared.pk]), html)          # … but not runnable
+        self.assertNotIn(reverse("tcpcheck:edit", args=[shared.pk]), html)
+        self.assertNotIn(reverse("tcpcheck:delete", args=[mine.pk]), html)         # operators never delete
+        # the add form defaults to a site the user may use, not "All Sites"
+        self.assertEqual(r.context["form"]["site"].value(), "DR Site")
+
+    def test_admin_sees_delete_for_every_row(self):
+        chk = make_check(name="Any", site="Elsewhere")
+        html = self.client_for(self.admin).get(reverse("tcpcheck:index")).content.decode()
+        self.assertIn(reverse("tcpcheck:delete", args=[chk.pk]), html)
+
+    def test_seed_remove_drops_sla_targets(self):
+        call_command("seed_tcpcheck", stdout=io.StringIO())
+        pk = TcpCheck.objects.filter(tags="example").first().pk
+        SlaTarget.objects.create(kind="tcp", object_id=pk, target=Decimal("99"))
+        call_command("seed_tcpcheck", "--remove", stdout=io.StringIO())
+        self.assertFalse(TcpCheck.objects.filter(tags="example").exists())
+        self.assertFalse(SlaTarget.objects.filter(kind="tcp", object_id=pk).exists())

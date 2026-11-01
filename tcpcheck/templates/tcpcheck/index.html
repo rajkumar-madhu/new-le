@@ -75,7 +75,7 @@
           <td class="{% if c.uptime24 is None %}t-mute{% elif c.uptime24 < 99 %}t-crit{% else %}t-ok{% endif %}">{% if c.uptime24 is None %}–{% else %}{{ c.uptime24|pct }}{% endif %}</td>
           <td title="{{ c.last_checked_at|date:'d M Y H:i:s' }}">{{ c.last_checked_at|short_dt }}</td>
           <td><div class="row-actions">
-            {% if can_operate %}
+            {% if c.can_manage %}
             <button class="btn icon blue" data-post="{% url 'tcpcheck:run' c.pk %}" title="Run check now" aria-label="Run check now for {{ c.name }}">{% icon "play" 14 %}</button>
             <a class="btn icon blue" href="{% url 'tcpcheck:edit' c.pk %}?{{ query.urlencode }}#form" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>
             {% endif %}
@@ -83,7 +83,7 @@
               <div class="menu-pop">
                 <a href="{% url 'tcpcheck:detail' c.pk %}">{% icon "eye" 14 %}View details</a>
                 <a href="{% url 'tcpcheck:history_export' c.pk %}">{% icon "download" 14 %}Export history</a>
-                {% if can_admin %}<form method="post" action="{% url 'tcpcheck:delete' c.pk %}" data-confirm="Delete the check “{{ c.name }}” and its history?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger" type="submit" aria-label="Delete {{ c.name }}">{% icon "trash" 14 %}Delete</button></form>{% endif %}
+                {% if c.can_delete %}<form method="post" action="{% url 'tcpcheck:delete' c.pk %}" data-confirm="Delete the check “{{ c.name }}” and its history?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger" type="submit" aria-label="Delete {{ c.name }}">{% icon "trash" 14 %}Delete</button></form>{% endif %}
               </div></details>
           </div></td>
         </tr>

@@ -1,5 +1,6 @@
 import ipaddress
 import re
+import socket
 from decimal import Decimal
 
 from django import forms
@@ -42,6 +43,12 @@ def clean_host_value(host):
         return str(ip)
     if ":" in host:
         raise forms.ValidationError("Put the port in the Port field, not in the host.")
+    try:  # legacy IPv4 spellings (2130706433, 0x7f.1, 127.1, 0177.0.0.1) resolve to an address but hide it
+        socket.inet_aton(host)
+    except (OSError, ValueError):
+        pass
+    else:
+        raise forms.ValidationError("Write IPv4 addresses in dotted-decimal form, e.g. 10.0.0.5.")
     if not HOST_RE.match(host):
         raise forms.ValidationError("Enter a valid hostname or IP address.")
     return host.rstrip(".").lower()

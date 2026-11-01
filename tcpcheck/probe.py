@@ -74,6 +74,7 @@ def read_banner(sock, expect, deadline):
     """Read until `expect` appears, MAX_BANNER bytes arrived, the peer closes, or the deadline passes."""
     raw = bytearray()
     text = b""
+    sent = 0  # replies are recomputed from the whole buffer; only the new ones go out (never answer twice)
     while len(raw) < MAX_BANNER:
         left = deadline - time.monotonic()
         if left <= 0:
@@ -87,11 +88,12 @@ def read_banner(sock, expect, deadline):
             break
         raw += chunk
         text, replies = parse_telnet(bytes(raw))
-        if replies:
+        if len(replies) > sent:
             try:
-                sock.sendall(replies)
+                sock.sendall(replies[sent:])
             except OSError:
                 pass
+            sent = len(replies)
         if expect and expect in text.decode("utf-8", errors="replace"):
             break
     if not text and raw:
