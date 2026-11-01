@@ -1,0 +1,99 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Uptime Checks{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'tcpcheck/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Monitoring</span>{% icon "chevron-right" 14 %}<a href="{% url 'tcpcheck:uptime' %}">Uptime Checks</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-tcpcheck uptime">
+<div class="head">
+  <div class="glyph">{% icon "alarm" 44 %}</div>
+  <div><h1>Uptime Checks</h1><p>Availability of every monitored URL, TCP port and domain against its SLA target</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'tcpcheck:uptime_export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export CSV</a>
+    <a class="btn" href="{% url 'urlchecker:index' %}">{% icon "globe" 17 %}URL Checker</a>
+    <a class="btn" href="{% url 'tcpcheck:index' %}">{% icon "terminal" 17 %}Telnet Monitoring</a>
+  </div>
+</div>
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "radar" 22 %}</div><div class="kpi-body"><div class="label">Monitored Targets</div><div class="value">{{ total }}</div></div></div><div class="sub tight" title="{{ by_kind.url }} URL checks · {{ by_kind.tcp }} TCP checks · {{ by_kind.domain }} domains">{{ by_kind.url }} URL · {{ by_kind.tcp }} TCP · {{ by_kind.domain }} domains</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Up Now</div><div class="value split">{{ up_now }} {% if up_pct is not None %}<span class="delta t-ok">{{ up_pct|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Online or degraded{% if unknown_now %} · {{ unknown_now }} not checked{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Down Now</div><div class="value split">{{ down_now }} {% if down_pct is not None %}<span class="delta t-crit">{{ down_pct|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub"><a href="?{% if query.urlencode %}{{ query.urlencode }}&amp;{% endif %}status=down">Show down targets</a></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "activity" 22 %}</div><div class="kpi-body"><div class="label">Uptime (24h)</div><div class="value {% if overall.d1 is None %}t-mute{% elif overall.d1 < default_sla %}t-crit{% else %}t-ok{% endif %}">{{ overall.d1|pct }}</div></div></div><div class="sub">7 days: {{ overall.d7|pct }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "alarm" 26 %}</div><div class="kpi-body"><div class="label">Uptime (30 days)</div><div class="value {% if overall.d30 is None %}t-mute{% elif overall.d30 < default_sla %}t-crit{% else %}t-ok{% endif %}">{{ overall.d30|pct }}</div></div></div><div class="sub">All results, all targets</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-ok">{% icon "award" 24 %}</div><div class="kpi-body"><div class="label">SLA Compliance</div><div class="value {% if met_pct is None %}t-mute{% elif sla_counts.breached %}t-crit{% else %}t-ok{% endif %}">{% if met_pct is None %}–{% else %}{{ met_pct|floatformat:1 }}%{% endif %}</div></div></div><div class="sub" title="{{ sla_counts.met }} met · {{ sla_counts.breached }} breached · {{ sla_counts.nodata }} without data">{{ sla_counts.met }} met · {{ sla_counts.breached }} breached</div></div>
+</section>
+
+<section class="grid g-3 g-charts">
+  <div class="panel"><div class="panel-h"><h2>SLA Compliance (30 days)</h2></div>
+    {% if total %}
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-sla"></div>
+      <div class="donut-legend">
+        <span><i class="dot fill-ok"></i>Met</span><b>{{ sla_counts.met }}</b>
+        <span><i class="dot fill-crit"></i>Breached</span><b>{{ sla_counts.breached }}</b>
+        <span><i class="dot fill-mute"></i>No data</span><b>{{ sla_counts.nodata }}</b>
+      </div></div>
+    {% else %}<div class="tc-empty">{% icon "radar" 28 %}<p>No monitored targets match.</p></div>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h nowrap"><h2>Daily Availability (Last {{ days }} days)</h2>
+      <div class="right seg sm" role="group" aria-label="Period">
+        <a class="{% if days == 7 %}on{% endif %}" href="?{% if query_nodays.urlencode %}{{ query_nodays.urlencode }}&amp;{% endif %}days=7">7d</a><a class="{% if days == 14 %}on{% endif %}" href="?{% if query_nodays.urlencode %}{{ query_nodays.urlencode }}&amp;{% endif %}days=14">14d</a><a class="{% if days == 30 %}on{% endif %}" href="?{{ query_nodays.urlencode }}">30d</a></div></div>
+    {% if has_daily %}
+    <div class="legend chart-legend">{% for s in daily.series %}<span><i style="background:{{ s.color }}"></i>{{ s.name }}</span>{% endfor %}</div>
+    <div class="chart" data-chart="line" data-src="d-daily" style="height:150px"></div>
+    {% else %}<div class="tc-empty">{% icon "calendar" 28 %}<p>No check results stored in this period yet.</p></div>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Lowest Uptime (30 days)</h2></div>
+    {% if worst %}<ul class="worst">{% for t in worst %}
+      <li><span class="chip kind-{{ t.kind }}">{{ t.kind_label }}</span><a href="{{ t.detail_url }}" title="{{ t.address }}">{{ t.name }}</a>
+        <span class="bar" aria-hidden="true"><i class="{% if t.sla_state == 'breached' %}fill-crit{% else %}fill-ok{% endif %}" style="width:{{ t.up30|floatformat:0 }}%"></i></span>
+        <b class="{% if t.sla_state == 'breached' %}t-crit{% else %}t-ok{% endif %}">{{ t.up30|pct }}</b></li>{% endfor %}</ul>
+    {% else %}<div class="tc-empty">{% icon "alarm" 28 %}<p>No results in the last 30 days.</p></div>{% endif %}
+  </div>
+</section>
+
+<div class="panel">
+  <div class="panel-h"><h2>All Monitored Targets ({{ page.paginator.count }})</h2>
+    <div class="right"><a class="btn sm ghost-primary" href="{% url 'tcpcheck:uptime_export' %}?{{ query.urlencode }}">{% icon "download" 15 %}Export</a></div></div>
+  <form class="toolbar compact" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    {% if request.GET.days %}<input type="hidden" name="days" value="{{ request.GET.days }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search name, URL or host…" aria-label="Search targets"></label>
+    <select name="type" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for v, l in kinds %}<option value="{{ v }}" {% if request.GET.type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="site" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="status" data-autosubmit aria-label="Status"><option value="">All Status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="sla" data-autosubmit aria-label="SLA"><option value="">Any SLA state</option><option value="met" {% if request.GET.sla == 'met' %}selected{% endif %}>SLA met</option><option value="breached" {% if request.GET.sla == 'breached' %}selected{% endif %}>SLA breached</option><option value="nodata" {% if request.GET.sla == 'nodata' %}selected{% endif %}>No data</option></select>
+    <select name="sort" data-autosubmit aria-label="Sort"><option value="status">Sort: problems first</option>{% for v, l in sort_choices %}<option value="{{ v }}" {% if request.GET.sort == v %}selected{% endif %}>Sort: {{ l }}</option>{% endfor %}</select>
+    <a class="btn icon blue" href="{% url 'tcpcheck:uptime' %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>
+  </form>
+  <div class="table-wrap dense uptime-table"><table>
+    <thead><tr><th>Name</th><th>Type</th><th>Target</th><th>Site</th><th>Status</th><th class="num">Uptime 24h</th><th class="num">7 days</th><th class="num">30 days</th><th class="num">SLA Target</th><th>SLA</th><th>Last Check</th>{% if can_operate %}<th><span class="sr">Actions</span></th>{% endif %}</tr></thead>
+    <tbody>{% for t in page %}
+      <tr>
+        <td title="{{ t.name }}">{% if t.detail_url %}<a href="{{ t.detail_url }}">{{ t.name }}</a>{% else %}{{ t.name }}{% endif %}</td>
+        <td><span class="chip kind-{{ t.kind }}">{{ t.kind_label }}</span></td>
+        <td class="mono addr" title="{{ t.address }}">{{ t.address }}</td>
+        <td title="{{ t.site }}">{{ t.site|default:"–" }}</td>
+        <td>{% badge t.status %}</td>
+        {% for v in t.uptime.values %}<td class="num {% if v is None %}t-mute{% elif v < t.sla %}t-crit{% else %}t-ok{% endif %}">{{ v|pct }}</td>{% endfor %}
+        <td class="num{% if not t.sla_custom %} t-mute{% endif %}" title="{% if t.sla_custom %}Custom target{% else %}Default target{% endif %}">{{ t.sla_display }}%</td>
+        <td>{% if t.sla_state == 'met' %}<span class="chip ok">Met</span>{% elif t.sla_state == 'breached' %}<span class="chip crit">Breached</span>{% else %}<span class="chip mute" title="No results in the last 30 days">No data</span>{% endif %}</td>
+        <td title="{{ t.last_checked_at|date:'d M Y H:i:s' }}">{{ t.last_checked_at|short_dt }}</td>
+        {% if can_operate %}<td>{% if t.can_edit_sla %}
+          <details class="row-menu sla-menu"><summary class="btn icon blue" title="Edit SLA target" aria-label="Edit SLA target for {{ t.name }}">{% icon "edit" 14 %}</summary>
+            <form class="menu-pop sla-pop" method="post" action="{% url 'tcpcheck:sla' %}">{% csrf_token %}
+              <input type="hidden" name="kind" value="{{ t.kind }}"><input type="hidden" name="object_id" value="{{ t.pk }}">
+              <input type="hidden" name="next" value="{{ request.get_full_path }}">
+              <label for="sla-{{ t.key|slugify }}">SLA target for {{ t.name|truncatechars:28 }}</label>
+              <div class="sla-row"><input id="sla-{{ t.key|slugify }}" type="number" name="target" min="50" max="100" step="0.001" value="{{ t.sla_display }}" required><span>%</span><button class="btn primary sm" type="submit">Save</button></div>
+            </form></details>{% endif %}</td>{% endif %}
+      </tr>
+    {% empty %}
+      <tr><td colspan="12" class="empty">{% if request.GET.q or request.GET.type or request.GET.site or request.GET.status or request.GET.sla %}No targets match these filters.{% else %}Nothing is monitored yet. Add checks in the <a href="{% url 'urlchecker:index' %}">URL Checker</a>, <a href="{% url 'tcpcheck:index' %}">Telnet Monitoring</a> or Domains.{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="targets" %}
+  <p class="foot-note">Uptime is computed from stored check results: degraded counts as available, a window without results shows “–”. SLA status is judged on 30-day uptime; targets without a custom target use the default {{ default_sla_text }}% (shown in grey).</p>
+</div>
+</div>
+{{ sla_donut|json_script:"d-sla" }}{{ daily|json_script:"d-daily" }}
+{% include "tcpcheck/_menus.html" %}
+{% endblock %}

@@ -1,0 +1,87 @@
+{% extends "core/base.html" %}{% load le tcpcheck_tags static %}
+{% block title %}{{ check.name }} · Telnet{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'tcpcheck/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Monitoring</span>{% icon "chevron-right" 14 %}<a href="{% url 'tcpcheck:index' %}">Telnet Monitoring</a>{% icon "chevron-right" 14 %}<span>{{ check.name }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-tcpcheck detail">
+<div class="head">
+  <div class="glyph tile-{{ check.last_status|tone }}">{% icon "terminal" 30 %}</div>
+  <div class="head-text"><h1>{{ check.name }} {% if check.enabled %}{% badge check.last_status %}{% else %}{% badge "paused" "Disabled" %}{% endif %}</h1>
+    <p><span class="mono">{{ check.target }}</span> · {{ check.site }} · every {{ check.get_interval_seconds_display }}{% if check.description %} · {{ check.description }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_manage %}
+    <button class="btn primary" data-post="{% url 'tcpcheck:run' check.pk %}" data-busy="Checking…">{% icon "play" 15 %}Run check now</button>
+    <a class="btn" href="{% url 'tcpcheck:edit' check.pk %}#form">{% icon "edit" 15 %}Edit</a>
+    {% endif %}
+    <a class="btn" href="{% url 'tcpcheck:history_export' check.pk %}">{% icon "download" 15 %}Export history</a>
+    {% if can_delete %}<form method="post" action="{% url 'tcpcheck:delete' check.pk %}" data-confirm="Delete the check “{{ check.name }}” and its history?">{% csrf_token %}<button class="btn danger-outline" type="submit">{% icon "trash" 15 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+{% if check.last_error %}<div class="tc-alert {{ check.last_status|tone }}">{% icon "alert" 16 %}<span><b>Last result:</b> {{ check.last_error }}</span></div>{% endif %}
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "bar" 22 %}</div><div class="kpi-body"><div class="label">Last Connect Time</div><div class="value">{{ check.last_response_ms|connect_ms }}</div></div></div><div class="sub" title="Average over the last 24 hours; Degraded above {{ check.degraded_ms }} ms">Avg 24h {{ avg24|connect_ms }} · limit {{ check.degraded_ms }} ms</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Uptime (24h)</div><div class="value {% if up.d1 is None %}t-mute{% elif up.d1 < sla_target %}t-crit{% endif %}">{{ up.d1|pct }}</div></div></div><div class="sub">Degraded counts as available</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "calendar" 22 %}</div><div class="kpi-body"><div class="label">Uptime (7 days)</div><div class="value {% if up.d7 is None %}t-mute{% elif up.d7 < sla_target %}t-crit{% endif %}">{{ up.d7|pct }}</div></div></div><div class="sub">From {{ result_count }} stored result{{ result_count|pluralize }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "alarm" 26 %}</div><div class="kpi-body"><div class="label">Uptime (30 days)</div><div class="value split">{{ up.d30|pct }} {% if sla_state == 'met' %}<span class="chip ok">SLA met</span>{% elif sla_state == 'breached' %}<span class="chip crit">SLA breached</span>{% endif %}</div></div></div><div class="sub">SLA target {{ sla_text }}% · <a href="{% url 'tcpcheck:uptime' %}?type=tcp&amp;q={{ check.name|urlencode }}">change</a></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last Checked</div><div class="value">{{ check.last_checked_at|ago }}</div></div></div><div class="sub" title="{{ check.last_checked_at|date:'d M Y H:i:s' }}">{% if check.last_ip %}Connected to {{ check.last_ip }}{% else %}{{ check.last_checked_at|date:"d M Y H:i"|default:"Not checked yet" }}{% endif %}</div></div>
+</section>
+
+<section class="grid g-2 detail-charts">
+  <div class="panel"><div class="panel-h nowrap"><h2>Connect Time (Last 24 Hours)</h2>
+    <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Min</span><span><i style="background:#dc2626"></i>Max</span></div></div>
+    {% if avg24 is not None %}<div class="chart" data-chart="line" data-src="d-trend" style="height:200px"></div>
+    {% else %}<div class="tc-empty">{% icon "activity" 28 %}<p>No successful connections in the last 24 hours.</p></div>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Daily Availability (Last 30 days)</h2></div>
+    {% if has_daily %}<div class="chart" data-chart="line" data-src="d-daily" style="height:200px"></div>
+    {% else %}<div class="tc-empty">{% icon "calendar" 28 %}<p>No results stored yet.</p></div>{% endif %}</div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel">
+    <div class="panel-h"><h2>Check History ({{ page.paginator.count }})</h2>
+      <div class="right">
+        <form method="get" class="inline-filter">{% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+          <select name="status" data-autosubmit aria-label="Filter by status"><option value="">All Status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></form>
+      </div></div>
+    <div class="table-wrap dense history-table"><table>
+      <thead><tr><th>Time</th><th>Status</th><th>Connect</th><th>Address</th><th>Banner</th><th>Message</th></tr></thead>
+      <tbody>{% for r in page %}
+        <tr><td title="{{ r.checked_at|date:'d M Y H:i:s' }}">{{ r.checked_at|date:"d M H:i:s" }}</td><td>{% badge r.status %}</td>
+          <td class="{% if r.status != 'online' %}t-{{ r.status|tone }}{% endif %}">{{ r.response_ms|connect_ms }}</td>
+          <td class="mono">{{ r.ip|default:"–" }}</td>
+          <td class="mono banner" title="{{ r.banner }}">{{ r.banner|default:"–" }}</td>
+          <td class="wrap {% if r.status != 'online' %}t-{{ r.status|tone }}{% endif %}">{{ r.message }}</td></tr>
+      {% empty %}<tr><td colspan="6" class="empty">{% if request.GET.status %}No results with this status.{% else %}No results yet.{% if check.enabled %} The scheduler (<code>manage.py run_probes</code>) runs this check every {{ check.get_interval_seconds_display }}.{% endif %}{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="results" %}
+  </div>
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Configuration</h2>{% if can_manage %}<div class="right"><a class="view-all" href="{% url 'tcpcheck:edit' check.pk %}#form">{% icon "edit" 14 %}Edit</a></div>{% endif %}</div>
+      <dl class="kv">
+        <dt>Host</dt><dd class="mono">{{ check.host }}</dd>
+        <dt>Port</dt><dd class="mono">{{ check.port }}</dd>
+        <dt>Site</dt><dd>{{ check.site }}</dd>
+        <dt>Interval</dt><dd>{{ check.get_interval_seconds_display }}</dd>
+        <dt>Timeout</dt><dd>{{ check.timeout_seconds }} s</dd>
+        <dt>Degraded above</dt><dd>{{ check.degraded_ms }} ms</dd>
+        <dt>Expected banner</dt><dd>{% if check.expect_banner %}<code>{{ check.expect_banner }}</code>{% else %}<span class="t-mute">None (connect only)</span>{% endif %}</dd>
+        <dt>Last banner</dt><dd>{% if check.last_banner %}<code>{{ check.last_banner }}</code>{% else %}<span class="t-mute">–</span>{% endif %}</dd>
+        <dt>Tags</dt><dd>{% for t in check.tag_list %}<span class="chip">{{ t }}</span> {% empty %}<span class="t-mute">–</span>{% endfor %}</dd>
+        <dt>Enabled</dt><dd>{% if check.enabled %}Yes{% else %}No{% endif %}</dd>
+        <dt>Created</dt><dd>{{ check.created_at|date:"d M Y H:i" }}</dd>
+      </dl>
+    </div>
+    {% if related %}<div class="panel"><div class="panel-h"><h2>Related</h2></div>
+      <ul class="tc-list">{% for r in related %}<li><span class="t-mute small">{{ r.kind }}</span>{% if r.url %}<a href="{{ r.url }}">{{ r.name }}</a>{% else %}<b>{{ r.name }}</b>{% endif %}{% if r.status %} {% badge r.status %}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+    <div class="panel"><div class="panel-h"><h2>Status Changes</h2></div>
+      <ul class="tc-list events">{% for e in events %}
+        <li><span class="sev {{ e.severity }}"></span><div><b>{{ e.title }}</b><small>{{ e.occurred_at|date:"d M Y H:i:s" }}{% if e.message %} · {{ e.message|truncatechars:90 }}{% endif %}</small></div></li>
+      {% empty %}<li class="t-mute small">No status changes recorded.</li>{% endfor %}</ul>
+    </div>
+  </div>
+</section>
+</div>
+{{ trend|json_script:"d-trend" }}{{ daily|json_script:"d-daily" }}
+{% endblock %}

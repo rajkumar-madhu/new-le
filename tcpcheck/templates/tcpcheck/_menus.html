@@ -1,0 +1,37 @@
+<script>
+/* Row menus / SLA popovers live inside scrolling table wraps, which would clip them: while open they are
+   positioned fixed next to their button (flipped above it when there is no room below). */
+(function () {
+  var root = document.querySelector('.pg-tcpcheck');
+  if (!root) return;
+  function place(d) {
+    var pop = d.querySelector('.menu-pop'), btn = d.querySelector('summary');
+    if (!pop || !btn) return;
+    var r = btn.getBoundingClientRect();
+    pop.style.position = 'fixed'; pop.style.right = 'auto';
+    var w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8));
+    var top = r.bottom + 4;
+    if (top + h > window.innerHeight - 8 && r.top - h - 4 > 8) top = r.top - h - 4;
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+  }
+  root.querySelectorAll('details.row-menu').forEach(function (d) {
+    d.addEventListener('toggle', function () {
+      if (!d.open) return;
+      root.querySelectorAll('details.row-menu[open]').forEach(function (o) { if (o !== d) o.removeAttribute('open'); });
+      place(d);
+      var f = d.querySelector('input[type=number]'); if (f) f.focus({ preventScroll: true });
+    });
+  });
+  function closeAll() { root.querySelectorAll('details.row-menu[open]').forEach(function (d) { d.removeAttribute('open'); }); }
+  document.addEventListener('click', function (e) {
+    root.querySelectorAll('details.row-menu[open]').forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(); });
+  window.addEventListener('resize', closeAll);
+  document.addEventListener('scroll', function (e) {
+    if (e.target && e.target.closest && e.target.closest('.menu-pop')) return;
+    closeAll();
+  }, true);
+})();
+</script>

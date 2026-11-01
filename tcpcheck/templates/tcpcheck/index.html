@@ -1,0 +1,148 @@
+{% extends "core/base.html" %}{% load le tcpcheck_tags static %}
+{% block title %}Telnet Monitoring{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'tcpcheck/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Monitoring</span>{% icon "chevron-right" 14 %}<a href="{% url 'tcpcheck:index' %}">Telnet Monitoring</a>{% if editing %}{% icon "chevron-right" 14 %}<span>Edit “{{ editing.name }}”</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-tcpcheck">
+<div class="head">
+  <div class="glyph">{% icon "terminal" 44 %}</div>
+  <div><h1>Telnet Monitoring</h1><p>Monitor TCP ports for reachability, connect time and service banners</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'tcpcheck:export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="{% url 'tcpcheck:uptime' %}?type=tcp">{% icon "alarm" 17 %}Uptime</a>
+    <a class="btn" href="?{% if query.urlencode %}{{ query.urlencode }}&amp;{% endif %}events=all#events">{% icon "file" 17 %}View Logs</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'tcpcheck:index' %}#form" data-focus-form>{% icon "plus" 17 %}Add Check</a>{% endif %}
+  </div>
+</div>
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "server" 22 %}</div><div class="kpi-body"><div class="label">Total Checks</div><div class="value split">{{ total }} {% if total_delta is not None %}<span title="Change vs 7 days ago">{% delta total_delta %}</span>{% endif %}</div></div></div><div class="sub">{% if disabled %}Enabled · {{ disabled }} disabled{% else %}Monitored TCP ports{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Online</div><div class="value split">{{ counts.online }} {% if total %}<span class="delta t-ok">{{ pct.online|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Ports reachable</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value split">{{ counts.down }} {% if total %}<span class="delta t-crit">{{ pct.down|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub" title="Refused, timed out, blocked or wrong banner">Ports not reachable</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "clock" 24 %}</div><div class="kpi-body"><div class="label">Degraded</div><div class="value split">{{ counts.degraded }} {% if total %}<span class="delta t-warn">{{ pct.degraded|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Slow connect time</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "bar" 22 %}</div><div class="kpi-body"><div class="label">Avg. Connect Time</div><div class="value split">{{ avg_response|connect_ms }} {% if avg_delta is not None %}<span title="Change vs the previous 24 hours">{% delta avg_delta good="down" %}</span>{% endif %}</div></div></div><div class="sub">Across all checks, last 24h</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "alarm" 26 %}</div><div class="kpi-body"><div class="label">Overall Uptime</div><div class="value {% if uptime7 is None %}t-mute{% elif uptime7 < 99 %}t-crit{% else %}t-ok{% endif %}">{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</div></div></div><div class="sub"><span class="delta t-ok">Last 7 days</span></div></div>
+</section>
+
+<section class="grid g-3 g-charts">
+  <div class="panel"><div class="panel-h"><h2>Port Status Overview</h2></div>
+    {% if total %}
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
+      <div class="donut-legend">
+        <span><i class="dot fill-ok"></i>Online</span><b>{{ counts.online }} ({{ pct.online|floatformat:1 }}%)</b>
+        <span><i class="dot fill-crit"></i>Down</span><b>{{ counts.down }} ({{ pct.down|floatformat:1 }}%)</b>
+        <span><i class="dot fill-warn"></i>Degraded</span><b>{{ counts.degraded }} ({{ pct.degraded|floatformat:1 }}%)</b>
+        {% if counts.unknown %}<span><i class="dot fill-mute"></i>Not checked</span><b>{{ counts.unknown }} ({{ pct.unknown|floatformat:1 }}%)</b>{% endif %}
+      </div></div>
+    {% else %}<div class="tc-empty">{% icon "terminal" 28 %}<p>No enabled TCP checks yet.</p></div>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h nowrap"><h2>Connect Time Trend (Last 24 Hours)</h2>
+      <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Minimum</span><span><i style="background:#dc2626"></i>Maximum</span></div></div>
+    {% if avg_response is not None %}<div class="chart" data-chart="line" data-src="d-trend" style="height:162px"></div>
+    {% else %}<div class="tc-empty">{% icon "activity" 28 %}<p>No successful connections in the last 24 hours.</p></div>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Port Status History (Last 7 days)</h2>
+      <div class="legend square stack-right"><span><i class="fill-ok"></i>Online</span><span><i class="fill-crit"></i>Down</span><span><i class="fill-warn"></i>Degraded</span></div></div>
+    <div class="chart history-chart" data-chart="bars" data-src="d-history" style="height:140px"></div></div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel list-panel">
+    <div class="panel-h"><h2>Monitored Ports ({{ page.paginator.count }})</h2>
+      <div class="right">
+        {% if can_operate %}<button class="btn primary sm" data-post="{% url 'tcpcheck:run_all' %}?{{ query.urlencode }}" data-busy="Checking…">{% icon "radar" 15 %}Run Check Now</button>{% endif %}
+        <a class="btn sm ghost-primary" href="{% url 'tcpcheck:export' %}?{{ query.urlencode }}">{% icon "download" 15 %}Export</a>
+      </div></div>
+    <form class="toolbar compact" method="get">
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search by name, host or tag…" aria-label="Search checks"></label>
+      <select name="site" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="status" data-autosubmit aria-label="Status"><option value="">All Status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="enabled" data-autosubmit aria-label="Enabled"><option value="">Enabled &amp; disabled</option><option value="1" {% if request.GET.enabled == '1' %}selected{% endif %}>Enabled only</option><option value="0" {% if request.GET.enabled == '0' %}selected{% endif %}>Disabled only</option></select>
+      <a class="btn icon blue" href="{% url 'tcpcheck:index' %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>
+    </form>
+    <div class="table-wrap dense ports-table"><table>
+      <thead><tr><th>#</th><th>Name</th><th>Host</th><th>Port</th><th>Site</th><th>Status</th><th>Connect Time</th><th>Uptime (24h)</th><th>Last Check</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for c in page %}
+        <tr class="{% if editing and editing.pk == c.pk %}sel{% endif %}{% if not c.enabled %} off{% endif %}">
+          <td>{{ page.start_index|add:forloop.counter0 }}</td>
+          <td title="{{ c.name }}{% if c.description %} – {{ c.description }}{% endif %}"><a href="{% url 'tcpcheck:detail' c.pk %}">{{ c.name }}</a></td>
+          <td class="mono" title="{{ c.host }}">{{ c.host }}</td>
+          <td class="mono">{{ c.port }}</td>
+          <td title="{{ c.site }}">{{ c.site }}</td>
+          <td title="{{ c.last_error }}">{% if c.enabled %}{% badge c.last_status %}{% else %}{% badge "paused" "Disabled" %}{% endif %}</td>
+          <td class="{% if c.last_status == 'degraded' %}t-warn{% elif c.last_status == 'down' %}t-crit{% endif %}">{{ c.last_response_ms|connect_ms }}</td>
+          <td class="{% if c.uptime24 is None %}t-mute{% elif c.uptime24 < 99 %}t-crit{% else %}t-ok{% endif %}">{% if c.uptime24 is None %}–{% else %}{{ c.uptime24|pct }}{% endif %}</td>
+          <td title="{{ c.last_checked_at|date:'d M Y H:i:s' }}">{{ c.last_checked_at|short_dt }}</td>
+          <td><div class="row-actions">
+            {% if can_operate %}
+            <button class="btn icon blue" data-post="{% url 'tcpcheck:run' c.pk %}" title="Run check now" aria-label="Run check now for {{ c.name }}">{% icon "play" 14 %}</button>
+            <a class="btn icon blue" href="{% url 'tcpcheck:edit' c.pk %}?{{ query.urlencode }}#form" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>
+            {% endif %}
+            <details class="row-menu"><summary class="btn icon" title="More actions" aria-label="More actions for {{ c.name }}">{% icon "more" 15 %}</summary>
+              <div class="menu-pop">
+                <a href="{% url 'tcpcheck:detail' c.pk %}">{% icon "eye" 14 %}View details</a>
+                <a href="{% url 'tcpcheck:history_export' c.pk %}">{% icon "download" 14 %}Export history</a>
+                {% if can_admin %}<form method="post" action="{% url 'tcpcheck:delete' c.pk %}" data-confirm="Delete the check “{{ c.name }}” and its history?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger" type="submit" aria-label="Delete {{ c.name }}">{% icon "trash" 14 %}Delete</button></form>{% endif %}
+              </div></details>
+          </div></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="10" class="empty">{% if request.GET.q or request.GET.site or request.GET.status or request.GET.enabled %}No TCP checks match these filters.{% else %}No TCP checks yet.{% if can_operate %} Add one with the form.{% endif %}{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="checks" %}
+  </div>
+
+  <div class="stack">
+    <div class="panel" id="form">
+      <div class="panel-h"><h2>{% if editing %}Edit “{{ editing.name }}”{% else %}Add / Edit TCP Check{% endif %}</h2>{% if editing %}<div class="right"><a href="{% url 'tcpcheck:index' %}">Cancel</a></div>{% endif %}</div>
+      {% if can_operate %}
+      <form class="check-form" method="post" action="{% if editing %}{% url 'tcpcheck:edit' editing.pk %}{% else %}{% url 'tcpcheck:create' %}{% endif %}" novalidate>{% csrf_token %}
+        {% if editing %}<input type="hidden" name="next" value="{% url 'tcpcheck:index' %}?{{ query.urlencode }}">{% endif %}
+        {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+        <div class="form-grid">
+          {% for f in form.main_fields %}
+          <div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+          {% endfor %}
+          <details class="field full advanced"{% if form.advanced_has_errors or editing and editing.expect_banner %} open{% endif %}><summary>{% icon "sliders" 14 %}Advanced options</summary>
+            <div class="form-grid">
+              {% for f in form.advanced_fields %}
+              <div class="field{% if f.name == 'description' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}{% if f.name == 'expect_banner' %}<span class="hint">Text the server must send first, e.g. <code>SSH-</code> or <code>220</code>.</span>{% endif %}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+              {% endfor %}
+            </div>
+          </details>
+          <div class="field full form-foot">
+            <label class="inline-check"><span class="switch">{{ form.enabled }}<span></span></span>Enabled</label>
+            <button class="btn primary sm" type="submit">{% if editing %}Save changes{% else %}Save Check{% endif %}</button>
+          </div>
+        </div>
+        <datalist id="tcp-ports">{% for p, l in ports %}<option value="{{ p }}">{{ l }}</option>{% endfor %}</datalist>
+        <datalist id="tcp-sites"><option value="All Sites">{% for s in sites %}<option value="{{ s }}">{% endfor %}</datalist>
+      </form>
+      {% else %}<p class="t-mute small">You have view access. Operators can add or change TCP checks.</p>{% endif %}
+    </div>
+
+    <div class="panel" id="events">
+      <div class="panel-h"><h2>Recent Check Events</h2><div class="right">{% if all_events %}<a class="view-all" href="?{{ query_noevents.urlencode }}#events">Show fewer</a>{% else %}<a class="view-all" href="?{% if query.urlencode %}{{ query.urlencode }}&amp;{% endif %}events=all#events">View All</a>{% endif %}</div></div>
+      <div class="table-wrap dense borderless events-table"><table>
+        <thead><tr><th>Time</th><th>Check</th><th>Status</th><th>Connect</th><th>Message</th></tr></thead>
+        <tbody>{% for e in events %}
+          <tr><td title="{{ e.checked_at|date:'d M Y H:i:s' }}">{{ e.checked_at|short_dt }}</td>
+            <td title="{{ e.tcp_check.name }}"><a href="{% url 'tcpcheck:detail' e.tcp_check_id %}">{{ e.tcp_check.name }}</a></td>
+            <td>{% badge e.status %}</td>
+            <td class="{% if e.status != 'online' %}t-{{ e.status|tone }}{% endif %}">{{ e.response_ms|connect_ms }}</td>
+            <td class="msg {% if e.status != 'online' %}t-{{ e.status|tone }}{% endif %}" title="{{ e.message }}">{{ e.message|default:"–" }}</td></tr>
+        {% empty %}<tr><td colspan="5" class="empty">No checks have run yet.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+</section>
+</div>
+{{ donut|json_script:"d-donut" }}{{ trend|json_script:"d-trend" }}{{ history|json_script:"d-history" }}
+<script>
+(function () {
+  if (location.hash === '#form') { var f = document.querySelector('#form input[name=name]'); if (f) f.focus({ preventScroll: true }); }
+})();
+</script>
+{% include "tcpcheck/_menus.html" %}
+{% endblock %}
