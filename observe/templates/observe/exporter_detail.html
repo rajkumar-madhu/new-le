@@ -1,0 +1,56 @@
+{% extends "core/base.html" %}{% load le static observe_tags %}
+{% block title %}{{ exp.name }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "observe/_crumbs.html" %}{% endblock %}
+{% block content %}
+<div class="pg-observe ob-detail">
+<div class="head">
+  <div class="glyph ob-glyph" style="color:{{ exp.cat_color }}">{% icon exp.cat_icon 32 %}</div>
+  <div class="ob-title"><h1>{{ exp.name }} {% if exp.status == "not_configured" %}{% badge "warning" "Not Configured" %}{% else %}{% badge exp.status %}{% endif %}</h1>
+    <p>{{ exp.exporter_type }} · {{ exp.category }}{% if exp.target %} · {{ exp.target }}{% endif %}{% if exp.site %} · {{ exp.site }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_edit %}{% if exp.scrapeable %}<form method="post" action="{% url 'observe:exporter_check' exp.pk %}">{% csrf_token %}<button class="btn" type="submit">{% icon "play" 16 %}Run Check</button></form>{% endif %}
+    <a class="btn" href="{% url 'observe:exporter_edit' exp.pk %}">{% icon "edit" 16 %}Edit</a>{% endif %}
+    <a class="btn" href="{% url 'observe:logs' %}?source={{ exp.name|urlencode }}">{% icon "logs" 16 %}View Logs</a>
+    {% if can_delete %}<form method="post" action="{% url 'observe:exporter_delete' exp.pk %}" data-confirm="Delete the exporter “{{ exp.name }}”?">{% csrf_token %}<button class="btn ob-danger" type="submit">{% icon "trash" 16 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+<section class="kpis ob-kpis" aria-label="Exporter health">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% icon "clock" 24 %}</div><div class="kpi-body"><div class="label">Last Seen</div><div class="value">{% if exp.last_seen %}{{ exp.last_seen|ago }}{% else %}Never{% endif %}</div></div></div><div class="sub">{% if exp.last_seen %}{{ exp.last_seen|short_dt }}{% else %}No successful scrape yet{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "bar" 24 %}</div><div class="kpi-body"><div class="label">Samples</div><div class="value">{% if exp.samples is not None %}{{ exp.samples|floatformat:"0g" }}{% else %}–{% endif %}</div></div></div><div class="sub">In the last successful scrape</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "zap" 24 %}</div><div class="kpi-body"><div class="label">Scrape Time</div><div class="value">{{ exp.last_scrape_ms|ms }}</div></div></div><div class="sub">{% if exp.last_checked_at %}Checked {{ exp.last_checked_at|ago }}{% else %}Not checked yet{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "file" 24 %}</div><div class="kpi-body"><div class="label">Logs (24h)</div><div class="value">{{ logs24|compact }}</div></div></div><div class="sub">Lines with source “{{ exp.name }}”</div></div>
+</section>
+
+{% if exp.last_error %}<div class="ob-note {% if exp.status == 'error' %}crit{% else %}warn{% endif %}">{% icon "alert" 16 %}<span>{{ exp.last_error }}</span></div>{% endif %}
+
+<section class="grid ob-detail-grid">
+  <div class="panel"><div class="panel-h"><h2>Configuration</h2></div>
+    <dl class="kv">
+      <dt>Type</dt><dd>{{ exp.exporter_type }}</dd>
+      <dt>Category</dt><dd><span class="ex-cat"><span style="color:{{ exp.cat_color }}">{% icon exp.cat_icon 14 %}</span>{{ exp.category }}</span></dd>
+      <dt>Target / device</dt><dd>{{ exp.target|default:"–" }}</dd>
+      <dt>Metrics URL</dt><dd>{% if exp.metrics_url %}<a href="{{ exp.metrics_url }}" target="_blank" rel="noopener noreferrer">{{ exp.metrics_url }}</a>{% else %}<span class="t-warn">Not configured</span>{% endif %}</dd>
+      <dt>Site</dt><dd>{{ exp.site|default:"–" }}</dd>
+      <dt>Enabled</dt><dd>{% if exp.enabled %}Yes – scraped every minute{% else %}No{% endif %}</dd>
+      <dt>Status since</dt><dd>{{ exp.status_changed_at|short_dt }}</dd>
+      <dt>Added</dt><dd>{{ exp.created_at|short_dt }}</dd>
+      {% if exp.description %}<dt>Description</dt><dd>{{ exp.description|linebreaksbr }}</dd>{% endif %}
+    </dl></div>
+  <div class="panel"><div class="panel-h ex-trend-h"><h2>Logs Trend (Last 24 Hours)</h2><div class="right legend sq"><span><i style="background:#1565f0"></i>Info</span><span><i class="fill-warn"></i>Warn</span><span><i class="fill-crit"></i>Error</span></div></div>
+    {% if trend.total %}<div class="chart" data-chart="bars" data-src="d-trend" style="height:200px"></div>{% else %}<p class="empty">No log lines from {{ exp.name }} in the last 24 hours.</p>{% endif %}</div>
+</section>
+
+<section class="grid ob-detail-grid">
+  <div class="panel"><div class="panel-h"><h2>Recent Logs</h2><a class="right view-all" href="{% url 'observe:logs' %}?source={{ exp.name|urlencode }}">View All {% icon "arrow-right" 14 %}</a></div>
+    <div class="table-wrap dense ob-logtable"><table><thead><tr><th>Time</th><th>Level</th><th>Host</th><th>Message</th></tr></thead><tbody>
+    {% for l in logs %}<tr><td>{{ l.ts|short_dt }}</td><td><span class="ex-level {{ l.tone }}">{{ l.level }}</span></td><td>{{ l.host|default:"–" }}</td><td class="ob-msg" title="{{ l.message }}">{{ l.message }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="empty">No log lines with source “{{ exp.name }}”.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="panel"><div class="panel-h"><h2>Health Events</h2><a class="right view-all" href="{% url 'observe:events' %}?fingerprint=exporter%3A{{ exp.pk }}&amp;range=all">View All {% icon "arrow-right" 14 %}</a></div>
+    <ul class="ob-timeline compact">{% for e in events %}<li class="{{ e.severity|sev_tone }}"><span class="ob-tl-ic t-{{ e.severity|sev_tone }}">{% ficon e.severity|sev_icon 16 %}</span><div><b>{{ e.title }}</b><small>{{ e.occurred_at|short_dt }}</small>{% if e.message %}<p>{{ e.message }}</p>{% endif %}</div></li>
+    {% empty %}<li class="empty">No state changes recorded. Events are raised when the exporter moves between Active and Error.</li>{% endfor %}</ul></div>
+</section>
+</div>
+{{ trend|json_script:"d-trend" }}
+{% endblock %}

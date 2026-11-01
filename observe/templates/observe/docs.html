@@ -1,0 +1,44 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Exporters & Log Ingest Documentation{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "observe/_crumbs.html" with last="Documentation" %}{% endblock %}
+{% block content %}
+<div class="pg-observe ob-docs">
+<div class="head">
+  <div class="glyph bg-info ob-glyph">{% icon "book" 30 %}</div>
+  <div><h1>Exporters &amp; Log Ingest</h1><p>How LinkedEye checks exporters and how to send logs to the Logs &amp; Events pages.</p></div>
+</div>
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>Exporter health checks</h2></div>
+    <ul class="ob-list">
+      <li>Every minute LinkedEye fetches the <b>metrics URL</b> of each enabled exporter and counts the metric samples in the response.</li>
+      <li><b>Active</b>: HTTP 2xx with at least one sample. <b>Error</b>: connection, TLS or DNS failure, a non-2xx status, or no samples. <b>Not Configured</b>: no metrics URL. <b>Inactive</b>: disabled.</li>
+      <li>Moving between Active and Error raises an event (source <code>observe</code>, fingerprint <code>exporter:&lt;id&gt;</code>) that appears under <a href="{% url 'observe:events' %}">Events</a> and is sent to the configured notification channels.</li>
+      <li>Scrapes follow the probe safety policy: private and loopback addresses must be listed in <code>LINKEDEYE_PROBE_ALLOWED_PRIVATE_CIDRS</code>; link-local and cloud metadata addresses are always refused.</li>
+      <li>Log lines are attributed to an exporter when their <code>source</code> equals the exporter name.</li>
+    </ul></div>
+  <div class="panel"><div class="panel-h"><h2>Log ingest API</h2>
+      <div class="right">{% if ingest_configured %}{% badge "active" "Enabled" %}{% else %}{% badge "warning" "Not connected" %}{% endif %}</div></div>
+    {% if not ingest_configured %}<div class="ob-note warn">{% icon "alert" 16 %}<span>Log ingest is disabled. Set <code>LINKEDEYE_LOG_INGEST_TOKEN</code> to a long random value on the server and restart it.</span></div>{% endif %}
+    <dl class="kv">
+      <dt>Endpoint</dt><dd><code>POST {{ ingest_url }}</code></dd>
+      <dt>Authentication</dt><dd><code>Authorization: Bearer &lt;LINKEDEYE_LOG_INGEST_TOKEN&gt;</code></dd>
+      <dt>Body</dt><dd>A JSON array, or NDJSON (one object per line, <code>Content-Type: application/x-ndjson</code>)</dd>
+      <dt>Limits</dt><dd>{{ max_entries }} entries and {{ max_kb }} KB per request</dd>
+      <dt>Retention</dt><dd>{{ retention_days }} days (<code>LOG_RETENTION_DAYS</code>)</dd>
+      <dt>Fields</dt><dd><code>source</code>, <code>level</code> (DEBUG, INFO, WARN, ERROR, CRITICAL) and <code>message</code> are required; <code>ts</code> (ISO 8601 or Unix time), <code>host</code>, <code>site</code> and <code>attributes</code> (object) are optional.</dd>
+      <dt>Events</dt><dd>ERROR and CRITICAL lines raise an event when the same source and message pattern has not been seen in the last 10 minutes.</dd>
+    </dl>
+    <pre class="log">curl -X POST {{ ingest_url }} \
+  -H "Authorization: Bearer $LINKEDEYE_LOG_INGEST_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '[{"source":"node-exporter-01","level":"WARN","message":"CPU usage 91%","host":"srv-app-01","site":"Mumbai DC"}]'</pre>
+    <p class="t-mute">Response: <code>{"accepted": 1, "rejected": 0, "errors": [], "events": 0, "events_suppressed": 0}</code>. 401 for a wrong token, 413 when a limit is exceeded, 503 when ingest is disabled.</p>
+  </div>
+</section>
+<div class="panel"><div class="panel-h"><h2>Shipping logs</h2></div>
+  <p class="t-mute">Any agent that can POST JSON over HTTP works, for example Vector (<code>http</code> sink with <code>encoding.codec = "json"</code>), Fluent Bit (<code>http</code> output, <code>Format json</code>) or a cron script. Map the agent's fields to <code>source</code>, <code>level</code> and <code>message</code>; put extra fields into <code>attributes</code>.</p>
+  <p class="t-mute">Categories used on the exporter inventory: {{ categories|join:", " }}.</p>
+</div>
+</div>
+{% endblock %}

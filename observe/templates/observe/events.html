@@ -1,0 +1,51 @@
+{% extends "core/base.html" %}{% load le static observe_tags %}
+{% block title %}Events{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span class="t-mute">Monitoring</span>{% icon "chevron-right" 14 %}<a href="{% url 'observe:logs' %}">Logs &amp; Events</a>{% icon "chevron-right" 14 %}<span>Events</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-observe ob-events">
+<div class="head">
+  <div class="glyph ob-glyph" style="color:var(--purple)">{% icon "bell" 40 %}</div>
+  <div><h1>Events</h1><p>State changes, alerts and log events from every LinkedEye module, newest first</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'observe:events_export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export CSV</a>
+    <a class="btn" href="{% url 'observe:logs' %}">{% icon "logs" 16 %}Logs</a>
+  </div>
+</div>
+
+<section class="kpis ob-ev-kpis" aria-label="Events in the last 24 hours">
+  <a class="kpi" href="?severity=critical&amp;range=24h"><div class="kpi-top"><div class="tile sq bg-crit">{% ficon "x-circle" 28 %}</div><div class="kpi-body"><div class="value">{{ sev_counts.critical }}</div><div class="label">Critical (24h)</div></div></div></a>
+  <a class="kpi" href="?severity=warning&amp;range=24h"><div class="kpi-top"><div class="tile sq bg-warn">{% ficon "alert" 28 %}</div><div class="kpi-body"><div class="value">{{ sev_counts.warning }}</div><div class="label">Warning (24h)</div></div></div></a>
+  <a class="kpi" href="?severity=info&amp;range=24h"><div class="kpi-top"><div class="tile sq bg-info">{% ficon "info" 28 %}</div><div class="kpi-body"><div class="value">{{ sev_counts.info }}</div><div class="label">Info (24h)</div></div></div></a>
+  <a class="kpi" href="?severity=ok&amp;range=24h"><div class="kpi-top"><div class="tile sq bg-ok">{% ficon "check-circle" 28 %}</div><div class="kpi-body"><div class="value">{{ sev_counts.ok }}</div><div class="label">Resolved (24h)</div></div></div></a>
+  <a class="kpi" href="?range=24h"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "bell" 26 %}</div><div class="kpi-body"><div class="value">{{ day_total }}</div><div class="label">All events (24h)</div></div></div></a>
+</section>
+
+<div class="panel">
+  <div class="panel-h"><h2>Event Timeline <small>({{ page.paginator.count|floatformat:"0g" }})</small></h2></div>
+  <form method="get" class="toolbar ob-filters">
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search title or message…" aria-label="Search events"></label>
+    <select name="severity" data-autosubmit aria-label="Severity"><option value="">All severities</option>{% for v, l in severities %}<option value="{{ v }}"{% if request.GET.severity == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="source" data-autosubmit aria-label="Source"><option value="">All sources</option>{% for s in sources %}<option{% if request.GET.source == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="kind" data-autosubmit aria-label="Kind"><option value="">All kinds</option>{% for k in kinds %}<option value="{{ k }}"{% if request.GET.kind == k %} selected{% endif %}>{{ k|capfirst }}</option>{% endfor %}</select>
+    <select name="site" data-autosubmit aria-label="Site"><option value="">All sites</option>{% for s in sites %}<option{% if request.GET.site == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="range" data-autosubmit aria-label="Time range">{% for k, l, _d in ranges %}<option value="{{ k }}"{% if range == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    {% if request.GET.fingerprint %}<input type="hidden" name="fingerprint" value="{{ request.GET.fingerprint }}">{% endif %}
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <button class="btn primary sm" type="submit">Search</button>
+    {% if query %}<a class="btn sm" href="{% url 'observe:events' %}">{% icon "x" 14 %}Clear</a>{% endif %}
+  </form>
+  {% if request.GET.fingerprint %}<p class="ob-chipline">Fingerprint: <span class="chip">{{ request.GET.fingerprint }}</span></p>{% endif %}
+  {% for g in groups %}
+  <h3 class="ob-day">{% if g.date == today %}Today{% elif g.date == yesterday %}Yesterday{% else %}{{ g.date|date:"l, d M Y" }}{% endif %}</h3>
+  <ul class="ob-timeline wide">{% for e in g.items %}<li class="{{ e.severity|sev_tone }}">
+    <span class="ob-tl-time">{{ e.occurred_at|time:"H:i:s" }}</span>
+    <span class="ob-tl-ic t-{{ e.severity|sev_tone }}">{% ficon e.severity|sev_icon 18 %}</span>
+    <div><b>{{ e.title }}</b>
+      <small>{% badge e.severity e.get_severity_display %} <span class="chip mute">{{ e.source }}</span> <span class="chip">{{ e.kind }}</span>{% if e.site %} · {{ e.site }}{% endif %}{% if e.fingerprint %} · <a href="?fingerprint={{ e.fingerprint|urlencode }}&amp;range=all" title="Events with the same fingerprint">{{ e.fingerprint|truncatechars:40 }}</a>{% endif %}</small>
+      {% if e.message %}<p>{{ e.message|truncatechars:400 }}</p>{% endif %}</div></li>{% endfor %}</ul>
+  {% empty %}<p class="empty">No events match these filters.</p>{% endfor %}
+  {% include "core/_pager.html" with pager_noun="events" %}
+</div>
+</div>
+{% endblock %}

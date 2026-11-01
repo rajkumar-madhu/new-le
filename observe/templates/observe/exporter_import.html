@@ -1,0 +1,37 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Import Exporters{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "observe/_crumbs.html" with last="Import" %}{% endblock %}
+{% block content %}
+<div class="pg-observe ob-formpage">
+<div class="head">
+  <div class="glyph bg-info ob-glyph">{% icon "upload" 30 %}</div>
+  <div><h1>Import Exporters</h1><p>Add or update exporters from a CSV file. New exporters with a metrics URL are scraped within a minute.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'observe:exporters_export' %}">{% icon "download" 16 %}Download current inventory</a></div>
+</div>
+<div class="grid ob-import-grid">
+<form method="post" enctype="multipart/form-data" class="panel ob-form">{% csrf_token %}
+  <div class="panel-h"><h2>Upload CSV</h2></div>
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  {% if report.fatal %}<p class="err">{{ report.fatal }}</p>{% endif %}
+  <div class="form-grid">
+    <div class="field full"><label for="{{ form.file.id_for_label }}">{{ form.file.label }} <span class="req">*</span></label>{{ form.file }}<span class="hint">{{ form.file.help_text }}</span>{% for e in form.file.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+    <div class="field full"><label class="inline-check">{{ form.update_existing }} {{ form.update_existing.label }}</label></div>
+  </div>
+  <div class="ob-form-foot"><a class="btn" href="{% url 'observe:exporters' %}">Cancel</a><button class="btn primary" type="submit">{% icon "upload" 16 %}Import</button></div>
+  {% if report and not report.fatal %}
+  <div class="ob-report">
+    <p><b>{{ report.created }}</b> created, <b>{{ report.updated }}</b> updated, <b>{{ report.errors|length }}</b> skipped.</p>
+    {% if report.errors %}<div class="table-wrap dense"><table><thead><tr><th>Row</th><th>Problem</th></tr></thead><tbody>{% for e in report.errors %}<tr><td>{{ e.row }}</td><td class="wrap">{{ e.error }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  </div>{% endif %}
+</form>
+<div class="panel"><div class="panel-h"><h2>File format</h2></div>
+  <p class="t-mute">The first row is the header. <code>name</code>, <code>type</code> and <code>category</code> are required; the other columns are optional. The export file uses the same columns, so you can export, edit and re-import.</p>
+  <pre class="log">name,type,category,target,metrics_url,site,enabled,description
+node-exporter-01,Node Exporter,Servers,srv-app-01,http://10.10.1.20:9100/metrics,Mumbai DC,yes,
+snmp-switch-01,SNMP,Network,10.10.1.10,,Mumbai DC,yes,metrics URL to be added</pre>
+  <p class="t-mute">Categories: {{ categories|join:", " }}.</p>
+</div>
+</div>
+</div>
+{% endblock %}

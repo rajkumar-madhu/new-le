@@ -1,0 +1,72 @@
+{% extends "core/base.html" %}{% load le static observe_tags %}
+{% block title %}Logs & Events{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span class="t-mute">Monitoring</span>{% icon "chevron-right" 14 %}<span>Logs &amp; Events</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-observe ob-logs">
+<div class="head">
+  <div class="glyph ob-glyph" style="color:var(--primary)">{% icon "logs" 40 %}</div>
+  <div><h1>Logs &amp; Events</h1><p>Search log lines received from exporters, servers and applications, and follow the platform event stream</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'observe:logs_export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export CSV</a>
+    <a class="btn" href="{% url 'observe:events' %}">{% icon "bell" 16 %}All Events</a>
+    <a class="btn" href="{% url 'observe:docs' %}">{% icon "book" 16 %}Ingest API</a>
+  </div>
+</div>
+{% if not ingest_configured %}<div class="ob-note warn">{% icon "plug" 16 %}<span><b>Log ingest is not connected.</b> Set <code>LINKEDEYE_LOG_INGEST_TOKEN</code> on the server, then send logs to <code>POST /api/v1/logs/</code> (<a href="{% url 'observe:docs' %}">how</a>). Lines already stored are still searchable.</span></div>{% endif %}
+
+<nav class="ob-levels" aria-label="Log levels in the selected range">
+  {% for l in level_links %}<a href="?{{ l.href }}" class="ob-lv lv-{{ l.value|lower|default:'all' }}{% if l.on %} on{% endif %}"{% if l.on %} aria-current="true"{% endif %}><span>{{ l.label }}</span><b>{{ l.n|floatformat:"0g" }}</b></a>{% endfor %}
+</nav>
+
+<section class="grid ob-logs-grid">
+  <div class="panel ob-search">
+    <div class="panel-h"><h2>Log Search <small>({{ page.paginator.count|floatformat:"0g" }} line{{ page.paginator.count|pluralize }})</small></h2>
+      <div class="right"><label class="inline-check ob-live" title="{% if live_ok %}Poll for new lines every 5 seconds{% else %}Live tail works on the first page without an end time{% endif %}"><span class="switch"><input type="checkbox" data-live-toggle{% if not live_ok %} disabled{% endif %}><span></span></span>Live tail</label><span class="t-mute ob-live-status" data-live-status aria-live="polite"></span></div></div>
+    <form method="get" class="toolbar ob-filters">
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search message, host or source…" aria-label="Search logs"></label>
+      <select name="level" data-autosubmit aria-label="Level"><option value="">All levels</option>{% for v, l in levels %}<option value="{{ v }}"{% if request.GET.level == v %} selected{% endif %}>{{ l }}</option>{% endfor %}<option value="WARN+"{% if request.GET.level == 'WARN+' %} selected{% endif %}>Warn and above</option><option value="ERROR+"{% if request.GET.level == 'ERROR+' %} selected{% endif %}>Error and above</option></select>
+      <select name="source" data-autosubmit aria-label="Source"><option value="">All sources</option>{% for s in sources %}<option{% if request.GET.source == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="site" data-autosubmit aria-label="Site"><option value="">All sites</option>{% for s in sites %}<option{% if request.GET.site == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="range" data-range-select aria-label="Time range">{% for k, l, _d in ranges %}<option value="{{ k }}"{% if info.range == k %} selected{% endif %}>{{ l }}</option>{% endfor %}<option value="custom"{% if info.range == 'custom' %} selected{% endif %}>Custom…</option></select>
+      <span class="ob-custom" data-custom{% if info.range != 'custom' %} hidden{% endif %}>
+        <label>From <input type="datetime-local" name="since" value="{{ request.GET.since }}" aria-label="From"></label>
+        <label>To <input type="datetime-local" name="until" value="{{ request.GET.until }}" aria-label="To"></label>
+      </span>
+      {% if request.GET.host %}<input type="hidden" name="host" value="{{ request.GET.host }}">{% endif %}
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+      <button class="btn primary sm" type="submit">Search</button>
+      {% if query %}<a class="btn sm" href="{% url 'observe:logs' %}">{% icon "x" 14 %}Clear</a>{% endif %}
+    </form>
+    {% if request.GET.host %}<p class="ob-chipline">Host: <span class="chip">{{ request.GET.host }}</span> <a href="?{{ host_clear }}">remove</a></p>{% endif %}
+    <div class="table-wrap dense ob-logtable" data-live data-feed="{% url 'observe:logs_feed' %}" data-params="{{ live_params }}" data-last-id="{{ max_id }}"><table>
+      <thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Host</th><th>Site</th><th>Message</th></tr></thead>
+      <tbody>{% for l in page %}<tr>
+        <td class="ob-ts" title="{{ l.ts|date:'c' }}">{{ l.ts|date:"d M H:i:s" }}</td>
+        <td><span class="ex-level {{ l.tone }}">{{ l.level }}</span></td>
+        <td><a href="?source={{ l.source|urlencode }}" title="{{ l.source }}">{{ l.source }}</a></td>
+        <td class="ob-host" title="{{ l.host }}">{% if l.host %}<a href="?host={{ l.host|urlencode }}">{{ l.host }}</a>{% else %}–{% endif %}</td>
+        <td class="ob-site" title="{{ l.site }}">{{ l.site|default:"–" }}</td>
+        <td class="ob-msg">{% if l.attributes or l.message|length > 140 %}<details><summary title="{{ l.message|truncatechars:300 }}">{{ l.message|truncatechars:140 }}</summary><pre class="log">{{ l.message }}{% if l.attributes %}
+
+attributes: {{ l.attributes|pprint }}{% endif %}</pre></details>{% else %}{{ l.message }}{% endif %}</td>
+      </tr>{% empty %}<tr class="ob-empty-row"><td colspan="6" class="empty">No log lines match these filters.{% if not ingest_configured %} Log ingest is not connected yet.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="lines" %}
+    <p class="t-mute ob-foot">Logs are kept for {{ retention_days }} days.</p>
+  </div>
+
+  <div class="panel ob-timeline-panel" id="events">
+    <div class="panel-h"><h2>Events Timeline</h2><a class="right view-all" href="{% url 'observe:events' %}">View All {% icon "arrow-right" 14 %}</a></div>
+    <form method="get" class="ob-ev-filters" action="#events">
+      {% for k, vs in ev_query.lists %}{% for v in vs %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{% endfor %}
+      <select name="eseverity" data-autosubmit aria-label="Event severity"><option value="">All severities</option>{% for v, l in severities %}<option value="{{ v }}"{% if request.GET.eseverity == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="esource" data-autosubmit aria-label="Event source"><option value="">All sources</option>{% for s in ev_sources %}<option{% if request.GET.esource == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    </form>
+    <ul class="ob-timeline">{% for e in events %}<li class="{{ e.severity|sev_tone }}"><span class="ob-tl-ic t-{{ e.severity|sev_tone }}">{% ficon e.severity|sev_icon 16 %}</span>
+      <div><b title="{{ e.title }}">{{ e.title }}</b><small>{{ e.occurred_at|short_dt }} · <span class="chip mute">{{ e.source }}</span>{% if e.site %} · {{ e.site }}{% endif %}</small>{% if e.message %}<p title="{{ e.message }}">{{ e.message|truncatechars:160 }}</p>{% endif %}</div></li>
+    {% empty %}<li class="empty">No events match.</li>{% endfor %}</ul>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'observe/observe.js' %}"></script>{% endblock %}

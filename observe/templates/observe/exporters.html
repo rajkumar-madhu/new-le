@@ -1,0 +1,92 @@
+{% extends "core/base.html" %}{% load static le observe_tags %}
+{% block title %}All Exporters, Logs & Events{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span class="t-mute">Monitoring</span>{% icon "chevron-right" 14 %}<span>Exporters, Logs &amp; Events</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-observe ob-exporters">
+<div class="head ex-head"><div class="glyph" style="color:var(--primary)">{% icon "settings" 44 %}</div>
+  <div class="ex-title"><h1>All Exporters, Logs &amp; Events</h1><p>Manage exporters, view real-time logs and events from all infrastructure, network, applications and services</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'observe:exporters_export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export</a>
+    {% if can_operate %}<a class="btn" href="{% url 'observe:exporters_import' %}">{% icon "upload" 16 %}Import</a>{% endif %}
+    <a class="btn" href="{% url 'observe:docs' %}">{% icon "book" 16 %}View Documentation</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'observe:exporter_create' %}{% if category %}?category={{ category|urlencode }}{% endif %}">{% icon "plus" 16 %}Add Exporter</a>{% endif %}
+  </div></div>
+
+<section class="kpis ex-kpis" aria-label="Summary">
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-purple sq">{% icon "database" 26 %}</div><div class="kpi-body"><div class="value split">{{ total }} {% if total_delta is not None %}<span title="Change vs 7 days ago">{% delta total_delta %}</span>{% endif %}</div><div class="label">Total Exporters</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 26 "thick" %}</div><div class="kpi-body"><div class="value split">{{ health.active }} {% if total %}<span class="ex-pct t-ok">{{ pct.active }}%</span>{% endif %}</div><div class="label">Active</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile s-mute">{% icon "pause" 24 "thick" %}</div><div class="kpi-body"><div class="value split">{{ health.inactive }} {% if total %}<span class="ex-pct t-mute">{{ pct.inactive }}%</span>{% endif %}</div><div class="label" title="Disabled exporters">Inactive</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-crit sq">{% ficon "alert" 32 %}</div><div class="kpi-body"><div class="value split">{{ health.error }} {% if total %}<span class="ex-pct t-crit">{{ pct.error }}%</span>{% endif %}</div><div class="label" title="Last scrape failed">Error</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-info sq">{% icon "file" 26 %}</div><div class="kpi-body"><div class="value" title="{{ logs24 }} log lines">{{ logs24|compact }}</div><div class="label ex-label-row"><span>Logs (24h)</span>{% if logs_delta is not None %}<span title="Change vs the previous 24 hours">{% delta logs_delta %}</span>{% endif %}</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-purple sq">{% icon "bell" 26 %}</div><div class="kpi-body"><div class="value split">{{ events24|compact }} {% if events_delta is not None %}<span title="Change vs the previous 24 hours">{% delta events_delta good="down" %}</span>{% endif %}</div><div class="label">Events (24h)</div></div></div></div>
+</section>
+
+<nav class="panel cat-strip" aria-label="Categories">
+  <a href="?{{ strip_query.urlencode }}"{% if not category %} class="on" aria-current="true"{% endif %}><span class="ci" style="color:#2563eb">{% icon "database" 22 %}</span><span>All</span><b>{{ filtered_total }}</b></a>
+  {% for c in cats %}<a href="?{% if strip_query %}{{ strip_query.urlencode }}&amp;{% endif %}category={{ c.name|urlencode }}"{% if category == c.name %} class="on" aria-current="true"{% endif %}><span class="ci" style="color:{{ c.color }}">{% icon c.icon 22 %}</span><span>{{ c.name }}</span><b>{{ c.count }}</b></a>{% endfor %}
+</nav>
+
+<section class="grid ex-main">
+  <div class="panel ex-list"><div class="panel-h"><h2>Exporters ({{ page.paginator.count }})</h2>
+      <div class="right">
+        {% if can_operate and total %}<button class="btn sm" type="button" data-post="{% url 'observe:exporter_check_all' %}?{{ query.urlencode }}" data-busy="Checking…" title="Scrape every enabled exporter with a metrics URL now">{% icon "radar" 15 %}Check All</button>{% endif %}
+        <a class="btn ghost-primary ex-refresh" href="?{{ request.GET.urlencode }}">{% icon "refresh" 16 %}Refresh</a></div></div>
+    <form method="get" class="toolbar ex-toolbar">
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search exporters by name, type, or device..." aria-label="Search exporters"></label>
+      <select name="category" aria-label="Category" data-autosubmit><option value="">All Categories</option>{% for v, l in categories %}<option value="{{ v }}"{% if category == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="status" aria-label="Status" data-autosubmit><option value="">All Status</option>{% for k, v in statuses %}<option value="{{ k }}"{% if request.GET.status == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      <select name="site" aria-label="Site" data-autosubmit><option value="">All Sites</option>{% for s in sites %}<option{% if request.GET.site == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    </form>
+    <div class="table-wrap dense ex-table"><table><thead><tr><th class="cb"><input type="checkbox" data-check-all="exp-ids" aria-label="Select all exporters on this page"></th><th>#</th><th>Name</th><th>Type</th><th>Category</th><th>Target / Device</th><th>Status</th><th>Last Seen</th><th class="num">Logs (24h)</th><th class="act">Actions</th></tr></thead><tbody>
+    {% for e in page %}<tr><td class="cb"><input type="checkbox" name="exp-ids" value="{{ e.pk }}" aria-label="Select {{ e.name }}"></td><td>{{ page.start_index|add:forloop.counter0 }}</td>
+      <td title="{{ e.name }}"><a href="{{ e.get_absolute_url }}">{{ e.name }}</a></td><td title="{{ e.exporter_type }}">{{ e.exporter_type }}</td>
+      <td><span class="ex-cat"><span style="color:{{ e.cat_color }}">{% icon e.cat_icon 14 %}</span>{{ e.category }}</span></td><td class="ex-target" title="{{ e.target }}">{{ e.target|default:"–" }}</td>
+      <td title="{% if e.last_error %}{{ e.last_error }}{% else %}{{ e.get_status_display }}{% endif %}">{% if e.status == "not_configured" %}{% badge "warning" "No config" %}{% else %}{% badge e.status %}{% endif %}</td>
+      <td title="{% if e.last_seen %}{{ e.last_seen|short_dt }}{% endif %}">{% if e.last_seen %}{{ e.last_seen|ago }}{% else %}<span class="t-mute">never</span>{% endif %}</td>
+      <td class="num">{% if e.logs24 %}<a href="{% url 'observe:logs' %}?source={{ e.name|urlencode }}">{{ e.logs24|floatformat:"0g" }}</a>{% else %}<span class="t-mute">0</span>{% endif %}</td>
+      <td class="act"><div class="row-actions">
+        {% if can_operate %}{% if e.scrapeable %}<button class="btn icon" type="button" data-post="{% url 'observe:exporter_check' e.pk %}" title="Run check now" aria-label="Run check now for {{ e.name }}">{% icon "play" 14 %}</button>{% else %}<span class="btn icon ex-off" title="{% if e.enabled %}No metrics URL to check{% else %}Disabled{% endif %}" aria-hidden="true">{% icon "play" 14 %}</span>{% endif %}{% endif %}
+        <a class="btn icon" href="{% url 'observe:logs' %}?source={{ e.name|urlencode }}" title="View logs" aria-label="View logs from {{ e.name }}">{% icon "analytics" 14 %}</a>
+        {% if can_operate %}<a class="btn icon" href="{% url 'observe:exporter_edit' e.pk %}" title="Edit" aria-label="Edit {{ e.name }}">{% icon "edit" 14 %}</a>{% endif %}
+        {% if e.metrics_url %}<a class="btn icon" href="{{ e.metrics_url }}" target="_blank" rel="noopener noreferrer" title="Open metrics endpoint" aria-label="Open metrics endpoint of {{ e.name }}">{% icon "link" 14 %}</a>{% else %}<span class="btn icon ex-off" title="No metrics URL" aria-hidden="true">{% icon "link" 14 %}</span>{% endif %}
+        {% if can_admin %}<form method="post" action="{% url 'observe:exporter_delete' e.pk %}" data-confirm="Delete the exporter “{{ e.name }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ e.name }}">{% icon "trash" 14 %}</button></form>{% endif %}
+      </div></td></tr>
+    {% empty %}<tr><td colspan="10" class="empty">{% if total %}No exporters match these filters. <a href="{% url 'observe:exporters' %}">Clear filters</a>{% else %}No exporters yet.{% if can_operate %} <a href="{% url 'observe:exporter_create' %}">Add your first exporter</a> or <a href="{% url 'observe:exporters_import' %}">import a CSV</a>.{% endif %}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="exporters" %}
+  </div>
+
+  <div class="panel ex-logs" data-tail data-feed="{% url 'observe:logs_feed' %}"><div class="panel-h ex-logs-h"><h2>Logs (Real-time)</h2>
+      <div class="right"><button class="btn icon" type="button" data-tail-pause title="Pause stream" aria-label="Pause stream" aria-pressed="false"><span data-ic-pause>{% icon "pause" 14 %}</span><span data-ic-play hidden>{% icon "play" 14 %}</span></button>
+        <label class="ex-auto"><span class="switch"><input type="checkbox" data-tail-auto checked><span></span></span>Auto Refresh</label>
+        <select class="ex-sm" data-tail-source aria-label="Exporter"><option value="">All Exporters</option>{% for s in tail_sources %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select>
+        <select class="ex-sm ex-range" data-tail-range aria-label="Time range"><option value="1h">Last 1 hour</option><option value="6h">Last 6 hours</option><option value="24h">Last 24 hours</option></select></div></div>
+    <div class="table-wrap dense ex-logtable"><table><thead><tr><th>Time</th><th>Exporter</th><th>Level</th><th>Message</th></tr></thead><tbody data-tail-body>
+    {% for l in tail %}<tr><td title="{{ l.date }}">{{ l.time }}</td><td title="{{ l.source }}">{{ l.source }}</td><td><span class="ex-level {{ l.tone }}">{{ l.level }}</span></td><td class="ex-msg" title="{{ l.message }}">{{ l.message }}</td></tr>
+    {% endfor %}</tbody></table>
+      <p class="empty ex-tail-empty" data-tail-empty{% if tail %} hidden{% endif %}>No log lines in this time range.{% if not ingest_configured %}<br><span class="t-warn">Log ingest is not connected: set <code>LINKEDEYE_LOG_INGEST_TOKEN</code> and send logs to <code>/api/v1/logs/</code>.</span>{% endif %}</p></div>
+    <div class="ex-tail-foot"><span class="t-mute" data-tail-status aria-live="polite">Updates every 5 s</span><a class="view-all" href="{% url 'observe:logs' %}">Open Logs &amp; Events {% icon "arrow-right" 14 %}</a></div>
+  </div>
+</section>
+
+<section class="grid ex-bottom">
+  <div class="panel"><div class="panel-h"><h2>Exporter Health Status</h2></div>
+    {% if total %}<div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
+      <div class="donut-legend ex-legend">{% for s in legend %}<span><a href="?status={{ s.key }}"><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</a></span><b>{{ s.n }} ({{ s.pct }}%)</b>{% endfor %}</div></div>
+    {% else %}<p class="empty">No exporters yet.</p>{% endif %}</div>
+  <div class="panel"><div class="panel-h ex-trend-h"><h2>Logs Trend (Last 24 Hours)</h2><div class="right legend sq"><span><i style="background:#1565f0"></i>Info</span><span><i class="fill-warn"></i>Warn</span><span><i class="fill-crit"></i>Error</span></div></div>
+    {% if trend.total %}<div class="chart" data-chart="bars" data-src="d-trend" style="height:200px"></div>
+    {% else %}<p class="empty">No log lines received in the last 24 hours.{% if not ingest_configured %}<br><span class="t-warn">Ingest not connected – set <code>LINKEDEYE_LOG_INGEST_TOKEN</code>.</span>{% endif %}</p>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Top Log Sources (24h)</h2></div>
+    {% if top %}<div class="hbar ex-hbar">{% for r in top %}<a href="{% url 'observe:logs' %}?source={{ r.source|urlencode }}" title="{{ r.source }}">{{ r.source }}</a><span class="track"><i style="width:{% widthratio r.n top_max 100 %}%"></i></span><span>{{ r.n|floatformat:"0g" }}</span>{% endfor %}</div>
+    {% else %}<p class="empty">No log sources in the last 24 hours.</p>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Recent Events</h2><a class="right view-all" href="{% url 'observe:events' %}">View All {% icon "arrow-right" 14 %}</a></div>
+    {% if recent_events %}<div class="table-wrap dense ex-events"><table><thead><tr><th>Time</th><th>Severity</th><th>Message</th></tr></thead><tbody>{% for e in recent_events %}<tr><td title="{{ e.occurred_at|short_dt }}">{{ e.occurred_at|time:"H:i" }}</td><td><span class="ex-sev t-{{ e.severity|sev_tone }}">{% ficon e.severity|sev_icon 13 %}{{ e.get_severity_display }}</span></td><td class="ex-msg" title="{{ e.title }}{% if e.message %} – {{ e.message }}{% endif %}">{{ e.title }}</td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<p class="empty">No events yet.</p>{% endif %}</div>
+</section>
+</div>
+{{ donut|json_script:"d-donut" }}{{ trend|json_script:"d-trend" }}
+{% endblock %}
+{% block scripts %}<script src="{% static 'observe/observe.js' %}"></script>{% endblock %}

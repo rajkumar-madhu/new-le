@@ -1,0 +1,38 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if exp %}Edit {{ exp.name }}{% else %}Add Exporter{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'observe/page.css' %}">{% endblock %}
+{% block crumbs %}{% if exp %}{% include "observe/_crumbs.html" with last="Edit" %}{% else %}{% include "observe/_crumbs.html" with last="Add Exporter" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="pg-observe ob-formpage">
+<div class="head">
+  <div class="glyph bg-info ob-glyph">{% icon "exporters" 30 %}</div>
+  <div><h1>{% if exp %}Edit {{ exp.name }}{% else %}Add Exporter{% endif %}</h1><p>LinkedEye scrapes the metrics URL every minute. The exporter is <b>Active</b> when the endpoint answers with metric samples, <b>Error</b> when it does not, <b>Not Configured</b> without a URL and <b>Inactive</b> when disabled.</p></div>
+</div>
+<form method="post" class="panel ob-form" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  {% for title, fields in form.groups %}
+  <fieldset><legend>{{ title }}</legend>
+    <div class="form-grid">
+    {% for f in fields %}
+      {% if f.name == "enabled" %}
+      <div class="field ob-check"><label class="inline-check"><span class="switch">{{ f }}<span></span></span>Enabled (scrape every minute)</label>{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+      {% else %}
+      <div class="field{% if f.name == 'description' or f.name == 'metrics_url' %} full{% endif %}">
+        <label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}
+        {% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}
+        {% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+  <datalist id="ob-types">{% for t in form.type_suggestions %}<option value="{{ t }}">{% endfor %}</datalist>
+  <p class="hint t-mute">Private addresses (10.x, 192.168.x, 127.x) are only scraped when they are allowed in <code>LINKEDEYE_PROBE_ALLOWED_PRIVATE_CIDRS</code>; link-local and metadata addresses are always refused.</p>
+  <div class="ob-form-foot">
+    <a class="btn" href="{% if exp %}{{ exp.get_absolute_url }}{% else %}{% url 'observe:exporters' %}{% endif %}">Cancel</a>
+    <button class="btn primary" type="submit">{% if exp %}Save changes{% else %}Add exporter{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}
