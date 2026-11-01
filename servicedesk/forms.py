@@ -23,10 +23,46 @@ KIND_FIELDS = {
 WIDE = {"title", "description", "root_cause", "workaround", "implementation_plan", "backout_plan", "resolution"}
 
 
+# Largest primary keys the database can hold (BigAutoField for our models, AutoField for auth users). Larger
+# numbers in a request would overflow the database driver (500 on SQLite, DataError on PostgreSQL).
+MAX_PK = 2 ** 63 - 1
+MAX_USER_PK = 2 ** 31 - 1
+
+
+def parse_pk(value, limit=MAX_PK):
+    """int for a plain positive id within range, else None (bad ids are treated as 'not found')."""
+    value = str(value or "").strip()
+    if not (value.isascii() and value.isdigit()):
+        return None
+    n = int(value)
+    return n if 0 < n <= limit else None
+
+
+class BoundedModelChoiceField(forms.ModelChoiceField):
+    """ModelChoiceField that rejects out-of-range ids as an invalid choice instead of crashing the query."""
+    limit = MAX_PK
+
+    def to_python(self, value):
+        if value not in self.empty_values and parse_pk(value, self.limit) is None:
+            raise forms.ValidationError(self.error_messages["invalid_choice"], code="invalid_choice")
+        return super().to_python(value)
+
+
 def assignable_users(site=None):
-    """Active users who may work tickets (operate) on the site, by display name."""
-    users = [u for u in get_user_model().objects.filter(is_active=True).order_by("first_name", "username")[:300]
-             if can(u, "operate", site or None)]
+    """Active users who may work tickets (operate) on the site, by display name.
+
+    Memberships are prefetched and handed to core.access's per-user cache, so checking 300 users costs two
+    queries instead of one per user."""
+    from django.db.models import Prefetch
+
+    from core.models import Membership
+    qs = (get_user_model().objects.filter(is_active=True).order_by("first_name", "username")
+          .prefetch_related(Prefetch("le_memberships", queryset=Membership.objects.select_related("site")))[:300])
+    users = []
+    for u in qs:
+        u._le_memberships = list(u.le_memberships.all())
+        if can(u, "operate", site or None):
+            users.append(u)
     return users
 
 
@@ -34,7 +70,9 @@ def user_label(u):
     return u.get_full_name() or u.get_username()
 
 
-class UserChoiceField(forms.ModelChoiceField):
+class UserChoiceField(BoundedModelChoiceField):
+    limit = MAX_USER_PK
+
     def label_from_instance(self, obj):
         return user_label(obj)
 
@@ -59,10 +97,11 @@ class TicketForm(forms.ModelForm):
             "site": forms.TextInput(attrs={"list": "sd-sites", "autocomplete": "off"}),
             "ci_name": forms.TextInput(attrs={"list": "sd-cis", "autocomplete": "off"}),
         }
+        field_classes = {"problem": BoundedModelChoiceField, "catalog_item": BoundedModelChoiceField}
         labels = {"ci_name": "Configuration item", "catalog_item": "Catalog item", "problem": "Linked problem",
                   "planned_start": "Planned start", "planned_end": "Planned end", "resolution": "Resolution notes"}
 
-    def __init__(self, *args, kind="incident", user=None, **kwargs):
+    def __init__(self, *args, kind="incident", user=None, problems=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.kind = self.instance.kind if self.instance.pk else kind
         self.user = user
@@ -79,7 +118,9 @@ class TicketForm(forms.ModelForm):
         self.fields["assignee"] = UserChoiceField(queryset=get_user_model().objects.filter(
             pk__in=[u.pk for u in assignable_users()]), required=False, label="Assignee", empty_label="Unassigned")
         if "problem" in self.fields:
-            qs = Ticket.objects.filter(tenant_key=tenant, kind="problem").exclude(status="closed")
+            # `problems`: the tickets the user may see (site-scoped); never offer problems from other sites
+            base = problems if problems is not None else Ticket.objects.filter(tenant_key=tenant)
+            qs = base.filter(kind="problem").exclude(status="closed")
             if self.instance.problem_id:
                 qs = qs | Ticket.objects.filter(pk=self.instance.problem_id)
             self.fields["problem"].queryset = qs.order_by("-opened_at")
@@ -102,6 +143,12 @@ class TicketForm(forms.ModelForm):
 
     def clean(self):
         data = super().clean()
+        assignee = data.get("assignee")
+        if assignee is not None and "site" in data and (self.instance.pk is None or "assignee" in self.changed_data
+                                                         or "site" in self.changed_data):
+            site = data["site"]
+            if not can(assignee, "operate", site if site not in ("", "All Sites") else None):
+                self.add_error("assignee", f"{user_label(assignee)} cannot work tickets on this site.")
         start, end = data.get("planned_start"), data.get("planned_end")
         if start and end and end <= start:
             self.add_error("planned_end", "The planned end must be after the planned start.")

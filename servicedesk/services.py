@@ -184,7 +184,9 @@ def transition(ticket, target, user=None, note="", actor_name="", force=False):
         ticket.save()
         label = "Reopened" if reopen else f"Status changed to {wf.STATUS_LABELS[target]}"
         _note(ticket, "status", label + (f": {note}" if note else "."), user, author_name=actor_name, old=old, new=target)
-        sla.check(ticket, now)
+    # outside the atomic block: check() emits events, and a listener's database error must not poison (and on
+    # PostgreSQL abort) the transaction that saved the status change
+    sla.check(ticket, now)
     sev = "ok" if target in wf.RESOLVING else "info"
     if reopen and ticket.kind == "incident":
         sev = _created_severity(ticket)

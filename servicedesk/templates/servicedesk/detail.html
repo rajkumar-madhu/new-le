@@ -62,6 +62,7 @@
     {% for i in linked %}<tr><td><a href="{{ i.get_absolute_url }}">{{ i.number }}</a></td><td class="ttl">{{ i.title|truncatechars:50 }}</td><td>{% prio_pill i.priority %}</td><td>{% status_pill i.status %}</td><td>{{ i.opened_at|date:"M j, H:i" }}</td>
       {% if can_operate %}<td><form method="post" action="{% url 'servicedesk:link' t.number %}">{% csrf_token %}<input type="hidden" name="incident" value="{{ i.number }}"><input type="hidden" name="unlink" value="1"><button class="btn icon red" type="submit" title="Unlink" aria-label="Unlink {{ i.number }}">{% icon "x" 14 %}</button></form></td>{% endif %}</tr>
     {% empty %}<tr><td colspan="6" class="empty">No incidents linked yet.</td></tr>{% endfor %}</tbody></table></div>
+    {% if hidden_linked %}<p class="hint sd-note">{% icon "info" 14 %} {{ hidden_linked }} more linked incident{{ hidden_linked|pluralize }} on sites you cannot see.</p>{% endif %}
     {% if can_operate %}<form class="sd-inline-form" method="post" action="{% url 'servicedesk:link' t.number %}">{% csrf_token %}<input type="text" name="incident" placeholder="Incident number, e.g. INC-1001" aria-label="Incident number" required><button class="btn sm" type="submit">{% icon "link" 14 %}Link incident</button></form>{% endif %}
   </div>
   {% elif t.kind == "change" %}

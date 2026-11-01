@@ -306,6 +306,9 @@ class Command(BaseCommand):
         if "approved" in path:
             t.approved_by = agents[0] if agent != agents[0] else agents[1]
             t.approved_at = times[path.index("approved")]
+            # the approval on the timeline is the approver's, not the change owner's
+            t.timeline.filter(kind="status", new_value="approved").update(
+                author=t.approved_by, author_name=t.approved_by.get_full_name() or t.approved_by.get_username())
         t.save()
         if ci:
             TicketCI.objects.get_or_create(ticket=t, ci_name=ci, defaults={"note": "primary"})

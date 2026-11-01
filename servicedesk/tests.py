@@ -744,8 +744,204 @@ class SeedTests(Base):
         self.assertEqual(Ticket.objects.count(), n)
         self.assertEqual(CatalogItem.objects.count(), 8)
         self.assertFalse(User.objects.filter(username__startswith="example.").exclude(password__startswith="!").exists())
+        # the approval on a change's timeline is written by its approver
+        for chg in Ticket.objects.filter(kind="change", approved_by__isnull=False):
+            entry = chg.timeline.get(kind="status", new_value="approved")
+            self.assertEqual(entry.author_id, chg.approved_by_id, chg.number)
         self.assertEqual(self.login(self.viewer).get(reverse("servicedesk:incidents")).status_code, 200)
         call_command("seed_servicedesk", "--remove", stdout=out)
         self.assertEqual(Ticket.objects.count(), 0)
         self.assertEqual(CatalogItem.objects.count(), 0)
         self.assertFalse(User.objects.filter(username__startswith="example.").exists())
+
+
+# ------------------------------------------------------------------ regressions found by the end-to-end review
+class ReviewRegressionTests(Base):
+    """Bugs found by exercising the module end to end in a browser; one test per bug."""
+
+    def setUp(self):
+        super().setUp()
+        self.mum = Site.objects.create(name="Mumbai", code="mum")
+        self.dr = Site.objects.create(name="DR", code="dr")
+        self.mum_op = User.objects.create_user("mum-op", password="x")
+        Membership.objects.create(user=self.mum_op, site=self.mum, role="operator")
+
+    def test_sla_policy_post_with_bad_pk_is_not_a_server_error(self):
+        c = self.login(self.admin)
+        for pk in ("abc", "", "99999999999999999999999", "-1"):
+            r = c.post(reverse("servicedesk:sla"), {"pk": pk})
+            self.assertRedirects(r, reverse("servicedesk:sla"), msg_prefix=pk)
+
+    def test_oversized_ids_are_not_found_instead_of_crashing(self):
+        big = "9" * 23
+        t = self.incident()
+        chg = self.incident(kind="change", title="Patch")
+        c = self.login(self.admin)
+        for url in (reverse("servicedesk:tickets") + f"?assignee={big}", reverse("servicedesk:incidents") + f"?tab=all&assignee={big}",
+                    reverse("servicedesk:export") + f"?assignee={big}"):
+            self.assertEqual(c.get(url).status_code, 200, url)
+        for name in ("catalog_edit", "catalog_request"):
+            self.assertEqual(c.get(f"/service-desk/catalog/{big}/{name.split('_')[1]}/").status_code, 404, name)
+        self.assertEqual(c.post(f"/service-desk/catalog/{big}/delete/").status_code, 404)
+        self.assertEqual(c.post(f"/service-desk/tickets/{chg.number}/cis/{big}/remove/").status_code, 404)
+        r = c.post(reverse("servicedesk:assign", args=[t.number]), {"assignee": big})
+        self.assertRedirects(r, t.get_absolute_url())
+        t.refresh_from_db()
+        self.assertIsNone(t.assignee)
+        for field, kind in (("assignee", "incident"), ("problem", "incident"), ("catalog_item", "request")):
+            r = c.post(reverse("servicedesk:create"), {"kind": kind, "title": "x", "priority": "P3", field: big})
+            self.assertEqual(r.status_code, 200, field)
+            self.assertContains(r, "Select a valid choice")
+        self.assertEqual(Ticket.objects.count(), 2)
+
+    def test_export_filename_never_echoes_untrusted_kind(self):
+        c = self.login(self.viewer)
+        for kind in ("a\r\nX-Evil: 1", 'x"; filename=evil.html'):
+            r = c.get(reverse("servicedesk:export"), {"kind": kind})
+            self.assertEqual(r.status_code, 200)
+            self.assertRegex(r["Content-Disposition"], r'^attachment; filename="tickets-\d{8}\.csv"$')
+        r = c.get(reverse("servicedesk:export"), {"kind": "change"})
+        self.assertIn('filename="changes-', r["Content-Disposition"])
+
+    def test_csv_neutralises_tab_and_carriage_return_formulas(self):
+        self.incident(title="\t=HYPERLINK(1)")
+        self.incident(title="\r=1+1")
+        rows = list(csv.reader(io.StringIO(self.login(self.viewer).get(reverse("servicedesk:export")).content.decode())))
+        self.assertTrue(all(row[2].startswith("'") for row in rows[1:]), rows)
+
+    def test_site_operator_cannot_see_or_link_problems_of_other_sites(self):
+        hidden = self.incident(kind="problem", title="DR root cause", site="DR")
+        own = self.incident(kind="problem", title="Mumbai root cause", site="Mumbai")
+        inc = self.incident(title="Mumbai outage", site="Mumbai")
+        c = self.login(self.mum_op)
+        r = c.get(inc.get_absolute_url())
+        self.assertContains(r, own.number)
+        self.assertNotContains(r, hidden.number)
+        self.assertNotContains(r, "DR root cause")
+        r = c.get(reverse("servicedesk:create"), {"kind": "incident"})
+        self.assertContains(r, own.number)
+        self.assertNotContains(r, hidden.number)
+        # direct POSTs with the hidden problem are refused
+        c.post(reverse("servicedesk:link", args=[inc.number]), {"problem": hidden.number})
+        inc.refresh_from_db()
+        self.assertIsNone(inc.problem)
+        r = c.post(reverse("servicedesk:create"), {"kind": "incident", "title": "x", "priority": "P3", "site": "Mumbai",
+                                                    "problem": hidden.pk})
+        self.assertContains(r, "Select a valid choice")
+        r = c.post(reverse("servicedesk:edit", args=[inc.number]), {"title": inc.title, "priority": "P2", "site": "Mumbai",
+                                                                   "problem": hidden.pk})
+        self.assertContains(r, "Select a valid choice")
+        inc.refresh_from_db()
+        self.assertIsNone(inc.problem)
+        c.post(reverse("servicedesk:link", args=[inc.number]), {"problem": own.number})
+        inc.refresh_from_db()
+        self.assertEqual(inc.problem, own)
+
+    def test_problem_page_hides_linked_incidents_and_cannot_link_incidents_of_other_sites(self):
+        prob = self.incident(kind="problem", title="Shared cause", site="All Sites")
+        dr_inc = self.incident(title="DR secret outage", site="DR")
+        services.link_problem(dr_inc, prob, user=self.admin)
+        mum_inc = self.incident(title="Mumbai outage", site="Mumbai")
+        c = self.login(self.mum_op)
+        r = c.get(prob.get_absolute_url())
+        self.assertNotContains(r, "DR secret outage")   # the timeline keeps the number as history, never the title
+        self.assertNotIn(dr_inc, list(r.context["linked"]))
+        self.assertContains(r, "1 more linked incident on sites you cannot see")
+        c.post(reverse("servicedesk:link", args=[prob.number]), {"incident": dr_inc.number, "unlink": "1"})
+        dr_inc.refresh_from_db()
+        self.assertEqual(dr_inc.problem, prob)
+        c.post(reverse("servicedesk:link", args=[prob.number]), {"incident": mum_inc.number})
+        mum_inc.refresh_from_db()
+        self.assertEqual(mum_inc.problem, prob)
+
+    def test_change_overlap_warning_only_names_visible_changes(self):
+        now = timezone.now()
+        window = {"planned_start": now + timedelta(days=1), "planned_end": now + timedelta(days=1, hours=2)}
+        mine = self.incident(kind="change", title="Mumbai patch", site="Mumbai", **window)
+        other = self.incident(kind="change", title="DR patch", site="DR", **window)
+        Ticket.objects.filter(pk=other.pk).update(status="scheduled")
+        r = self.login(self.mum_op).get(mine.get_absolute_url())
+        self.assertNotContains(r, other.number)
+        r = self.login(self.admin).get(mine.get_absolute_url())
+        self.assertContains(r, f"Window overlaps")
+        self.assertContains(r, other.number)
+
+    def test_form_refuses_assignee_without_access_to_the_ticket_site(self):
+        dr_op = User.objects.create_user("dr-op", password="x")
+        Membership.objects.create(user=dr_op, site=self.dr, role="operator")
+        c = self.login(self.admin)
+        r = c.post(reverse("servicedesk:create"), {"kind": "incident", "title": "x", "priority": "P3", "site": "Mumbai",
+                                                    "assignee": dr_op.pk})
+        self.assertContains(r, "cannot work tickets on this site")
+        self.assertFalse(Ticket.objects.exists())
+        r = c.post(reverse("servicedesk:create"), {"kind": "incident", "title": "x", "priority": "P3", "site": "DR",
+                                                    "assignee": dr_op.pk})
+        self.assertEqual(r.status_code, 302)
+        t = Ticket.objects.get()
+        r = c.post(reverse("servicedesk:edit", args=[t.number]), {"title": "x", "priority": "P3", "site": "Mumbai",
+                                                                 "assignee": dr_op.pk})
+        self.assertContains(r, "cannot work tickets on this site")
+
+    def test_assignable_users_does_not_query_per_user(self):
+        for i in range(30):
+            u = User.objects.create_user(f"agent{i}", password="x")
+            Membership.objects.create(user=u, site=self.mum if i % 2 else self.dr, role="operator")
+        from .forms import assignable_users
+        with self.assertNumQueries(2):
+            users = assignable_users("Mumbai")
+        names = {u.username for u in users}
+        self.assertIn("agent1", names)
+        self.assertNotIn("agent2", names)
+        self.assertIn("root", names)
+
+    def test_sla_check_and_events_run_outside_the_status_transaction(self):
+        from django.db import connection
+        t = self.incident()
+        depth = {}
+        real = sla.check
+
+        def spy(ticket, now=None, **kw):
+            depth["check"] = len(connection.atomic_blocks)
+            return real(ticket, now, **kw)
+
+        base = len(connection.atomic_blocks)
+        with mock.patch("servicedesk.services.sla.check", side_effect=spy):
+            services.transition(t, "acknowledged", user=self.op)
+        self.assertEqual(depth["check"], base)
+
+    def test_event_listener_runs_in_a_savepoint(self):
+        from django.db import connection
+        from . import signals
+        depth = {}
+
+        def spy(event):
+            depth["n"] = len(connection.atomic_blocks)
+
+        base = len(connection.atomic_blocks)
+        with mock.patch.object(signals, "handle_event", side_effect=spy):
+            emit(source="urlchecker", title="x", severity="critical", fingerprint="url:1")
+        self.assertEqual(depth["n"], base + 1)
+        # a failure inside the listener rolls back only its own writes
+        with mock.patch.object(signals.services, "open_incident", side_effect=RuntimeError("boom")), \
+                self.assertLogs("linkedeye.servicedesk", level="ERROR"):
+            emit(source="urlchecker", title="y", severity="critical", fingerprint="url:2")
+        self.assertTrue(Event.objects.filter(fingerprint="url:2").exists())
+
+    def test_incident_tab_counts_follow_the_client_view(self):
+        self.incident(title="A1", priority="P1", client="Acme")
+        self.incident(title="B1", priority="P1", client="Beta")
+        self.incident(title="B2", priority="P1", client="Beta")
+        r = self.login(self.viewer).get(reverse("servicedesk:incidents"), {"client": "Acme"})
+        self.assertEqual(r.context["tab_counts"]["major"], 1)
+        self.assertEqual(r.context["tab_counts"]["unassigned"], 1)
+        self.assertEqual([m.title for m in r.context["major"]], ["A1"])
+        r = self.login(self.viewer).get(reverse("servicedesk:incidents"))
+        self.assertEqual(r.context["tab_counts"]["major"], 3)
+
+    def test_sla_page_counts_only_visible_tickets(self):
+        self.incident(priority="P1", site="DR")
+        self.incident(priority="P1", site="Mumbai")
+        rows = {row["p"].priority: row for row in self.login(self.mum_op).get(reverse("servicedesk:sla")).context["rows"]}
+        self.assertEqual(rows["P1"]["open"], 1)
+        rows = {row["p"].priority: row for row in self.login(self.admin).get(reverse("servicedesk:sla")).context["rows"]}
+        self.assertEqual(rows["P1"]["open"], 2)

@@ -23,8 +23,8 @@ from core.audit import audit
 
 from . import services, sla, stats
 from . import workflow as wf
-from .forms import (DEFAULT_CATEGORIES, CatalogItemForm, CommentForm, RequestForm, SlaPolicyForm, TicketForm,
-                    assignable_users, user_label)
+from .forms import (DEFAULT_CATEGORIES, MAX_PK, MAX_USER_PK, CatalogItemForm, CommentForm, RequestForm, SlaPolicyForm,
+                    TicketForm, assignable_users, parse_pk, user_label)
 from .models import CatalogItem, SlaPolicy, Ticket, TicketCI
 
 LIST_URL = {"incident": "servicedesk:incidents", "problem": "servicedesk:problems", "change": "servicedesk:changes",
@@ -100,7 +100,7 @@ def apply_filters(request, qs, tab=""):
     elif a == "none":
         qs = qs.filter(assignee__isnull=True)
     elif a.isdigit():
-        qs = qs.filter(assignee_id=int(a))
+        qs = qs.filter(assignee_id=parse_pk(a, MAX_USER_PK) or 0)
     if g.get("sla") == "breached":
         qs = qs.filter(Q(response_breached=True) | Q(resolution_breached=True))
     q = g.get("q", "").strip()
@@ -159,6 +159,12 @@ def _ci_url(name):
         return ""
 
 
+def _check_pk(pk):
+    """404 for a URL id the database cannot hold (it would overflow the driver)."""
+    if pk is not None and not 0 < pk <= MAX_PK:
+        raise Http404
+
+
 def _ticket(request, number):
     return get_object_or_404(_visible(request), number=number.upper())
 
@@ -198,12 +204,12 @@ def incidents(request):
         "clients": _choices(base, "client"), "categories": _choices(base, "category"),
         "assignees": _assignee_options(base), "statuses": wf.statuses_for("incident"), "priorities": wf.PRIORITIES,
         "query": _query(request), "tab_query": _query(request, "tab"),
-        "open_count": base.open().count(), **_row_actions_ctx(request),
+        "open_count": scoped.open().count(), **_row_actions_ctx(request),
     }
-    counts = {"mine": base.open().filter(assignee=request.user).count(),
-              "unassigned": base.open().filter(assignee__isnull=True).count(),
-              "major": base.open().filter(priority="P1").count(),
-              "sla": base.open().filter(Q(response_breached=True) | Q(resolution_breached=True)).count()}
+    counts = {"mine": scoped.open().filter(assignee=request.user).count(),
+              "unassigned": scoped.open().filter(assignee__isnull=True).count(),
+              "major": scoped.open().filter(priority="P1").count(),
+              "sla": scoped.open().filter(Q(response_breached=True) | Q(resolution_breached=True)).count()}
     ctx["tab_counts"] = counts
     if tab:
         qs = apply_filters(request, scoped, tab).select_related("assignee").order_by("-opened_at", "-pk")
@@ -215,7 +221,7 @@ def incidents(request):
     recent = apply_filters(request, scoped.filter(opened_at__gte=d["start"])).select_related("assignee").order_by("-opened_at", "-pk")
     ctx.update({
         "d": d, "recent": recent[:12], "recent_total": recent.count(),
-        "major": base.open().filter(priority="P1").select_related("assignee").order_by("-opened_at")[:5],
+        "major": scoped.open().filter(priority="P1").select_related("assignee").order_by("-opened_at")[:5],
         "filtered": any(request.GET.get(k) for k in ("status", "priority", "category", "assignee", "q")),
     })
     return render(request, "servicedesk/incidents.html", ctx)
@@ -250,6 +256,7 @@ def export_csv(request):
     qs = apply_filters(request, _base(request), request.GET.get("tab", "")).select_related("assignee", "problem")
     resp = HttpResponse(content_type="text/csv")
     kind = request.GET.get("kind", "")
+    kind = kind if kind in wf.KIND_LABELS else ""   # never put raw query text into a response header
     resp["Content-Disposition"] = f'attachment; filename="{kind or "ticket"}s-{timezone.localdate():%Y%m%d}.csv"'
     w = csv.writer(resp)
     w.writerow(["number", "kind", "title", "status", "priority", "category", "client", "site", "assignee", "reporter",
@@ -261,7 +268,7 @@ def export_csv(request):
 
     def safe(v):  # neutralise spreadsheet formulas in user-entered text
         v = str(v or "")
-        return "'" + v if v[:1] in ("=", "+", "-", "@") else v
+        return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
 
     for t in qs.order_by("-opened_at")[:20000]:
         w.writerow([t.number, t.kind, safe(t.title), t.get_status_display(), t.priority, safe(t.category), safe(t.client),
@@ -286,7 +293,7 @@ def problems(request):
             "open": base.open().count(),
             "investigating": base.filter(status="investigating").count(),
             "known_error": base.filter(status="known_error").count(),
-            "linked": Ticket.objects.filter(problem__in=base.open(), kind="incident").count(),
+            "linked": _visible(request).filter(problem__in=base.open(), kind="incident").count(),
             "resolved30": base.filter(resolved_at__gte=timezone.now() - timedelta(days=30)).count(),
         },
         **_row_actions_ctx(request),
@@ -362,6 +369,7 @@ def catalog(request):
 
 @require("configure")
 def catalog_edit(request, pk=None):
+    _check_pk(pk)
     item = get_object_or_404(CatalogItem, tenant_key=_tenant(), pk=pk) if pk else None
     form = CatalogItemForm(request.POST or None, instance=item)
     if request.method == "POST" and form.is_valid():
@@ -380,6 +388,7 @@ def catalog_edit(request, pk=None):
 @require_POST
 @require("admin")
 def catalog_delete(request, pk):
+    _check_pk(pk)
     item = get_object_or_404(CatalogItem, tenant_key=_tenant(), pk=pk)
     name = item.name
     audit(request, "delete", item, name=name)
@@ -390,6 +399,7 @@ def catalog_delete(request, pk):
 
 @require("operate")
 def catalog_request(request, pk):
+    _check_pk(pk)
     item = get_object_or_404(CatalogItem, tenant_key=_tenant(), pk=pk, active=True)
     form = RequestForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -426,7 +436,7 @@ def create(request):
                 initial[k] = request.GET[k][:200]
         if request.GET.get("priority") in wf.PRIORITY_LABELS:
             initial["priority"] = request.GET["priority"]
-    form = TicketForm(request.POST or None, kind=kind, user=request.user, initial=initial)
+    form = TicketForm(request.POST or None, kind=kind, user=request.user, initial=initial, problems=_visible(request))
     if request.method == "POST" and form.is_valid():
         data = {k: v for k, v in form.cleaned_data.items()}
         problem = data.pop("problem", None)
@@ -447,7 +457,7 @@ def edit(request, number):
     if denied:
         return denied
     old = {"priority": ticket.priority, "assignee": ticket.assignee, "problem": ticket.problem}
-    form = TicketForm(request.POST or None, instance=ticket, user=request.user)
+    form = TicketForm(request.POST or None, instance=ticket, user=request.user, problems=_visible(request))
     if request.method == "POST" and form.is_valid():
         changed = [form.fields[f].label or f for f in form.changed_data if f not in ("priority", "assignee", "problem")]
         obj = form.save(commit=False)
@@ -497,18 +507,19 @@ def detail(request, number, section=None):
         "list_label": {"incident": "Incidents", "problem": "Problems", "change": "Changes", "request": "Tickets"}[t.kind],
     }
     if t.kind == "incident":
-        ctx["problem_choices"] = (Ticket.objects.for_tenant().filter(kind="problem").exclude(status="closed")
+        ctx["problem_choices"] = (_visible(request).filter(kind="problem").exclude(status="closed")
                                   .order_by("-opened_at")[:200]) if can_op else []
         ctx["related"] = (_visible(request).filter(kind="incident").exclude(pk=t.pk)
                           .filter(Q(fingerprint=t.fingerprint) if t.fingerprint else Q(pk__in=[]))
                           .order_by("-opened_at")[:5])
     if t.kind == "problem":
-        ctx["linked"] = t.incidents.select_related("assignee").order_by("-opened_at")
+        ctx["linked"] = (scope_by_site(t.incidents.all(), request.user).select_related("assignee").order_by("-opened_at"))
+        ctx["hidden_linked"] = t.incidents.count() - len(ctx["linked"])
     if t.kind == "change":
         ctx["ci_names"] = _ci_names() if can_op else []
         ctx["conflicts"] = []
         if t.planned_start and t.planned_end:
-            ctx["conflicts"] = (Ticket.objects.for_tenant().filter(kind="change", status__in=["approved", "scheduled"])
+            ctx["conflicts"] = (_visible(request).filter(kind="change", status__in=["approved", "scheduled"])
                                 .exclude(pk=t.pk).filter(planned_start__lt=t.planned_end, planned_end__gt=t.planned_start)
                                 .order_by("planned_start")[:5])
     if t.kind == "request" and t.catalog_item_id:
@@ -550,7 +561,7 @@ def assign(request, number):
     elif value in ("", "none"):
         user = None
     else:
-        user = get_user_model().objects.filter(pk=value if value.isdigit() else 0, is_active=True).first()
+        user = get_user_model().objects.filter(pk=parse_pk(value, MAX_USER_PK) or 0, is_active=True).first()
         if user is None or not can(user, "operate", t.site_scope):
             messages.error(request, "Choose an active user who can work tickets on this site.")
             return redirect(t)
@@ -607,13 +618,15 @@ def link(request, number):
     try:
         if t.kind == "incident":
             num = request.POST.get("problem", "").strip().upper()
-            problem = get_object_or_404(Ticket.objects.for_tenant(), number=num, kind="problem") if num else None
+            problem = _visible(request).filter(number=num, kind="problem").first() if num else None
+            if num and problem is None:
+                raise services.WorkflowError(f"No problem {num} found.")
             services.link_problem(t, problem, user=request.user)
             audit(request, "link", t, number=t.number, problem=problem.number if problem else "")
             messages.success(request, f"{t.number} linked to {problem.number}." if problem else f"{t.number} unlinked from its problem.")
         elif t.kind == "problem":
             num = request.POST.get("incident", "").strip().upper()
-            inc = Ticket.objects.for_tenant().filter(number=num, kind="incident").first()
+            inc = _visible(request).filter(number=num, kind="incident").first()
             if inc is None:
                 raise services.WorkflowError(f"No incident {num or '(blank)'} found.")
             if not can(request.user, "operate", inc.site_scope):
@@ -655,6 +668,7 @@ def remove_ci(request, number, pk):
     denied = _denied(request, t)
     if denied:
         return denied
+    _check_pk(pk)
     ci = get_object_or_404(TicketCI, ticket=t, pk=pk)
     name = ci.ci_name
     services.remove_ci(ci, user=request.user)
@@ -686,7 +700,11 @@ def sla_policies(request):
         if not can_admin:
             messages.error(request, "Only administrators can change SLA policies.")
             return redirect("servicedesk:sla")
-        p = get_object_or_404(SlaPolicy, tenant_key=_tenant(), pk=request.POST.get("pk") or 0)
+        pk = parse_pk(request.POST.get("pk"))
+        p = SlaPolicy.objects.filter(tenant_key=_tenant(), pk=pk).first() if pk else None
+        if p is None:
+            messages.error(request, "Unknown SLA policy.")
+            return redirect("servicedesk:sla")
         form = SlaPolicyForm(request.POST, instance=p, prefix=f"p{p.pk}")
         if form.is_valid():
             form.save()
@@ -695,7 +713,7 @@ def sla_policies(request):
             messages.success(request, f"SLA policy for {p.priority} saved. New tickets use it; existing due dates are kept.")
             return redirect("servicedesk:sla")
         forms_by_pk[p.pk] = form
-    open_sla = Ticket.objects.for_tenant().open().filter(kind__in=wf.SLA_KINDS)
+    open_sla = _visible(request).open().filter(kind__in=wf.SLA_KINDS)
     breached = dict(open_sla.filter(Q(response_breached=True) | Q(resolution_breached=True))
                     .values_list("priority").annotate(n=Count("pk")).order_by())
     open_by_p = dict(open_sla.values_list("priority").annotate(n=Count("pk")).order_by())

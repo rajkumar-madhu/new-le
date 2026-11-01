@@ -8,6 +8,7 @@ Listeners must never raise (core.events contract).
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from django.dispatch import receiver
 
 from core.events import event_emitted
@@ -60,6 +61,8 @@ def handle_event(event):
 @receiver(event_emitted, dispatch_uid="servicedesk.on_event")
 def on_event(sender, event, **kwargs):
     try:
-        handle_event(event)
+        # savepoint: if anything here fails, only our writes roll back and the emitter's transaction stays usable
+        with transaction.atomic():
+            handle_event(event)
     except Exception:
         log.exception("service desk could not process event %s", getattr(event, "pk", None))
