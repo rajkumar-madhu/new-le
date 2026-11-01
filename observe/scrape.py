@@ -11,6 +11,7 @@ import http.client
 import re
 import socket
 import ssl
+import threading
 import time
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
@@ -69,14 +70,44 @@ def count_samples(lines_iter):
     return n
 
 
-def _read_counting(resp, deadline):
+class _Watchdog:
+    """Shut the connection's socket down at the overall deadline.
+
+    Socket timeouts only bound a single recv(); an endpoint that trickles a byte every few
+    seconds would otherwise hold a scrape worker (or the request thread of "Run check")
+    for as long as it likes. After the deadline every blocking read returns at once."""
+
+    def __init__(self, conn, deadline):
+        self.conn, self.sock, self.fired = conn, None, False
+        self._timer = threading.Timer(max(0.0, deadline - time.monotonic()), self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _fire(self):
+        self.fired = True
+        # http.client drops conn.sock once a "Connection: close" response starts; keep our own reference
+        sock = self.sock or getattr(self.conn, "sock", None)
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+    def cancel(self):
+        self._timer.cancel()
+
+
+def _read_counting(resp, deadline, watchdog=None):
     """Stream the body, counting sample lines. Returns (samples, bytes, truncated)."""
     samples, total, rest = 0, 0, b""
     while True:
-        if time.monotonic() > deadline:
+        if time.monotonic() > deadline or (watchdog is not None and watchdog.fired):
             raise TimeoutError("scrape took too long")
-        chunk = resp.read(CHUNK)
+        # read1 returns whatever one recv() delivered instead of waiting for a full chunk
+        chunk = resp.read1(CHUNK)
         if not chunk:
+            if watchdog is not None and watchdog.fired:
+                raise TimeoutError("scrape took too long")
             break
         total += len(chunk)
         data = rest + chunk
@@ -108,8 +139,12 @@ def scrape(url, timeout=None):
             else:
                 conn = _PinnedHTTPConnection(parts.hostname, ip, port, timeout)
             path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("scrape took too long")
+            watchdog = _Watchdog(conn, deadline)
             try:
                 conn.request("GET", path, headers={"User-Agent": USER_AGENT, "Accept": ACCEPT, "Connection": "close"})
+                watchdog.sock = conn.sock
                 resp = conn.getresponse()
                 res.status = resp.status
                 location = resp.getheader("Location")
@@ -117,8 +152,13 @@ def scrape(url, timeout=None):
                     current = urljoin(current, location)
                     continue
                 if 200 <= resp.status < 300:
-                    res.samples, res.bytes, res.truncated = _read_counting(resp, deadline)
+                    res.samples, res.bytes, res.truncated = _read_counting(resp, deadline, watchdog)
+            except (OSError, http.client.HTTPException):
+                if watchdog.fired:      # the socket was shut down at the deadline
+                    raise TimeoutError("scrape took too long")
+                raise
             finally:
+                watchdog.cancel()
                 conn.close()
             break
         if res.status is None or not 200 <= res.status < 300:
@@ -135,8 +175,9 @@ def scrape(url, timeout=None):
         res.error = f"TLS error: {e.reason or e}"
     except socket.gaierror as e:
         res.error = f"DNS resolution failed: {e.strerror or e}"
-    except (socket.timeout, TimeoutError):
-        res.error = f"Timed out after {timeout:g}s"
+    except (socket.timeout, TimeoutError) as e:
+        res.error = (f"Timed out: no complete response within {timeout * 3:g}s" if "too long" in str(e)
+                     else f"Timed out after {timeout:g}s")
     except ConnectionRefusedError:
         res.error = "Connection refused"
     except (OSError, http.client.HTTPException, ValueError) as e:

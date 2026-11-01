@@ -79,8 +79,29 @@ def site_names(*extra_querysets):
 
 
 # ---------------------------------------------------------------- exporter health
+def _failing_event_open(exp):
+    """True when the latest health event of this exporter is a "failing" one that was never resolved."""
+    last = (Event.objects.filter(source="observe", fingerprint=f"exporter:{exp.pk}")
+            .order_by("-occurred_at", "-id").values_list("severity", flat=True).first())
+    return last == "warning"
+
+
+def close_failure(exp, reason):
+    """The exporter stopped being checked (disabled, URL removed, deleted) while its failure was still open:
+    emit the resolving event so notifications and auto-incidents keyed on the fingerprint are closed."""
+    if exp.pk is None or not _failing_event_open(exp):
+        return None
+    return emit(source="observe", title=f"Exporter {exp.name} is no longer checked", severity="ok",
+                message=f"{reason}; its earlier scrape failure is closed.", site=exp.site, obj=exp,
+                fingerprint=f"exporter:{exp.pk}", exporter=exp.name, category=exp.category, reason=reason)
+
+
 def _apply_result(exp, res, now):
-    """Store a scrape result on the exporter and emit an event on active<->error. Returns the new status."""
+    """Store a scrape result on the exporter and emit an event on active<->error. Returns the new status.
+
+    The previous *health* is taken from the exporter's last health event, not only from `status`: an edit
+    of the metrics URL (or an import) resets the status to "waiting for the first scrape", and the
+    failure raised before must still be resolved (or not raised twice) when that scrape comes in."""
     before = exp.status
     exp.last_checked_at = now
     exp.last_scrape_ms = res.response_ms
@@ -95,11 +116,14 @@ def _apply_result(exp, res, now):
     exp.save(update_fields=["status", "status_changed_at", "last_checked_at", "last_seen", "last_scrape_ms",
                             "samples", "last_error", "updated_at"])
     fp = f"exporter:{exp.pk}"
-    if exp.status == ExporterStatus.ERROR and before != ExporterStatus.ERROR:
+    if exp.status == before:
+        return exp.status            # no transition: never an event, and no extra query
+    failing = before == ExporterStatus.ERROR or _failing_event_open(exp)
+    if exp.status == ExporterStatus.ERROR and not failing:
         emit(source="observe", title=f"Exporter {exp.name} is failing", severity="warning",
              message=f"Scraping {exp.metrics_url} failed: {exp.last_error}", site=exp.site, obj=exp,
              fingerprint=fp, exporter=exp.name, category=exp.category, previous=before, error=exp.last_error)
-    elif exp.status == ExporterStatus.ACTIVE and before == ExporterStatus.ERROR:
+    elif exp.status == ExporterStatus.ACTIVE and failing:
         emit(source="observe", title=f"Exporter {exp.name} recovered", severity="ok",
              message=f"{exp.metrics_url} answered with {exp.samples} samples in {exp.last_scrape_ms:g} ms.",
              site=exp.site, obj=exp, fingerprint=fp, exporter=exp.name, category=exp.category, previous=before,
@@ -142,6 +166,9 @@ def check_exporters(exporters):
 def sync_config_states():
     """Exporters that cannot be scraped show their configuration state (inactive / not configured)."""
     qs = Exporter.objects.all()
+    # failing exporters that were disabled or lost their URL outside the UI (admin, shell): resolve the failure
+    for exp in qs.filter(status=ExporterStatus.ERROR).filter(Q(enabled=False) | Q(metrics_url=""))[:500]:
+        close_failure(exp, "Disabled" if not exp.enabled else "Metrics URL removed")
     n = qs.filter(enabled=False).exclude(status=ExporterStatus.INACTIVE).update(
         status=ExporterStatus.INACTIVE, status_changed_at=timezone.now(), last_error="")
     n += qs.filter(enabled=True, metrics_url="").exclude(status=ExporterStatus.NOT_CONFIGURED).update(
@@ -171,6 +198,8 @@ def parse_payload(body, content_type=""):
     if not ndjson and stripped[0] in "[{":
         try:
             data = json.loads(stripped)
+        except RecursionError:
+            raise IngestError("JSON is nested too deeply")
         except json.JSONDecodeError:
             data = None
             if stripped[0] != "{":
@@ -192,6 +221,8 @@ def parse_payload(body, content_type=""):
             raise IngestError(f"Too many entries (max {MAX_ENTRIES} per request)", 413)
         try:
             entries.append(json.loads(line))
+        except RecursionError:
+            raise IngestError(f"Line {no} is nested too deeply")
         except json.JSONDecodeError as e:
             raise IngestError(f"Line {no} is not valid JSON: {e.msg}")
     return entries
@@ -224,6 +255,17 @@ def _parse_ts(value, now):
     return ts
 
 
+def _no_nul(value):
+    """NUL characters cannot be stored in PostgreSQL text/jsonb columns (the whole batch would fail)."""
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {_no_nul(str(k)): _no_nul(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_no_nul(v) for v in value]
+    return value
+
+
 def _text(entry, key, maxlen, required=False):
     v = entry.get(key)
     if v is None or (isinstance(v, str) and not v.strip()):
@@ -232,7 +274,10 @@ def _text(entry, key, maxlen, required=False):
         return ""
     if not isinstance(v, (str, int, float)) or isinstance(v, bool):
         raise ValueError(f"'{key}' must be a string")
-    return str(v).strip()[:maxlen]
+    v = _no_nul(str(v)).strip()
+    if not v and required:
+        raise ValueError(f"'{key}' is required")
+    return v[:maxlen]
 
 
 def validate_entry(entry, now):
@@ -247,11 +292,19 @@ def validate_entry(entry, now):
         raise ValueError("'message' is required")
     if not isinstance(message, str):
         message = json.dumps(message, default=str) if isinstance(message, (dict, list)) else str(message)
+    message = _no_nul(message)
+    if not message.strip():
+        raise ValueError("'message' is required")
     attributes = entry.get("attributes") or {}
     if not isinstance(attributes, dict):
         raise ValueError("'attributes' must be a JSON object")
-    if len(json.dumps(attributes, default=str)) > 16000:
+    try:
+        size = len(json.dumps(attributes, default=str))
+    except (RecursionError, ValueError):
+        raise ValueError("'attributes' cannot be serialised")
+    if size > 16000:
         raise ValueError("'attributes' is larger than 16 KB")
+    attributes = _no_nul(attributes)
     return LogEntry(
         tenant_key=tenant(), ts=_parse_ts(entry.get("ts", entry.get("timestamp")), now),
         source=_text(entry, "source", 120, required=True), level=level, message=message.strip()[:MAX_MESSAGE],
@@ -295,10 +348,10 @@ def _emit_log_events(entries, now):
             suppressed += 1
             continue
         seen.add(fp)
-        if Event.objects.filter(fingerprint=fp, occurred_at__gte=now - EVENT_WINDOW).exists():
+        if emitted >= MAX_EVENTS_PER_BATCH:     # checked first: no dedupe query once the batch cap is reached
             suppressed += 1
             continue
-        if emitted >= MAX_EVENTS_PER_BATCH:
+        if Event.objects.filter(fingerprint=fp, occurred_at__gte=now - EVENT_WINDOW).exists():
             suppressed += 1
             continue
         first_line = e.message.splitlines()[0] if e.message else ""

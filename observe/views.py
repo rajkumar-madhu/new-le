@@ -143,6 +143,8 @@ def exporters(request):
     per_source = dict(day.filter(source__in=names).order_by().values_list("source").annotate(n=Count("id")))
     for e in page:
         e.logs24 = per_source.get(e.name, 0)
+        e.can_edit = services.can_manage(request.user, "operate", e.site)
+        e.can_delete = services.can_manage(request.user, "admin", e.site)
 
     logs24 = day.count()
     logs_prev = logs.filter(ts__gte=now - timedelta(hours=48), ts__lt=now - timedelta(hours=24)).count()
@@ -210,6 +212,7 @@ def exporter_form(request, pk=None):
             changed = list(form.changed_data)
             obj = form.save(commit=False)
             obj.tenant_key = settings.LINKEDEYE_TENANT
+            was_checked = bool(exp) and exp.status in (ExporterStatus.ACTIVE, ExporterStatus.ERROR)
             needs_scrape = obj.apply_config_status(url_changed=bool(exp) and "metrics_url" in changed)
             # scrape right away for a new exporter, or when its endpoint or enabled flag changed
             needs_scrape = needs_scrape and (not exp or bool({"metrics_url", "enabled"} & set(changed)))
@@ -219,6 +222,8 @@ def exporter_form(request, pk=None):
             except IntegrityError:
                 form.add_error("name", "An exporter with this name already exists.")
             else:
+                if exp and was_checked and obj.config_status() is not None:
+                    services.close_failure(obj, "Disabled" if not obj.enabled else "Metrics URL removed")
                 if exp:
                     audit(request, "update", obj, changed=changed)
                 else:
@@ -247,6 +252,7 @@ def exporter_delete(request, pk):
     if not services.can_manage(request.user, "admin", exp.site):
         return _deny(request)
     name = exp.name
+    services.close_failure(exp, "Exporter deleted")
     audit(request, "delete", exp, name=name, exporter_type=exp.exporter_type, category=exp.category,
           metrics_url=exp.metrics_url, site=exp.site)
     exp.delete()
@@ -264,9 +270,9 @@ def exporter_check(request, pk):
         reason = "it is disabled" if not exp.enabled else "it has no metrics URL"
         summary = f"{exp.name} was not checked: {reason}."
         audit(request, "run", exp, check="scrape", result_status=exp.status, skipped=reason, result="skipped")
+        messages.warning(request, summary)
         if _wants_json(request):
             return JsonResponse({"status": exp.status, "summary": summary}, status=409)
-        messages.warning(request, summary)
         return redirect(_next(request, exp.get_absolute_url()))
     res = services.check_exporters([exp])[0][1]
     exp.refresh_from_db()
@@ -274,10 +280,11 @@ def exporter_check(request, pk):
           response_ms=res.response_ms, error=res.error)
     summary = (f"{exp.name}: active, {res.samples} samples in {res.response_ms:g} ms." if res.ok
                else f"{exp.name}: error – {res.error}")
+    # also for the fetch() path: app.js reloads the page, which then shows the message
+    (messages.success if res.ok else messages.warning)(request, summary)
     if _wants_json(request):
         return JsonResponse({"status": exp.status, "summary": summary, "samples": res.samples,
                              "response_ms": res.response_ms, "error": res.error})
-    (messages.success if res.ok else messages.warning)(request, summary)
     return redirect(_next(request, exp.get_absolute_url()))
 
 
@@ -295,9 +302,9 @@ def exporter_check_all(request):
         summary = "No enabled exporters with a metrics URL to check."
     if limited:
         summary += f" Only the first {services.CHECK_ALL_LIMIT} were checked now; the rest are scraped every minute."
+    messages.success(request, summary)
     if _wants_json(request):
         return JsonResponse({"checked": len(results), "active": ok, "summary": summary})
-    messages.success(request, summary)
     return redirect(_next(request, reverse("observe:exporters")))
 
 
@@ -350,13 +357,24 @@ def exporters_import(request):
 
 def _import_rows(request, text, update_existing):
     reader = csv.DictReader(io.StringIO(text))
-    fields = {(h or "").strip().lower() for h in (reader.fieldnames or [])}
+    try:
+        fields = {(h or "").strip().lower() for h in (reader.fieldnames or [])}
+    except csv.Error as e:
+        return {"fatal": f"The header row could not be read: {e}.", "errors": [], "created": 0, "updated": 0}
     if not {"name", "type", "category"} <= fields:
         return {"fatal": "The header row must contain at least: name, type, category.", "errors": [], "created": 0, "updated": 0}
     created = updated = 0
     errors = []
     cats = {c.lower(): c for c in Category.values}
-    for no, raw in enumerate(reader, 2):
+    rows = enumerate(reader, 2)
+    while True:
+        try:
+            no, raw = next(rows)
+        except StopIteration:
+            break
+        except csv.Error as e:      # e.g. a field over the csv module's 128 KB limit
+            errors.append({"row": reader.line_num, "error": f"Stopped: the CSV could not be read here ({e})."})
+            break
         if no - 1 > IMPORT_MAX_ROWS:
             errors.append({"row": no, "error": f"Stopped: more than {IMPORT_MAX_ROWS} rows."})
             break
@@ -367,9 +385,10 @@ def _import_rows(request, text, update_existing):
         if not cat:
             errors.append({"row": no, "error": f"Unknown category “{row.get('category', '')}”."})
             continue
+        # a blank "enabled" cell keeps the default (enabled), like every other optional column
         data = {"name": row.get("name", ""), "exporter_type": row.get("type", ""), "category": cat,
                 "target": row.get("target", ""), "metrics_url": row.get("metrics_url", ""), "site": row.get("site", ""),
-                "enabled": row.get("enabled", "yes").lower() in TRUE_WORDS, "description": row.get("description", "")}
+                "enabled": (row.get("enabled") or "yes").lower() in TRUE_WORDS, "description": row.get("description", "")}
         existing = Exporter.objects.filter(tenant_key=settings.LINKEDEYE_TENANT, name__iexact=data["name"]).first()
         if existing and not update_existing:
             errors.append({"row": no, "error": f"“{data['name']}” already exists (tick “Update exporters that already exist”)."})
@@ -388,6 +407,7 @@ def _import_rows(request, text, update_existing):
             errors.append({"row": no, "error": f"You cannot manage exporters on site “{data['site']}”."})
             continue
         changed = list(form.changed_data)
+        existing_checked = bool(existing) and existing.status in (ExporterStatus.ACTIVE, ExporterStatus.ERROR)
         obj = form.save(commit=False)
         obj.tenant_key = settings.LINKEDEYE_TENANT
         obj.apply_config_status(url_changed=bool(existing) and "metrics_url" in changed)
@@ -397,6 +417,8 @@ def _import_rows(request, text, update_existing):
         except IntegrityError:
             errors.append({"row": no, "error": f"“{data['name']}” already exists."})
             continue
+        if existing and existing_checked and obj.config_status() is not None:
+            services.close_failure(obj, "Disabled" if not obj.enabled else "Metrics URL removed")
         if existing:
             updated += 1
             audit(request, "update", obj, changed=changed, via="import")
@@ -422,7 +444,10 @@ def exporters_docs(request):
 def _parse_local(value):
     if not value:
         return None
-    dt = parse_datetime(value)
+    try:
+        dt = parse_datetime(value.strip())
+    except ValueError:          # well formed but impossible, e.g. 2026-02-30T10:00
+        return None
     if dt is None:
         return None
     return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
@@ -588,7 +613,8 @@ def events(request):
         "sources": sorted(base.order_by().values_list("source", flat=True).distinct()),
         "kinds": sorted(base.order_by().values_list("kind", flat=True).distinct()),
         "sites": sorted(s for s in base.order_by().values_list("site", flat=True).distinct() if s),
-        "ranges": [r for r in services.RANGES if r[0] != "15m"], "range": request.GET.get("range", "7d"),
+        "ranges": [r for r in services.RANGES if r[0] != "15m"],
+        "range": services.since_for(request.GET.get("range", "7d"), "7d")[0],   # an unknown value falls back to 7d
         "today": timezone.localdate(), "yesterday": timezone.localdate() - timedelta(days=1),
     }
     return render(request, "observe/events.html", ctx)

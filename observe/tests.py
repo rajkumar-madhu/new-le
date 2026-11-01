@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
@@ -75,6 +76,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header("Location", "/metrics")
             self.end_headers()
+            return
+        elif self.path == "/trickle":
+            # a valid status line, then one byte at a time: socket timeouts never fire
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            try:
+                for _ in range(60):
+                    self.wfile.write(b"u")
+                    self.wfile.flush()
+                    time.sleep(0.1)
+            except OSError:
+                pass
             return
         elif self.path == "/metadata":
             self.send_response(302)
@@ -648,3 +662,197 @@ class SeedTests(TestCase):
         self.assertEqual(Event.objects.count(), 0)
         call_command("seed_observe", "--refresh-logs", "--lines", "20", stdout=StringIO())
         self.assertEqual(LogEntry.objects.count(), 20)
+
+
+# ------------------------------------------------------------------------------------------- QA regressions
+@override_settings(PROBE_ALLOWED_PRIVATE_CIDRS=["127.0.0.0/8"])
+class ScrapeDeadlineTests(TestCase):
+    def test_trickling_endpoint_is_cut_off_at_the_deadline(self):
+        """A server sending a byte every 0.1 s never trips the socket timeout; the overall deadline must."""
+        with LocalServer() as s:
+            t0 = time.monotonic()
+            r = scrape.scrape(s.base + "/trickle", timeout=0.4)
+            took = time.monotonic() - t0
+        self.assertFalse(r.ok)
+        self.assertIn("Timed out", r.error)
+        self.assertLess(took, 3.0)          # deadline is 3 x timeout = 1.2 s (the server would take 6 s)
+
+
+@override_settings(LINKEDEYE_TENANT=T, PROBE_WORKERS=1)
+class HealthEventRegressionTests(TestCase):
+    def setUp(self):
+        self.viewer, self.operator, self.admin = users()
+
+    def _fail_then(self, e):
+        with mock.patch.object(scrape, "scrape", return_value=fail("HTTP 500")):
+            services.check_exporters([e])
+        e.refresh_from_db()
+        self.assertEqual(e.status, "error")
+
+    def _health_events(self, e):
+        return list(Event.objects.filter(source="observe", fingerprint=f"exporter:{e.pk}").order_by("id")
+                    .values_list("severity", flat=True))
+
+    def test_url_edit_that_fixes_a_failing_exporter_emits_recovered(self):
+        e = exp(metrics_url="http://10.0.0.1/bad")
+        self._fail_then(e)
+        data = {"name": e.name, "exporter_type": e.exporter_type, "category": e.category, "target": "",
+                "metrics_url": "http://10.0.0.1/metrics", "site": "", "enabled": "on", "description": ""}
+        with mock.patch.object(scrape, "scrape", return_value=ok()):
+            client_for(self.operator).post(reverse("observe:exporter_edit", args=[e.pk]), data)
+        e.refresh_from_db()
+        self.assertEqual(e.status, "active")
+        self.assertEqual(self._health_events(e), ["warning", "ok"])
+
+    def test_url_edit_that_still_fails_does_not_raise_a_second_failure(self):
+        e = exp(metrics_url="http://10.0.0.1/bad")
+        self._fail_then(e)
+        data = {"name": e.name, "exporter_type": e.exporter_type, "category": e.category, "target": "",
+                "metrics_url": "http://10.0.0.1/also-bad", "site": "", "enabled": "on", "description": ""}
+        with mock.patch.object(scrape, "scrape", return_value=fail("HTTP 404")):
+            client_for(self.operator).post(reverse("observe:exporter_edit", args=[e.pk]), data)
+        self.assertEqual(self._health_events(e), ["warning"])
+
+    def test_import_url_change_then_job_scrape_emits_recovered(self):
+        e = exp("imp-x", metrics_url="http://10.0.0.1/bad")
+        self._fail_then(e)
+        csv_text = "name,type,category,metrics_url\nimp-x,Node Exporter,Servers,http://10.0.0.1/metrics\n"
+        client_for(self.operator).post(reverse("observe:exporters_import"), {
+            "file": SimpleUploadedFile("e.csv", csv_text.encode()), "update_existing": "on"})
+        e.refresh_from_db()
+        self.assertEqual(e.status, "not_configured")       # waiting for the first scrape of the new URL
+        with mock.patch.object(scrape, "scrape", return_value=ok()):
+            jobs.exporter_health()
+        self.assertEqual(self._health_events(e), ["warning", "ok"])
+
+    def test_disabling_a_failing_exporter_closes_its_failure(self):
+        e = exp(metrics_url="http://10.0.0.1/bad")
+        self._fail_then(e)
+        data = {"name": e.name, "exporter_type": e.exporter_type, "category": e.category, "target": "",
+                "metrics_url": e.metrics_url, "site": "", "description": ""}          # enabled unticked
+        client_for(self.operator).post(reverse("observe:exporter_edit", args=[e.pk]), data)
+        e.refresh_from_db()
+        self.assertEqual(e.status, "inactive")
+        self.assertEqual(self._health_events(e), ["warning", "ok"])
+
+    def test_deleting_a_failing_exporter_closes_its_failure(self):
+        e = exp(metrics_url="http://10.0.0.1/bad")
+        self._fail_then(e)
+        pk = e.pk
+        client_for(self.admin).post(reverse("observe:exporter_delete", args=[pk]))
+        self.assertFalse(Exporter.objects.filter(pk=pk).exists())
+        self.assertEqual(list(Event.objects.filter(fingerprint=f"exporter:{pk}").order_by("id")
+                              .values_list("severity", flat=True)), ["warning", "ok"])
+
+    def test_job_closes_failure_of_exporter_disabled_outside_the_ui(self):
+        e = exp(metrics_url="http://10.0.0.1/bad")
+        self._fail_then(e)
+        Exporter.objects.filter(pk=e.pk).update(enabled=False)
+        jobs.exporter_health()
+        jobs.exporter_health()                               # idempotent: no second resolve
+        self.assertEqual(self._health_events(e), ["warning", "ok"])
+
+    def test_deleting_a_healthy_exporter_emits_nothing(self):
+        e = exp(metrics_url="http://10.0.0.1/metrics")
+        with mock.patch.object(scrape, "scrape", return_value=ok()):
+            services.check_exporters([e])
+        client_for(self.admin).post(reverse("observe:exporter_delete", args=[e.pk]))
+        self.assertFalse(Event.objects.filter(source="observe").exists())
+
+    def test_run_check_via_fetch_leaves_a_message_for_the_reload(self):
+        e = exp(metrics_url="http://10.0.0.1/metrics")
+        c = client_for(self.operator)
+        with mock.patch.object(scrape, "scrape", return_value=ok(7)):
+            r = c.post(reverse("observe:exporter_check", args=[e.pk]), HTTP_ACCEPT="application/json")
+        self.assertEqual(r.status_code, 200)
+        r = c.get(reverse("observe:exporters"))
+        self.assertContains(r, "7 samples")
+        with mock.patch.object(scrape, "scrape", return_value=ok()):
+            c.post(reverse("observe:exporter_check_all"), HTTP_ACCEPT="application/json")
+        self.assertContains(c.get(reverse("observe:exporters")), "Scraped 1 exporter(s)")
+
+
+@override_settings(LINKEDEYE_TENANT=T, LOG_INGEST_TOKEN=TOKEN)
+class IngestRegressionTests(TestCase):
+    def post(self, body, ctype="application/json"):
+        return Client().post(INGEST, body, content_type=ctype, HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
+
+    def test_deeply_nested_json_is_a_400_not_a_500(self):
+        for body, ctype in (("[" * 100000, "application/json"), ('{"a":' * 100000, "application/json"),
+                            ("[" * 100000, "application/x-ndjson")):
+            r = self.post(body, ctype)
+            self.assertEqual(r.status_code, 400, ctype)
+            self.assertIn("error", r.json())
+        self.assertEqual(LogEntry.objects.count(), 0)
+
+    def test_nul_characters_are_removed(self):
+        r = self.post(json.dumps([{"source": "a\x00pp", "level": "INFO", "message": "a\x00b", "host": "h\x00",
+                                   "attributes": {"k\x00": ["v\x00", {"x": "y\x00"}]}},
+                                  {"source": "app", "level": "INFO", "message": "\x00"}]))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual((r.json()["accepted"], r.json()["rejected"]), (1, 1))     # NUL-only message is empty
+        e = LogEntry.objects.get()
+        self.assertEqual((e.source, e.message, e.host), ("app", "ab", "h"))
+        self.assertEqual(e.attributes, {"k": ["v", {"x": "y"}]})
+
+    def test_event_cap_skips_dedupe_queries_once_reached(self):
+        entries = [{"source": "app", "level": "ERROR", "message": f"failure kind {chr(97 + i % 26)}{chr(97 + i // 26)}"}
+                   for i in range(60)]
+        with mock.patch.object(services, "emit") as em:
+            summary = services.ingest(entries)
+        self.assertEqual(em.call_count, services.MAX_EVENTS_PER_BATCH)
+        self.assertEqual(summary["events_suppressed"], 60 - services.MAX_EVENTS_PER_BATCH)
+
+
+@override_settings(LINKEDEYE_TENANT=T)
+class PageRegressionTests(TestCase):
+    def setUp(self):
+        self.viewer, self.operator, self.admin = users()
+        log("app", "INFO", "hello")
+
+    def test_impossible_custom_dates_do_not_crash(self):
+        c = client_for(self.viewer)
+        for name in ("observe:logs", "observe:logs_feed", "observe:logs_export"):
+            r = c.get(reverse(name), {"range": "custom", "since": "2026-02-30T10:00", "until": "2026-13-45T00:00"})
+            self.assertEqual(r.status_code, 200, name)
+
+    def test_unknown_events_range_shows_the_7_day_default(self):
+        r = client_for(self.viewer).get(reverse("observe:events"), {"range": "bogus"})
+        self.assertEqual(r.context["range"], "7d")
+        self.assertContains(r, '<option value="7d" selected>')
+
+    def test_import_with_oversized_field_reports_instead_of_500(self):
+        csv_text = "name,type,category\nok-1,SNMP,Network\nbig," + "x" * 200000 + ",Network\nlater,SNMP,Network\n"
+        r = client_for(self.operator).post(reverse("observe:exporters_import"),
+                                           {"file": SimpleUploadedFile("e.csv", csv_text.encode())})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(Exporter.objects.filter(name="ok-1").exists())
+        self.assertIn("could not be read", r.context["report"]["errors"][-1]["error"])
+        r = client_for(self.operator).post(reverse("observe:exporters_import"),
+                                           {"file": SimpleUploadedFile("h.csv", ("x" * 200000 + "\n").encode())})
+        self.assertEqual(r.status_code, 200)
+
+    def test_list_hides_actions_on_rows_the_user_cannot_manage(self):
+        pune = Site.objects.create(name="Pune DR", code="pune")
+        Site.objects.create(name="Mumbai DC", code="mum")
+        mine = exp("pune-exp", site="Pune DR", metrics_url="http://10.0.0.1/metrics")
+        other = exp("global-exp", site="All Sites", metrics_url="http://10.0.0.2/metrics")
+        u = User.objects.create_user("siteop")
+        Membership.objects.create(user=u, site=pune, role="operator")
+        r = client_for(u).get(reverse("observe:exporters"))
+        self.assertContains(r, reverse("observe:exporter_edit", args=[mine.pk]))
+        self.assertNotContains(r, reverse("observe:exporter_edit", args=[other.pk]))
+        self.assertNotContains(r, reverse("observe:exporter_check", args=[other.pk]))
+        self.assertNotContains(r, reverse("observe:exporter_delete", args=[mine.pk]))
+
+
+@override_settings(LINKEDEYE_TENANT=T)
+class ImportBlankEnabledTests(TestCase):
+    def test_blank_enabled_cell_means_enabled(self):
+        _v, operator, _a = users()
+        csv_text = "name,type,category,metrics_url,enabled\nblank-1,SNMP,Network,,\noff-1,SNMP,Network,,no\n"
+        client_for(operator).post(reverse("observe:exporters_import"),
+                                  {"file": SimpleUploadedFile("e.csv", csv_text.encode())})
+        self.assertTrue(Exporter.objects.get(name="blank-1").enabled)
+        self.assertEqual(Exporter.objects.get(name="blank-1").status, "not_configured")
+        self.assertFalse(Exporter.objects.get(name="off-1").enabled)
