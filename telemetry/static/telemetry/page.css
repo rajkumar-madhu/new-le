@@ -28,6 +28,7 @@
 
 /* tables */
 .pg-telemetry .tm-table td.wrap { white-space: normal; min-width: 200px; max-width: 420px; overflow-wrap: anywhere; }
+.pg-telemetry .tm-table td.inst { white-space: normal; min-width: 120px; max-width: 170px; overflow-wrap: anywhere; }
 .pg-telemetry .tm-table td.err { color: var(--crit-ink); white-space: normal; min-width: 180px; max-width: 360px; overflow-wrap: anywhere; font-size: 12.5px; }
 .pg-telemetry .tm-table .mono, .pg-telemetry .mono { font-family: var(--mono); font-size: 12.5px; }
 .pg-telemetry .tm-table .sub { display: block; color: var(--muted); font-size: 12px; }

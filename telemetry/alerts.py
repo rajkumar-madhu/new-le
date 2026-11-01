@@ -16,7 +16,7 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from core.events import emit
@@ -116,6 +116,40 @@ def emit_for(a, severity, reason):
                 site=a.site, obj=a, fingerprint=a.event_fingerprint, **data)
 
 
+def _upsert(fp, fields, site, instance, status, severity):
+    """Create or update one alert row under a row lock. Returns (alert, event reason or None, created)."""
+    reason = None
+    with transaction.atomic():
+        a = Alert.objects.select_for_update().filter(fingerprint=fp).first()
+        created = a is None
+        if created:
+            if not site:
+                ci = _cmdb_ci(instance)
+                site = (getattr(ci, "site", "") or "")[:100]
+            a = Alert(fingerprint=fp, tenant_key=settings.LINKEDEYE_TENANT, site=site, receive_count=0,
+                      fire_count=0, **fields)
+            reason = "new" if status == Alert.FIRING else None
+        else:
+            prev_status, prev_sev = a.status, (a.severity or "").lower()
+            if prev_status == Alert.RESOLVED and status == Alert.FIRING:
+                reason = "refired"
+                a.acknowledged_at = None
+                a.acknowledged_by = None
+            elif prev_status == Alert.FIRING and status == Alert.RESOLVED:
+                reason = "resolved"
+            elif status == Alert.FIRING and prev_sev != severity.lower():
+                reason = "severity"
+            for k, v in fields.items():
+                setattr(a, k, v)
+            if site:
+                a.site = site
+        a.receive_count += 1
+        if reason in ("new", "refired"):
+            a.fire_count += 1
+        a.save()
+    return a, reason, created
+
+
 def ingest(payload, alerts, now=None):
     """Upsert every alert; returns counts {received, created, updated, events}."""
     now = now or timezone.now()
@@ -141,36 +175,13 @@ def ingest(payload, alerts, now=None):
         if status == Alert.RESOLVED and fields["ends_at"] is None:
             fields["ends_at"] = now
         site = labels.get("site", "")[:100]
-        reason = None
-        with transaction.atomic():
-            a = Alert.objects.select_for_update().filter(fingerprint=fp).first()
-            if a is None:
-                if not site:
-                    ci = _cmdb_ci(instance)
-                    site = (getattr(ci, "site", "") or "")[:100]
-                a = Alert(fingerprint=fp, tenant_key=settings.LINKEDEYE_TENANT, site=site, receive_count=0,
-                          fire_count=0, **fields)
-                stats["created"] += 1
-                reason = "new" if status == Alert.FIRING else None
-            else:
-                prev_status, prev_sev = a.status, (a.severity or "").lower()
-                if prev_status == Alert.RESOLVED and status == Alert.FIRING:
-                    reason = "refired"
-                    a.acknowledged_at = None
-                    a.acknowledged_by = None
-                elif prev_status == Alert.FIRING and status == Alert.RESOLVED:
-                    reason = "resolved"
-                elif status == Alert.FIRING and prev_sev != severity.lower():
-                    reason = "severity"
-                for k, v in fields.items():
-                    setattr(a, k, v)
-                if site:
-                    a.site = site
-                stats["updated"] += 1
-            a.receive_count += 1
-            if reason in ("new", "refired"):
-                a.fire_count += 1
-            a.save()
+        try:
+            a, reason, created = _upsert(fp, fields, site, instance, status, severity)
+        except IntegrityError:
+            # another notification for the same fingerprint (Alertmanager HA peers deliver duplicates in parallel)
+            # inserted the row between our SELECT and INSERT: it exists now, so the retry takes the update path
+            a, reason, created = _upsert(fp, fields, site, instance, status, severity)
+        stats["created" if created else "updated"] += 1
         if reason:
             emit_for(a, event_severity(a.status, a.severity), reason)
             stats["events"] += 1

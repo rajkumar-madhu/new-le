@@ -3,14 +3,16 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q, TextField
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Cast
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from core.access import require, scope_by_site
+from core.access import can, require, scope_by_site
 from core.audit import audit
 
 from .. import alerts as svc
@@ -71,8 +73,17 @@ def _filtered(request, base):
         qs = qs.filter(acknowledged_at__isnull=False)
     label = parse_label(request.GET.get("label", ""))
     if label:
-        qs = qs.filter(**{f"labels__{label[0]}": label[1]})
+        # an explicit key transform: a label named like a lookup ("contains", "isnull", "regex") must stay a key.
+        # Cast to text so the comparison is a plain string match: a bare KeyTextTransform keeps the JSON "exact"
+        # lookup, which on SQLite wraps the value in JSON() and fails with "malformed JSON" (HTTP 500).
+        qs = qs.annotate(_label_value=Cast(KeyTextTransform(label[0], "labels"), TextField())).filter(_label_value=label[1])
     return tab, label, qs
+
+
+def can_ack(user, alert):
+    """'operate' on the alert's site; alerts without a site need 'operate' somewhere."""
+    site = alert.site if alert.site not in ("", "All Sites") else None
+    return can(user, "operate", site)
 
 
 @require("view")
@@ -80,7 +91,7 @@ def alert_list(request):
     base = _scoped(request)
     tab, label, qs = _filtered(request, base)
     if tab == "firing":
-        qs = qs.order_by("acknowledged_at", "-starts_at", "-last_received_at")
+        qs = qs.order_by(F("acknowledged_at").asc(nulls_first=True), F("starts_at").desc(nulls_last=True), "-last_received_at")
     else:
         qs = qs.order_by("-last_received_at")
     qs = qs.select_related("acknowledged_by")
@@ -95,7 +106,10 @@ def alert_list(request):
                               " ".join(f"{k}={v}" for k, v in sorted((a.labels or {}).items()))] for a in qs[:10000]])
     now = timezone.now()
     firing = base.firing()
-    sev_counts = {s["severity"].lower(): s["n"] for s in firing.values("severity").annotate(n=Count("id"))}
+    sev_counts = {}
+    for s in firing.values("severity").annotate(n=Count("id")):  # "Critical" and "critical" are one severity
+        key = (s["severity"] or "").lower()
+        sev_counts[key] = sev_counts.get(key, 0) + s["n"]
     last = base.order_by("-last_received_at").values_list("last_received_at", flat=True).first()
     kpis = {
         "firing": firing.count(),
@@ -110,12 +124,16 @@ def alert_list(request):
                   "all": base.count()}
     token_set = bool(getattr(settings, "ALERTMANAGER_WEBHOOK_TOKEN", ""))
     receiver_url = request.build_absolute_uri(reverse("telemetry:alertmanager_webhook"))
+    page = paginate(request, qs)
+    for a in page:
+        a.can_ack = can_ack(request.user, a)
+    keep = query_without_page(request, "tab", "q", "severity", "alertname", "ack", "label", "format")
     ctx = {
-        **perms(request), "page": paginate(request, qs), "tab": tab, "tabs": [(k, l, tab_counts[k]) for k, l in TABS],
+        **perms(request), "page": page, "keep": keep, "tab": tab, "tabs": [(k, l, tab_counts[k]) for k, l in TABS],
         "label": label, "kpis": kpis, "severities": SEVERITIES,
         "alertnames": list(base.order_by().values_list("alertname", flat=True).distinct().order_by("alertname")[:200]),
         "top_alerts": list(firing.values("alertname").annotate(n=Count("id")).order_by("-n", "alertname")[:6]),
-        "query": query_without_page(request), "filtered": any(request.GET.get(k) for k in ("q", "severity", "alertname", "ack", "label")),
+        "query": query_without_page(request), "unlabel": query_without_page(request, "label", "format"), "filtered": any(request.GET.get(k) for k in ("q", "severity", "alertname", "ack", "label")),
         "token_set": token_set, "receiver_url": receiver_url,
         "next_url": request.get_full_path(),
     }
@@ -128,7 +146,7 @@ def alert_detail(request, pk):
     from core.models import Event
     events = Event.objects.filter(fingerprint=a.event_fingerprint).order_by("-occurred_at")[:20]
     return render(request, "telemetry/alert_detail.html", {
-        **perms(request), "a": a, "events": events, "incidents": _incidents(a),
+        **perms(request), "can_ack": can_ack(request.user, a), "a": a, "events": events, "incidents": _incidents(a),
         "labels": sorted((a.labels or {}).items()), "annotations": sorted((a.annotations or {}).items()),
     })
 
@@ -181,11 +199,21 @@ def acknowledge(request, pk=None):
     if not items:
         messages.error(request, "Select at least one alert to acknowledge.")
         return _redirect_back(request)
+    denied = [a for a in items if not can_ack(request.user, a)]
+    if denied:
+        messages.error(request, f"You do not have operate permission on the site of “{denied[0]}”.")
+        return _redirect_back(request)
+    resolved = [a for a in items if a.status != Alert.FIRING]
+    items = [a for a in items if a.status == Alert.FIRING]
+    if not items:
+        messages.warning(request, "Resolved alerts cannot be acknowledged.")
+        return _redirect_back(request)
     changed = svc.acknowledge(items, request.user)
     for a in changed:
         audit(request, "acknowledge", a, alertname=a.alertname, instance=a.instance, fingerprint=a.fingerprint)
     if changed:
-        messages.success(request, f"Acknowledged {len(changed)} alert(s)." if len(changed) > 1 else f"Acknowledged “{changed[0]}”.")
+        messages.success(request, (f"Acknowledged {len(changed)} alert(s)." if len(changed) > 1 else f"Acknowledged “{changed[0]}”.")
+                         + (f" Skipped {len(resolved)} resolved alert(s)." if resolved else ""))
     else:
         messages.warning(request, "The selected alert(s) were already acknowledged.")
     return _redirect_back(request)
@@ -195,6 +223,9 @@ def acknowledge(request, pk=None):
 @require_POST
 def unacknowledge(request, pk):
     items = _selected(request, pk)
+    if not can_ack(request.user, items[0]):
+        messages.error(request, f"You do not have operate permission on the site of “{items[0]}”.")
+        return _redirect_back(request)
     changed = svc.unacknowledge(items)
     for a in changed:
         audit(request, "unacknowledge", a, alertname=a.alertname, instance=a.instance, fingerprint=a.fingerprint)

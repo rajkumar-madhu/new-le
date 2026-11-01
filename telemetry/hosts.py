@@ -13,7 +13,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from core import prometheus
+from . import promapi
 
 from .fmt import finite, promql_string
 
@@ -108,12 +108,12 @@ def fetch_hosts(use_cache=True):
         hit = cache.get(key)
         if hit is not None:
             return hit
-    up_rows = prometheus.query(QUERIES["up"])
+    up_rows = promapi.query(QUERIES["up"])
     if not up_rows:
         cache.set(key, [], CACHE_SECONDS)
         return []
     rest = {k: v for k, v in QUERIES.items() if k != "up"}
-    results = _run_parallel(rest, prometheus.query)
+    results = _run_parallel(rest, promapi.query)
     values = {k: _by_instance(v) for k, v in results.items()}
     hosts = {}
     for r in up_rows:
@@ -146,7 +146,7 @@ def cpu_sparklines(use_cache=True):
         if hit is not None:
             return hit
     out = {}
-    for r in prometheus.query_range(SPARK_QUERY, SPARK_SECONDS, SPARK_STEP):
+    for r in promapi.query_range(SPARK_QUERY, SPARK_SECONDS, SPARK_STEP):
         inst = (r.get("metric") or {}).get("instance")
         if inst:
             out[inst] = [round(v, 2) for _t, v in r.get("values", []) if finite(v)]
@@ -254,10 +254,10 @@ def fetch_host(instance, range_key="1h", use_cache=True):
         if hit is not None:
             return hit
     q = detail_queries(instance)
-    up_rows = prometheus.query(q.pop("up"))
+    up_rows = promapi.query(q.pop("up"))
     if not up_rows:
         return None
-    inst = _run_parallel(q, prometheus.query)
+    inst = _run_parallel(q, promapi.query)
     h = {"instance": instance, "job": (up_rows[0].get("metric") or {}).get("job", ""),
          "up": max(int(r["value"]) for r in up_rows if finite(r.get("value"))) if any(finite(r.get("value")) for r in up_rows) else None}
     for k in ("cpu", "memory", "disk", "load1", "load5", "load15", "cores", "rx", "tx", "uptime", "mem_total"):
@@ -315,7 +315,7 @@ def host_charts(instance, range_key):
     seconds = RANGES.get(range_key, RANGES["1h"])[1]
     step = step_for(seconds)
     rq = range_queries(instance)
-    res = _run_parallel(rq, lambda q: prometheus.query_range(q, seconds, step))
+    res = _run_parallel(rq, lambda q: promapi.query_range(q, seconds, step))
 
     def vals(name):
         rows = res.get(name) or []

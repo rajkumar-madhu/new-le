@@ -70,6 +70,34 @@ def timeout():
         return 10.0
 
 
+class _SameOriginAuthRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow redirects, but never forward the basic-auth header to another scheme, host or port.
+
+    urllib copies every request header (including Authorization) onto the redirected request, so a redirect from
+    the Nagios server (or anything answering on NAGIOS_URL) would otherwise hand the NAGIOS_PASSWORD to a
+    third party or send it over plain http."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None and _origin(new.full_url) != _origin(req.full_url):
+            for k in [k for k in new.headers if k.lower() == "authorization"]:
+                del new.headers[k]
+            new.unredirected_hdrs.pop("Authorization", None)
+        return new
+
+
+def _origin(url):
+    p = urllib.parse.urlsplit(url)
+    return (p.scheme.lower(), (p.hostname or "").lower(), p.port or {"http": 80, "https": 443}.get(p.scheme.lower()))
+
+
+_OPENER = urllib.request.build_opener(_SameOriginAuthRedirect)
+
+
+def _urlopen(req, timeout):
+    return _OPENER.open(req, timeout=timeout)
+
+
 def _get(params):
     if not configured():
         raise NagiosError("Nagios is not connected (set NAGIOS_URL).")
@@ -83,7 +111,7 @@ def _get(params):
         token = base64.b64encode(f"{user}:{password or ''}".encode()).decode()
         req.add_header("Authorization", f"Basic {token}")
     try:
-        with urllib.request.urlopen(req, timeout=timeout()) as r:  # noqa: S310 - operator-configured URL
+        with _urlopen(req, timeout()) as r:  # noqa: S310 - operator-configured URL
             raw = r.read(MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
@@ -97,7 +125,12 @@ def _get(params):
         body = json.loads(raw.decode("utf-8", errors="replace"))
     except ValueError:
         raise NagiosError("Nagios did not return JSON – is NAGIOS_URL pointing at the Nagios Core web root?") from None
-    result = body.get("result") or {}
+    if not isinstance(body, dict):
+        # a JSON list / string (proxy, wrong CGI, Nagios XI API…) is not the statusjson.cgi envelope
+        raise NagiosError("Unexpected Nagios response – is NAGIOS_URL pointing at the Nagios Core web root?")
+    result = body.get("result")
+    if not isinstance(result, dict):
+        result = {}
     if result.get("type_code", 0) not in (0, "0"):
         raise NagiosError(f"Nagios error: {result.get('message') or result.get('type_text') or 'query failed'}")
     data = body.get("data")
@@ -120,7 +153,7 @@ def _state(value, table):
 def _host_row(name, d):
     if not isinstance(d, dict):
         d = {"status": d}
-    return {"name": d.get("name") or name, "state": _state(d.get("status"), HOST_STATES),
+    return {"name": str(d.get("name") or name), "state": _state(d.get("status"), HOST_STATES),
             "output": str(d.get("plugin_output") or "")[:500], "last_check": from_epoch(d.get("last_check"), ms=True),
             "last_change": from_epoch(d.get("last_state_change"), ms=True),
             "acknowledged": bool(d.get("problem_has_been_acknowledged")),
@@ -132,7 +165,7 @@ def _host_row(name, d):
 def _service_row(host, desc, d):
     if not isinstance(d, dict):
         d = {"status": d}
-    return {"host": d.get("host_name") or host, "service": d.get("description") or desc,
+    return {"host": str(d.get("host_name") or host), "service": str(d.get("description") or desc),
             "state": _state(d.get("status"), SERVICE_STATES), "output": str(d.get("plugin_output") or "")[:500],
             "last_check": from_epoch(d.get("last_check"), ms=True), "last_change": from_epoch(d.get("last_state_change"), ms=True),
             "acknowledged": bool(d.get("problem_has_been_acknowledged")),
@@ -166,7 +199,7 @@ def fetch_status(use_cache=True):
                 services.extend(_service_row(h, s, d) for s, d in svcs.items())
     hosts.sort(key=lambda r: (HOST_ORDER.get(r["state"], 9), r["name"].lower()))
     services.sort(key=lambda r: (SERVICE_ORDER.get(r["state"], 9), r["host"].lower(), r["service"].lower()))
-    result = hbody.get("result") or {}
+    result = hbody.get("result") if isinstance(hbody.get("result"), dict) else {}
     out = {"hosts": hosts, "services": services, "query_time": from_epoch(result.get("query_time"), ms=True),
            "program": str(result.get("program_version") or "")}
     cache.set(key, out, CACHE_SECONDS)

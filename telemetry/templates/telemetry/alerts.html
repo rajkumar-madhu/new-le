@@ -28,7 +28,7 @@
 
 <section class="grid g-main">
   <div class="panel">
-    <nav class="tabs" aria-label="Alert state">{% for k, l, n in tabs %}<a href="?tab={{ k }}" class="{% if k == tab %}on{% endif %}">{{ l }}<span class="n">{{ n }}</span></a>{% endfor %}</nav>
+    <nav class="tabs" aria-label="Alert state">{% for k, l, n in tabs %}<a href="?{% if keep %}{{ keep.urlencode }}&amp;{% endif %}tab={{ k }}" class="{% if k == tab %}on{% endif %}">{{ l }}<span class="n">{{ n }}</span></a>{% endfor %}</nav>
     <form class="toolbar tm-filters" method="get" style="margin-top:12px">
       <input type="hidden" name="tab" value="{{ tab }}">
       {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
@@ -38,9 +38,9 @@
       <select name="severity" data-autosubmit aria-label="Severity"><option value="">All Severities</option>{% for v, l in severities %}<option value="{{ v }}"{% if request.GET.severity == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
       <select name="alertname" data-autosubmit aria-label="Alert name"><option value="">All Alerts</option>{% for n in alertnames %}<option{% if request.GET.alertname == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
       <select name="ack" data-autosubmit aria-label="Acknowledgement"><option value="">Any Ack State</option><option value="no"{% if request.GET.ack == 'no' %} selected{% endif %}>Unacknowledged</option><option value="yes"{% if request.GET.ack == 'yes' %} selected{% endif %}>Acknowledged</option></select>
-      {% if filtered %}<a class="btn icon blue" href="?tab={{ tab }}" title="Clear filters" aria-label="Clear filters">{% icon "x" 16 %}</a>{% endif %}
+      {% if filtered %}<a class="btn icon blue" href="?{% if keep %}{{ keep.urlencode }}&amp;{% endif %}tab={{ tab }}" title="Clear filters" aria-label="Clear filters">{% icon "x" 16 %}</a>{% endif %}
     </form>
-    {% if label %}<p class="tm-bulk"><span class="tm-meta">Label filter</span><a class="chip on" href="?{% for k, v in query.items %}{% if k != 'label' %}{{ k }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}" title="Remove label filter">{{ label.0 }}={{ label.1 }} ✕</a></p>{% endif %}
+    {% if label %}<p class="tm-bulk"><span class="tm-meta">Label filter</span><a class="chip on" href="?{{ unlabel.urlencode }}" title="Remove label filter">{{ label.0 }}={{ label.1 }} ✕</a></p>{% endif %}
 
     <form method="post" action="{% url 'telemetry:alert_ack_bulk' %}" id="bulk">{% csrf_token %}<input type="hidden" name="next" value="{{ next_url }}">
     <div class="table-wrap dense tm-table" style="margin-top:12px"><table>
@@ -52,12 +52,12 @@
           <td><span class="sev t-{{ a.severity_tone }}">{{ a.severity|default:"none" }}</span></td>
           <td class="wrap"><a href="{% url 'telemetry:alert_detail' a.pk %}"><b>{{ a.alertname }}</b></a>{% if a.is_example %}<span class="tag ex">example</span>{% endif %}
             {% if a.summary %}<span class="sub">{{ a.summary|truncatechars:110 }}</span>{% endif %}
-            {% if a.extra_labels %}<div class="chips" style="margin-top:4px">{% for k, v in a.extra_labels|slice:":4" %}<a class="chip mute" href="?tab={{ tab }}&amp;label={{ k|urlencode }}%3D{{ v|urlencode }}" title="Filter by {{ k }}={{ v }}">{{ k }}={{ v }}</a>{% endfor %}{% if a.extra_labels|length > 4 %}<span class="chip mute">+{{ a.extra_labels|length|add:"-4" }}</span>{% endif %}</div>{% endif %}</td>
-          <td><span class="mono">{{ a.instance|default:"–" }}</span>{% if a.job %}<span class="sub">{{ a.job }}</span>{% endif %}</td>
+            {% if a.extra_labels %}<div class="chips" style="margin-top:4px">{% for k, v in a.extra_labels|slice:":4" %}<a class="chip mute" href="?{% if keep %}{{ keep.urlencode }}&amp;{% endif %}tab={{ tab }}&amp;label={{ k|urlencode }}%3D{{ v|urlencode }}" title="Filter by {{ k }}={{ v }}">{{ k }}={{ v }}</a>{% endfor %}{% if a.extra_labels|length > 4 %}<span class="chip mute">+{{ a.extra_labels|length|add:"-4" }}</span>{% endif %}</div>{% endif %}</td>
+          <td class="inst"><span class="mono">{{ a.instance|default:"–" }}</span>{% if a.job %}<span class="sub">{{ a.job }}</span>{% endif %}</td>
           <td title="{{ a.starts_at|date:'Y-m-d H:i:s' }}">{{ a.starts_at|short_dt }}<span class="sub">for {{ a.duration_seconds|hduration }}</span></td>
           <td>{% include "telemetry/_alert_status.html" with st=a.status %}</td>
           <td>{% if a.acknowledged %}<span class="tag ack" title="{{ a.acknowledged_at|date:'Y-m-d H:i' }}">{{ a.acknowledged_by.get_username|default:"acknowledged" }}</span>{% else %}<span class="t-mute">–</span>{% endif %}</td>
-          {% if can_operate %}<td><div class="row-actions">{% if not a.acknowledged and a.status == 'firing' %}<button class="btn icon blue" type="submit" formaction="{% url 'telemetry:alert_ack' a.pk %}" title="Acknowledge" aria-label="Acknowledge {{ a.alertname }}">{% icon "check" 15 %}</button>{% endif %}<a class="btn icon" href="{% url 'telemetry:alert_detail' a.pk %}" title="Details" aria-label="Details for {{ a.alertname }}">{% icon "eye" 15 %}</a></div></td>{% endif %}
+          {% if can_operate %}<td><div class="row-actions">{% if a.can_ack and not a.acknowledged and a.status == 'firing' %}<button class="btn icon blue" type="submit" formaction="{% url 'telemetry:alert_ack' a.pk %}" title="Acknowledge" aria-label="Acknowledge {{ a.alertname }}">{% icon "check" 15 %}</button>{% endif %}<a class="btn icon" href="{% url 'telemetry:alert_detail' a.pk %}" title="Details" aria-label="Details for {{ a.alertname }}">{% icon "eye" 15 %}</a></div></td>{% endif %}
         </tr>
       {% empty %}
         <tr><td colspan="8" class="empty">{% if filtered %}No alerts match the filters.{% elif tab == 'firing' %}No alerts are firing.{% if not kpis.last %} Nothing has been received yet – see Receiver setup.{% endif %}{% else %}No alerts.{% endif %}</td></tr>
@@ -71,7 +71,7 @@
   <div class="stack">
     <div class="panel"><div class="panel-h"><h2>Top Firing Alerts</h2></div>
       {% if top_alerts %}<div class="hbar">{% for t in top_alerts %}
-        <a class="lbl" href="?tab=firing&amp;alertname={{ t.alertname|urlencode }}" title="{{ t.alertname }}">{{ t.alertname }}</a><span class="track"><i class="crit" style="width:{% widthratio t.n top_alerts.0.n 100 %}%"></i></span><span class="val">{{ t.n }}</span>
+        <a class="lbl" href="?{% if keep %}{{ keep.urlencode }}&amp;{% endif %}tab=firing&amp;alertname={{ t.alertname|urlencode }}" title="{{ t.alertname }}">{{ t.alertname }}</a><span class="track"><i class="crit" style="width:{% widthratio t.n top_alerts.0.n 100 %}%"></i></span><span class="val">{{ t.n }}</span>
       {% endfor %}</div>{% else %}<p class="t-mute" style="margin:0">Nothing firing.</p>{% endif %}
     </div>
     <div class="panel tm-receiver" id="receiver"><div class="panel-h"><h2>Receiver</h2><div class="right">{% if token_set %}<span class="badge ok">{% ficon "check-circle" 14 %}Token configured</span>{% else %}<span class="badge crit">{% ficon "x-circle" 14 %}Disabled</span>{% endif %}</div></div>

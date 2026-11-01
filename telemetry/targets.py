@@ -5,6 +5,8 @@ from django.core.cache import cache
 
 from core import prometheus
 
+from . import promapi
+
 from .fmt import finite, parse_ts
 
 log = logging.getLogger("linkedeye.telemetry")
@@ -47,7 +49,7 @@ def fetch_targets(use_cache=True):
         hit = cache.get(key)
         if hit is not None:
             return hit
-    rows = [normalize(t) for t in prometheus.targets()]
+    rows = [normalize(t) for t in promapi.targets()]
     rows.sort(key=lambda r: (r["job"], HEALTH_ORDER[r["health"]], r["instance"]))
     cache.set(key, rows, CACHE_SECONDS)
     return rows
@@ -98,10 +100,10 @@ def server_stats(use_cache=True):
     out = {"head_series": None, "ingest_rate": None, "rule_alerts_firing": None, "rule_alerts_pending": None, "error": ""}
     try:
         for k, q in SERVER_QUERIES.items():
-            rows = prometheus.query(q)
+            rows = promapi.query(q)
             if rows and finite(rows[0].get("value")):
                 out[k] = rows[0]["value"]
-        alerts = prometheus.alerts()
+        alerts = promapi.alerts()
         out["rule_alerts_firing"] = sum(1 for a in alerts if a.get("state") == "firing")
         out["rule_alerts_pending"] = sum(1 for a in alerts if a.get("state") == "pending")
     except prometheus.PrometheusError as e:

@@ -2,7 +2,7 @@ from django.http import Http404
 from django.shortcuts import render
 
 from core import prometheus
-from core.access import require, visible_sites
+from core.access import require, scope_by_site, visible_sites
 
 from .. import hosts as svc
 from ..fmt import finite, human_duration, human_rate
@@ -111,7 +111,9 @@ def host_detail(request, instance):
                 status = 404
         except prometheus.PrometheusError as e:
             ctx["error"] = str(e)
-    alerts = Alert.objects.for_tenant().filter(instance=instance).order_by("status", "-last_received_at")[:10]
+    # alerts carry their own site (label or CMDB): a host without a CI is global, its alerts may not be
+    alerts = (scope_by_site(Alert.objects.for_tenant(), request.user, field="site")
+              .filter(instance=instance).order_by("status", "-last_received_at")[:10])
     ctx.update({"ci": ci, "ci_url": svc.ci_url(ci), "site": site, "range_key": range_key,
                 "ranges": [(k, v[0]) for k, v in svc.RANGES.items()], "alerts": alerts,
                 "explore_q": svc.range_queries(instance)["cpu"]})

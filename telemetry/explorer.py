@@ -12,7 +12,7 @@ import re
 
 from django.conf import settings
 
-from core import prometheus
+from . import promapi
 
 from .fmt import finite, series_name
 from .hosts import PALETTE, align
@@ -90,7 +90,7 @@ def check(promql, range_seconds, step=None):
 
 def run(promql, range_seconds, step):
     """Execute a checked query. Returns a result dict for the template. Raises PrometheusError."""
-    rows = prometheus.query_range(promql, range_seconds, step)
+    rows = promapi.query_range(promql, range_seconds, step)
     total = len(rows)
 
     def last(r):

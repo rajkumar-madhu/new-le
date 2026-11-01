@@ -15,7 +15,7 @@
       {% if a.is_example %}<span class="tag ex">example</span>{% endif %}
     </div></div>
   <div class="actions">
-    {% if can_operate %}
+    {% if can_ack %}
       {% if a.acknowledged %}
       <form method="post" action="{% url 'telemetry:alert_unack' a.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}"><button class="btn" type="submit">{% icon "x" 16 %}Remove acknowledgement</button></form>
       {% elif a.status == 'firing' %}

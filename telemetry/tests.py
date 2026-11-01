@@ -304,7 +304,7 @@ class NagiosTests(TestCase):
         cache.clear()
 
     def test_fetch_and_summarize(self):
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", side_effect=fake_urlopen) as uo:
+        with mock.patch("telemetry.nagios._urlopen", side_effect=fake_urlopen) as uo:
             st = nagios.fetch_status()
         self.assertEqual(uo.call_count, 2)
         req = uo.call_args_list[0][0][0]
@@ -320,22 +320,22 @@ class NagiosTests(TestCase):
         self.assertEqual(s["unhandled"], 1 + 3)  # db is acknowledged
 
     def test_cached_for_30_seconds(self):
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", side_effect=fake_urlopen) as uo:
+        with mock.patch("telemetry.nagios._urlopen", side_effect=fake_urlopen) as uo:
             nagios.fetch_status()
             nagios.fetch_status()
         self.assertEqual(uo.call_count, 2)
 
     def test_errors(self):
         err = urllib.error.HTTPError("https://nagios.test", 401, "Unauthorized", {}, None)
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", side_effect=err):
+        with mock.patch("telemetry.nagios._urlopen", side_effect=err):
             with self.assertRaisesRegex(nagios.NagiosError, "credentials"):
                 nagios.fetch_status()
         cache.clear()
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", side_effect=urllib.error.URLError("timed out")):
+        with mock.patch("telemetry.nagios._urlopen", side_effect=urllib.error.URLError("timed out")):
             with self.assertRaisesRegex(nagios.NagiosError, "unreachable"):
                 nagios.fetch_status()
         cache.clear()
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", return_value=FakeResp(b"<html>login</html>")):
+        with mock.patch("telemetry.nagios._urlopen", return_value=FakeResp(b"<html>login</html>")):
             with self.assertRaisesRegex(nagios.NagiosError, "JSON"):
                 nagios.fetch_status()
 
@@ -555,14 +555,14 @@ class PageTests(PromMixin, TestCase):
     @override_settings(NAGIOS_URL="https://nagios.test/nagios")
     def test_nagios_page(self):
         self.client.force_login(self.viewer)
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", side_effect=fake_urlopen):
+        with mock.patch("telemetry.nagios._urlopen", side_effect=fake_urlopen):
             r = self.client.get(reverse("telemetry:nagios"))
             self.assertContains(r, "Host Problems")
             self.assertContains(r, "CRITICAL - down")
             r = self.client.get(reverse("telemetry:nagios") + "?tab=hosts&state=unreachable")
             self.assertContains(r, ">dr<")
         cache.clear()
-        with mock.patch("telemetry.nagios.urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+        with mock.patch("telemetry.nagios._urlopen", side_effect=urllib.error.URLError("refused")):
             r = self.client.get(reverse("telemetry:nagios"))
         self.assertContains(r, "Nagios unreachable")
 
@@ -767,3 +767,125 @@ class JobAndSeedTests(TestCase):
         call_command("seed_telemetry", "--remove", stdout=out)
         self.assertEqual(Alert.objects.count(), 0)
         self.assertEqual(SavedQuery.objects.count(), 0)
+
+
+# ============================================================================= adversarial QA regressions
+class QaRegressionTests(PromMixin, TestCase):
+    """Bugs found by the end-to-end QA pass; each test failed before its fix."""
+
+    def setUp(self):
+        cache.clear()
+        self.viewer, self.operator, self.admin = users()
+
+    def test_label_filter_does_not_crash_on_sqlite(self):
+        # KeyTextTransform kept the JSON "exact" lookup -> JSON('dba') -> "malformed JSON" -> HTTP 500
+        Alert.objects.create(fingerprint="l1", alertname="DiskFull", labels={"team": "dba", "contains": "x"})
+        Alert.objects.create(fingerprint="l2", alertname="CpuHigh", labels={"team": "web"})
+        self.client.force_login(self.viewer)
+        r = self.client.get(reverse("telemetry:alertmanager") + "?tab=all&label=team%3Ddba")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([a.alertname for a in r.context["page"]], ["DiskFull"])
+        r = self.client.get(reverse("telemetry:alertmanager") + "?tab=all&label=contains%3Dx")  # a lookup-named label
+        self.assertEqual([a.alertname for a in r.context["page"]], ["DiskFull"])
+        r = self.client.get(reverse("telemetry:alertmanager") + "?tab=all&label=team%3Dnobody")
+        self.assertEqual(len(r.context["page"]), 0)
+
+    def test_remove_label_link_keeps_other_filters(self):
+        Alert.objects.create(fingerprint="l1", alertname="DiskFull", severity="critical", labels={"team": "dba"})
+        self.client.force_login(self.viewer)
+        r = self.client.get(reverse("telemetry:alertmanager") + "?tab=all&severity=critical&label=team%3Ddba&page=1")
+        self.assertContains(r, 'href="?tab=all&amp;severity=critical" title="Remove label filter"')
+
+    @override_settings(PROMETHEUS_URL=PROM)
+    def test_host_detail_alerts_are_site_scoped(self):
+        # a host without a CMDB CI is global, but its alerts carry their own site: a Mumbai-only viewer
+        # must not see the DR alert on the host page (the alert list and detail already 404 for it)
+        mum = Site.objects.create(name="Mumbai", code="mum")
+        Site.objects.create(name="DR", code="dr")
+        u = User.objects.create_user("mumviewer")
+        Membership.objects.create(user=u, site=mum, role="viewer")
+        Alert.objects.create(fingerprint="a-dr", alertname="DrOnlyAlert", instance="db-01:9100", site="DR")
+        Alert.objects.create(fingerprint="a-mum", alertname="MumbaiAlert", instance="db-01:9100", site="Mumbai")
+        self.start_prom()
+        self.client.force_login(u)
+        r = self.client.get(reverse("telemetry:host_detail", args=["db-01:9100"]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "MumbaiAlert")
+        self.assertNotContains(r, "DrOnlyAlert")
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("telemetry:host_detail", args=["db-01:9100"])), "DrOnlyAlert")
+
+    @override_settings(NAGIOS_URL="https://nagios.test/nagios")
+    def test_nagios_non_object_json_is_an_error_not_a_500(self):
+        self.client.force_login(self.viewer)
+        for body in (b"[1, 2, 3]", b'"hello"', b'{"result": "oops", "data": []}'):
+            cache.clear()
+            with mock.patch("telemetry.nagios._urlopen", return_value=FakeResp(body)):
+                with self.assertRaises(nagios.NagiosError):
+                    nagios.fetch_status()
+            cache.clear()
+            with mock.patch("telemetry.nagios._urlopen", return_value=FakeResp(body)):
+                r = self.client.get(reverse("telemetry:nagios"))
+            self.assertEqual(r.status_code, 200, body)
+            self.assertContains(r, "Nagios query failed")
+
+    @override_settings(NAGIOS_URL="https://nagios.test/nagios")
+    def test_nagios_odd_values_do_not_crash(self):
+        def odd(req, timeout=None):
+            if "hostlist" in req.full_url:
+                data = {"hostlist": {"h1": {"name": 5, "status": "down"}, "h2": None}}
+            else:
+                data = {"servicelist": {"h1": {"s": {"status": 16, "description": 7, "host_name": 9}}}}
+            return FakeResp(json.dumps({"result": "not-a-dict", "data": data}).encode())
+        with mock.patch("telemetry.nagios._urlopen", side_effect=odd):
+            st = nagios.fetch_status()
+        self.assertEqual({h["name"] for h in st["hosts"]}, {"5", "h2"})
+        self.assertEqual(st["services"][0]["service"], "7")
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(reverse("telemetry:nagios")).status_code, 200)
+
+    @override_settings(ALERTMANAGER_WEBHOOK_TOKEN=TOKEN, INCIDENT_AUTO_CREATE=False)
+    def test_concurrent_insert_of_same_fingerprint_is_retried_as_update(self):
+        # Alertmanager HA peers deliver the same notification in parallel: the peer's INSERT lands between our
+        # SELECT ... FOR UPDATE (no row yet) and our INSERT -> IntegrityError, previously an HTTP 500
+        Alert.objects.create(fingerprint="race1", alertname="HostDown", status="firing", severity="critical",
+                             instance="db-01:9100", fire_count=1)
+        real = Alert.objects.select_for_update
+        calls = {"n": 0}
+
+        def first_blind(*a, **k):
+            calls["n"] += 1
+            return Alert.objects.none() if calls["n"] == 1 else real(*a, **k)
+        with mock.patch.object(Alert.objects, "select_for_update", side_effect=first_blind):
+            r = self.client.post("/api/v1/alertmanager/", data=json.dumps(am_payload(am_alert(fp="race1"))),
+                                 content_type="application/json", HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["created"], 0)
+        self.assertEqual(r.json()["updated"], 1)
+        self.assertEqual(r.json()["events"], 0)  # still firing, same severity: no duplicate event
+        self.assertEqual(Alert.objects.filter(fingerprint="race1").count(), 1)
+
+    @override_settings(PROMETHEUS_URL=PROM)
+    def test_non_prometheus_responses_become_prometheus_errors(self):
+        from . import promapi
+        with mock.patch("core.prometheus.query", side_effect=ValueError("Expecting value")):
+            with self.assertRaisesRegex(prometheus.PrometheusError, "unexpected response"):
+                promapi.query("up")
+        with mock.patch("core.prometheus.targets", return_value="not a list"):
+            with self.assertRaises(prometheus.PrometheusError):
+                promapi.targets()
+        with mock.patch("core.prometheus.query", side_effect=TypeError("'NoneType' object is not subscriptable")):
+            self.client.force_login(self.viewer)
+            r = self.client.get(reverse("telemetry:infrastructure"))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "unexpected response")
+
+    def test_nagios_auth_header_not_forwarded_cross_origin(self):
+        import urllib.request
+        h = nagios._SameOriginAuthRedirect()
+        req = urllib.request.Request("https://nagios.test/nagios/cgi-bin/statusjson.cgi")
+        req.add_header("Authorization", "Basic abc")
+        same = h.redirect_request(req, None, 302, "Found", {}, "https://nagios.test/other")
+        other = h.redirect_request(req, None, 302, "Found", {}, "http://evil.test/x")
+        self.assertEqual(same.get_header("Authorization"), "Basic abc")
+        self.assertIsNone(other.get_header("Authorization"))
