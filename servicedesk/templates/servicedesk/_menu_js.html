@@ -1,0 +1,5 @@
+<script>
+document.addEventListener('click', function (e) {
+  document.querySelectorAll('.pg-sd details.row-menu[open], .pg-sd details.sd-pop[open]').forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
+});
+</script>

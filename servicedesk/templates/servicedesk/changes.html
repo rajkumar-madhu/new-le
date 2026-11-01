@@ -1,0 +1,58 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}Changes{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<span>Changes</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-changes">
+<div class="head">
+  <div class="glyph">{% icon "refresh" 40 %}</div>
+  <div><h1>Changes</h1><p>Plan, approve and schedule changes to configuration items</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'servicedesk:export' %}?kind=change&amp;{{ query.urlencode }}">{% icon "download" 17 %}Export CSV</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'servicedesk:create' %}?kind=change">{% icon "plus" 17 %}New Change</a>{% endif %}
+  </div>
+</div>
+<section class="kpis sd-mini" aria-label="Change summary">
+  <a class="kpi stacked" href="?approval=pending"><div class="kpi-top"><div class="tile sq bg-warn">{% icon "clock" 24 %}</div><div class="kpi-body"><div class="label">Pending Approval</div><div class="value">{{ kpi.pending }}</div></div></div><div class="sub">Submitted, awaiting a decision</div></a>
+  <a class="kpi stacked" href="?window=upcoming"><div class="kpi-top"><div class="tile sq bg-info">{% icon "calendar-range" 24 %}</div><div class="kpi-body"><div class="label">Scheduled (7 days)</div><div class="value">{{ kpi.scheduled }}</div></div></div><div class="sub">Windows starting this week</div></a>
+  <a class="kpi stacked" href="?window=now"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "play" 24 %}</div><div class="kpi-body"><div class="label">In Window Now</div><div class="value">{{ kpi.in_window }}</div></div></div><div class="sub">Approved changes being implemented</div></a>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Implemented (30 days)</div><div class="value">{{ kpi.implemented30 }}</div></div></div><div class="sub">Completed changes</div></div>
+  <a class="kpi stacked" href="?approval=rejected"><div class="kpi-top"><div class="tile sq bg-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Rejected (30 days)</div><div class="value">{{ kpi.rejected30 }}</div></div></div><div class="sub">Not approved by the CAB</div></a>
+</section>
+<section class="grid sd-split-main">
+<div class="panel sd-list">
+  <form class="toolbar sd-toolbar" method="get" role="search" aria-label="Filter changes">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}{% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search changes or CIs…" aria-label="Search changes"></label>
+    <select name="approval" data-autosubmit aria-label="Approval"><option value="">All Approval States</option>{% for v, l in approvals %}<option value="{{ v }}"{% if approval == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="status" data-autosubmit aria-label="Status"><option value="">All Statuses</option><option value="open"{% if request.GET.status == 'open' %} selected{% endif %}>Open</option>{% for v, l in statuses %}<option value="{{ v }}"{% if request.GET.status == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="window" data-autosubmit aria-label="Window"><option value="">Any Window</option><option value="upcoming"{% if window == 'upcoming' %} selected{% endif %}>Upcoming</option><option value="now"{% if window == 'now' %} selected{% endif %}>In window now</option></select>
+    <select name="priority" data-autosubmit aria-label="Priority"><option value="">All Priorities</option>{% for v, l in priorities %}<option value="{{ v }}"{% if request.GET.priority == v %} selected{% endif %}>{{ v }} · {{ l }}</option>{% endfor %}</select>
+    <button class="btn primary" type="submit">Search</button>
+    <a class="btn icon blue" href="{% url 'servicedesk:changes' %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>
+  </form>
+  <div class="table-wrap sd-table"><table>
+    <thead><tr><th>#</th><th>Title</th><th>Risk</th><th>Status</th><th>Approval</th><th>Scheduled Window</th><th class="num">CIs</th><th>Owner</th><th class="act">Actions</th></tr></thead>
+    <tbody>{% for t in page %}<tr>
+      <td><a href="{{ t.get_absolute_url }}">{{ t.number }}</a></td>
+      <td class="ttl" title="{{ t.title }}">{{ t.title|truncatechars:56 }}{% if t.ci_name %}<small class="sd-sub">{{ t.ci_name }}</small>{% endif %}</td>
+      <td>{% if t.risk %}<span class="chip {% if t.risk == 'high' %}crit{% elif t.risk == 'medium' %}warn{% else %}ok{% endif %}">{{ t.get_risk_display }}</span>{% else %}<span class="t-mute">–</span>{% endif %}</td>
+      <td>{% status_pill t.status %}</td>
+      <td><span class="chip {{ t.approval_tone }}" {% if t.approved_by %}title="Approved by {{ t.approved_by.get_full_name|default:t.approved_by.get_username }} {{ t.approved_at|date:'M j, H:i' }}"{% endif %}>{{ t.approval_label }}</span></td>
+      <td class="sd-window">{% if t.planned_start %}{{ t.planned_start|date:"M j, H:i" }} → {% if t.planned_end|date:"Ymd" == t.planned_start|date:"Ymd" %}{{ t.planned_end|date:"H:i" }}{% else %}{{ t.planned_end|date:"M j, H:i" }}{% endif %}{% if t.in_window %} <span class="chip purple">In window</span>{% endif %}{% else %}<span class="t-mute">Not scheduled</span>{% endif %}</td>
+      <td class="num">{{ t.n_cis|default:"–" }}</td>
+      <td>{% who t.assignee %}</td>
+      <td class="act">{% include "servicedesk/_rowmenu.html" %}</td>
+    </tr>{% empty %}<tr><td colspan="9" class="empty">No changes match.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% include "core/_pager.html" with pager_noun="changes" %}
+</div>
+<div class="panel sd-upcoming"><div class="panel-h"><h2>Upcoming Windows</h2><div class="right"><a class="view-all" href="?window=upcoming">View All</a></div></div>
+  <ul class="sd-cal">{% for c in upcoming %}<li><div class="cal-d"><b>{{ c.planned_start|date:"j" }}</b><small>{{ c.planned_start|date:"M" }}</small></div>
+    <div class="cal-b"><a href="{{ c.get_absolute_url }}">{{ c.number }}</a> <span>{{ c.title|truncatechars:42 }}</span><small>{{ c.planned_start|date:"D H:i" }} – {{ c.planned_end|date:"D H:i" }}{% if c.risk %} · {{ c.get_risk_display }} risk{% endif %}</small></div>{% status_pill c.status %}</li>
+  {% empty %}<li class="empty">No approved or scheduled windows ahead.</li>{% endfor %}</ul>
+</div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}{% include "servicedesk/_menu_js.html" %}{% endblock %}

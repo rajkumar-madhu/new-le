@@ -1,0 +1,18 @@
+{% load le sd %}<div class="table-wrap sd-table"><table>
+  <thead><tr><th>#</th>{% if show_kind %}<th>Type</th>{% endif %}<th>Title</th><th>Priority</th><th>Status</th><th>Client</th><th>Category</th>{% if show_site %}<th>Site</th>{% endif %}<th>Assigned To</th><th>Created</th><th>SLA</th><th class="act">Actions</th></tr></thead>
+  <tbody>
+  {% for t in rows %}<tr class="{% if t.breached and t.is_open %}sd-breach{% endif %}">
+    <td><a href="{{ t.get_absolute_url }}">{{ t.number }}</a></td>
+    {% if show_kind %}<td><span class="chip sd-kind k-{{ t.kind }}">{{ t.kind|kind_label }}</span></td>{% endif %}
+    <td class="ttl" title="{{ t.title }}">{% if t.source == "alert" %}<span class="sd-src" title="Raised from an alert{% if t.origin %} ({{ t.origin }}){% endif %}">{% icon "zap" 13 %}</span>{% endif %}{{ t.title|truncatechars:60 }}</td>
+    <td>{% prio_pill t.priority %}</td>
+    <td>{% status_pill t.status %}</td>
+    <td>{{ t.client|default:"–" }}</td><td>{{ t.category|default:"–" }}</td>
+    {% if show_site %}<td>{{ t.site|default:"All Sites" }}</td>{% endif %}
+    <td>{% who t.assignee %}</td>
+    <td>{{ t.opened_at|date:"M j, H:i" }}</td>
+    <td class="sla">{% sla_cell t %}</td>
+    <td class="act">{% include "servicedesk/_rowmenu.html" %}</td>
+  </tr>
+  {% empty %}<tr><td colspan="12" class="empty">{{ empty_text|default:"No tickets match the selected filters." }}</td></tr>{% endfor %}
+  </tbody></table></div>

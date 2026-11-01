@@ -1,0 +1,84 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}{% if tab %}{{ tab_label }} · {% endif %}Incidents{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}{% if tab %}<a href="{% url 'servicedesk:incidents' %}">Incidents</a>{% icon "chevron-right" 14 %}<span>{{ tab_label }}</span>{% else %}<span>Incidents</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-incidents">
+<div class="head sd-head">
+  <div class="sd-title"><h1>Incidents</h1><p>View, manage and resolve all incidents across your IT infrastructure and services</p></div>
+  <form class="actions sd-actions" method="get" aria-label="Period and client">
+    {% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}{% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}
+    {% if not tab %}<label class="sd-range" title="{{ d.range_label }}">{% icon "calendar" 17 %}<select name="range" data-autosubmit aria-label="Period">{% for n, label in ranges %}<option value="{{ n }}"{% if n == days %} selected{% endif %}>{% if n == days %}{{ d.range_label }}{% else %}{{ label }}{% endif %}</option>{% endfor %}</select></label>{% else %}<input type="hidden" name="range" value="{{ days }}">{% endif %}
+    <label class="sd-cv"><span>Client View</span>
+      <select name="client" data-autosubmit aria-label="Client view"><option value="">All Clients</option>{% for c in clients %}<option value="{{ c }}"{% if request.GET.client == c %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+  </form>
+</div>
+
+<div class="sd-tabrow">
+  <nav class="tabs sd-tabs" aria-label="Incident views">
+    {% for key, label in tabs %}<a href="?{% if key %}tab={{ key }}&amp;{% endif %}range={{ days }}{% if request.GET.client %}&amp;client={{ request.GET.client|urlencode }}{% endif %}{% if request.GET.site %}&amp;site={{ request.GET.site|urlencode }}{% endif %}" class="{% if key == tab %}on{% endif %}">{{ label }}{% if key and key != 'all' %}{% with n=tab_counts|get_item:key %}{% if n %}<span class="sd-count{% if key == 'sla' or key == 'major' %} crit{% endif %}">{{ n }}</span>{% endif %}{% endwith %}{% endif %}</a>{% endfor %}
+    <a href="{% url 'servicedesk:sla' %}">SLA Policies</a>
+  </nav>
+  {% if can_operate %}<div class="sd-split"><a class="btn primary" href="{% url 'servicedesk:create' %}?kind=incident">{% icon "plus" 16 %}New Incident</a><details class="sd-pop"><summary class="btn primary sd-split-more" aria-label="More create options" title="More create options">{% icon "chevron-down" 15 %}</summary>
+    <div class="menu-pop"><a href="{% url 'servicedesk:create' %}?kind=problem">{% icon "file-search" 14 %}New Problem</a><a href="{% url 'servicedesk:create' %}?kind=change">{% icon "refresh" 14 %}New Change</a><a href="{% url 'servicedesk:catalog' %}">{% icon "grid" 14 %}Service Request</a></div></details></div>{% endif %}
+</div>
+
+{% if not tab %}
+<section class="kpis sd-kpis" aria-label="Incidents by priority">
+  {% for k in d.kpis %}
+  <a class="kpi" href="?tab=all&amp;range={{ days }}{% if k.key %}&amp;priority={{ k.key }}{% endif %}{% if request.GET.client %}&amp;client={{ request.GET.client|urlencode }}{% endif %}"><div class="kpi-top"><div class="tile sq sd-tile tone-{{ k.tone }}">{% if k.glyph == "flame" %}{% icon "flame" 30 "sd-fill" %}{% else %}{% ficon k.glyph 32 %}{% endif %}</div>
+    <div class="kpi-body"><div class="label">{{ k.label }}</div><div class="value">{{ k.value }} <span title="{{ k.prev }} in the previous {{ days }} days">{% if k.delta is not None %}{% delta k.delta good="down" %}{% elif k.value %}<span class="delta t-mute">new</span>{% endif %}</span></div><div class="sub">{{ k.sub }}</div></div></div></a>
+  {% endfor %}
+</section>
+
+<section class="grid sd-charts">
+  <div class="panel sd-trend"><div class="panel-h nowrap"><h2>Incident Trend</h2><div class="right legend"><span><i style="background:#1d7cf2"></i>Created</span><span><i class="fill-ok"></i>Resolved</span></div></div>
+    <div class="chart" data-chart="line" data-src="d-trend" data-smooth="1" style="height:168px"></div></div>
+  <div class="panel"><div class="panel-h"><h2>Incidents by Status</h2></div><div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-status" data-gap="1"></div>
+    <div class="donut-legend">{% for s in d.status_segments %}<a href="?tab=all&amp;range={{ days }}&amp;status={{ s.key }}{% if request.GET.client %}&amp;client={{ request.GET.client|urlencode }}{% endif %}"><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</a><b>{{ s.value }}</b>{% endfor %}</div></div></div>
+  <div class="panel"><div class="panel-h"><h2>SLA Compliance</h2></div><div class="donut-wrap"><div class="sd-gauge"><div class="chart" data-chart="donut" data-src="d-sla"></div><div class="cap">{% if d.sla_total %}Within SLA{% else %}No SLA data{% endif %}</div></div>
+    <div class="donut-legend">{% for s in d.sla_legend %}<span><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</span><b>{% if s.key == 'breached' and s.value %}<a class="sd-ul" href="?tab=sla">{{ s.value }}</a>{% else %}{{ s.value }}{% endif %}</b>{% endfor %}</div></div></div>
+</section>
+{% endif %}
+
+<form class="panel sd-filter" method="get" role="search" aria-label="Filter incidents">
+  {% if tab %}<input type="hidden" name="tab" value="{{ tab }}">{% endif %}<input type="hidden" name="range" value="{{ days }}">{% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}{% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+  <span class="sd-ftile">{% icon "filter" 18 "sd-fill" %}</span>
+  <label class="fld"><small>Status</small><select name="status"><option value="">All Statuses</option><option value="open"{% if request.GET.status == 'open' %} selected{% endif %}>Open (not resolved)</option>{% for v, l in statuses %}<option value="{{ v }}"{% if request.GET.status == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+  <label class="fld"><small>Priority</small><select name="priority"><option value="">All Priorities</option>{% for v, l in priorities %}<option value="{{ v }}"{% if request.GET.priority == v %} selected{% endif %}>{{ v }} · {{ l }}</option>{% endfor %}</select></label>
+  <label class="fld"><small>Category</small><select name="category"><option value="">All Categories</option>{% for c in categories %}<option value="{{ c }}"{% if request.GET.category == c %} selected{% endif %}>{{ c }}</option>{% endfor %}<option value="-"{% if request.GET.category == '-' %} selected{% endif %}>Uncategorised</option></select></label>
+  <label class="fld"><small>Client</small><select name="client"><option value="">All Clients</option>{% for c in clients %}<option value="{{ c }}"{% if request.GET.client == c %} selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+  <label class="fld"><small>Assigned To</small><select name="assignee"><option value="">All Users</option><option value="me"{% if request.GET.assignee == 'me' %} selected{% endif %}>Me</option><option value="none"{% if request.GET.assignee == 'none' %} selected{% endif %}>Unassigned</option>{% for pk, name in assignees %}<option value="{{ pk }}"{% if request.GET.assignee == pk|stringformat:"s" %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+  <div class="sd-q"><label class="search sd-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search incidents..." aria-label="Search incidents"></label>
+    <button class="btn primary" type="submit">Search</button><a class="btn" href="?{% if tab %}tab={{ tab }}&amp;{% endif %}range={{ days }}">Reset</a></div>
+</form>
+
+{% if tab %}
+<section class="panel sd-list" id="list">
+  <div class="panel-h"><h2>{{ tab_label }} <small>({{ page.paginator.count }})</small></h2>
+    <div class="right"><a class="btn sm ghost-primary" href="{% url 'servicedesk:export' %}?kind=incident&amp;{{ query.urlencode }}">{% icon "download" 15 %}Export CSV</a></div></div>
+  {% with empty_text="No incidents match this view." %}{% include "servicedesk/_table.html" with rows=page show_kind=False %}{% endwith %}
+  {% include "core/_pager.html" with pager_noun="incidents" %}
+</section>
+{% else %}
+<section class="grid sd-main">
+  <div class="panel" id="recent"><div class="panel-h"><h2>Recent Incidents</h2><div class="right">{% if recent_total > recent|length %}<small>{{ recent|length }} of {{ recent_total }}</small>{% endif %}<a class="view-all" href="?tab=all&amp;{{ query.urlencode }}">View All</a></div></div>
+    {% with empty_text="No incidents were opened in this period." %}{% include "servicedesk/_table.html" with rows=recent show_kind=False %}{% endwith %}
+  </div>
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Major Incidents</h2><div class="right"><a class="view-all t-crit" href="?tab=major&amp;status=open">View All</a></div></div>
+      <ul class="sd-major">{% for m in major %}<li><span class="mtile">{% icon "flame" 17 "sd-fill" %}</span><div class="mbody"><div class="mline"><a href="{{ m.get_absolute_url }}">{{ m.number }}</a><span title="{{ m.title }}">{{ m.title|truncatechars:40 }}</span></div><small>{{ m.opened_at|ago }}{% if m.client %} • {{ m.client }}{% elif m.site %} • {{ m.site }}{% endif %}</small></div>{% status_pill m.status True %}</li>
+      {% empty %}<li class="empty sd-none">{% ficon "check-circle" 18 "t-ok" %} No open P1 incidents</li>{% endfor %}</ul></div>
+    <div class="panel"><div class="panel-h"><h2>Top Incident Categories</h2></div>
+      {% if d.categories %}<div class="hbar sd-cats">{% for c in d.categories %}<a href="?tab=all&amp;range={{ days }}&amp;category={% if c.param %}{{ c.param|urlencode }}{% else %}-{% endif %}">{{ c.name }}</a><span class="track"><i style="width:{% widthratio c.value d.cat_max 100 %}%;background:{{ c.color }}"></i></span><span>{{ c.value }}</span>{% endfor %}</div>
+      {% else %}<p class="empty">No incidents in this period.</p>{% endif %}</div>
+  </div>
+</section>
+{{ d.trend|json_script:"d-trend" }}{{ d.status|json_script:"d-status" }}{{ d.sla|json_script:"d-sla" }}
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+{% include "servicedesk/_menu_js.html" %}
+<script src="{% static 'servicedesk/charts-polish.js' %}"></script>
+{% endblock %}

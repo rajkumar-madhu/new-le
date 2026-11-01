@@ -1,0 +1,44 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}Service Catalog{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<span>Service Catalog</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-catalog">
+<div class="head">
+  <div class="glyph">{% icon "grid" 40 %}</div>
+  <div><h1>Service Catalog</h1><p>Request standard IT services; each request becomes a tracked ticket with a fulfilment target</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'servicedesk:tickets' %}?kind=request&amp;status=open">{% icon "list" 17 %}Open Requests <span class="sd-count">{{ open_requests }}</span></a>
+    {% if can_configure %}<a class="btn" href="?{% if not show_all %}all=1{% endif %}">{% icon "eye" 17 %}{% if show_all %}Hide inactive{% else %}Show inactive{% endif %}</a>
+    <a class="btn primary" href="{% url 'servicedesk:catalog_new' %}">{% icon "plus" 17 %}Add Catalog Item</a>{% endif %}
+  </div>
+</div>
+<form class="toolbar sd-toolbar" method="get" role="search" aria-label="Search the catalog">
+  {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
+  <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ q }}" placeholder="Search services…" aria-label="Search services"></label>
+  <nav class="seg" aria-label="Categories"><a href="?{% if q %}q={{ q|urlencode }}&amp;{% endif %}{% if show_all %}all=1{% endif %}" class="{% if not category %}on{% endif %}">All</a>{% for c in categories %}<a href="?category={{ c|urlencode }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}{% if show_all %}&amp;all=1{% endif %}" class="{% if category == c %}on{% endif %}">{{ c }}</a>{% endfor %}</nav>
+</form>
+<section class="grid sd-cat-main">
+  <div class="sd-cards">
+  {% for i in items %}
+    <article class="panel sd-card{% if not i.active %} off{% endif %}">
+      <div class="sd-card-h"><span class="tile sq bg-info sd-card-ic">{% icon "box" 22 %}</span><div><h2>{{ i.name }}</h2>{% if i.category %}<span class="chip">{{ i.category }}</span>{% endif %}{% if not i.active %} <span class="chip mute">Inactive</span>{% endif %}</div></div>
+      <p class="sd-card-d">{{ i.description|default:"No description."|truncatechars:220 }}</p>
+      <div class="sd-card-m"><span title="Fulfilment target">{% icon "clock" 14 %} {{ i.fulfilment_hours }} h target</span><span>{% prio_pill i.default_priority %}</span>{% if i.n_open %}<a href="{% url 'servicedesk:tickets' %}?kind=request&amp;status=open&amp;q={{ i.name|urlencode }}">{{ i.n_open }} open</a>{% endif %}</div>
+      <div class="sd-card-f">
+        {% if can_operate and i.active %}<a class="btn primary sm" href="{% url 'servicedesk:catalog_request' i.pk %}">{% icon "plus" 14 %}Request</a>{% endif %}
+        {% if can_configure %}<a class="btn sm" href="{% url 'servicedesk:catalog_edit' i.pk %}">{% icon "edit" 14 %}Edit</a>{% endif %}
+        {% if can_admin %}<form method="post" action="{% url 'servicedesk:catalog_delete' i.pk %}" data-confirm="Delete “{{ i.name }}”? Existing requests are kept.">{% csrf_token %}<button class="btn icon red" type="submit" aria-label="Delete {{ i.name }}" title="Delete">{% icon "trash" 15 %}</button></form>{% endif %}
+      </div>
+    </article>
+  {% empty %}
+    <div class="panel empty sd-empty">{% icon "grid" 28 %}<p>{% if q or category %}No services match your search.{% else %}The service catalog is empty.{% endif %}</p>
+      {% if can_configure and not q and not category %}<p><a class="btn primary sm" href="{% url 'servicedesk:catalog_new' %}">{% icon "plus" 14 %}Add the first item</a></p><p class="t-mute">Example items can be loaded with <code>manage.py seed_servicedesk</code>.</p>{% endif %}</div>
+  {% endfor %}
+  </div>
+  <div class="panel sd-myreq"><div class="panel-h"><h2>My Recent Requests</h2><div class="right"><a class="view-all" href="{% url 'servicedesk:tickets' %}?kind=request">View All</a></div></div>
+    <ul class="sd-feed">{% for r in my_requests %}<li><a href="{{ r.get_absolute_url }}">{{ r.number }}</a><span title="{{ r.title }}">{{ r.title|truncatechars:38 }}</span>{% status_pill r.status %}<small>{{ r.opened_at|ago }}</small></li>
+    {% empty %}<li class="empty">You have not requested anything yet.</li>{% endfor %}</ul></div>
+</section>
+</div>
+{% endblock %}

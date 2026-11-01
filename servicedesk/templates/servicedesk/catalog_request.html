@@ -1,0 +1,19 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}Request {{ item.name }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<a href="{% url 'servicedesk:catalog' %}">Service Catalog</a>{% icon "chevron-right" 14 %}<span>Request</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-formpage">
+<div class="head"><div class="glyph">{% icon "box" 40 %}</div><div><h1>Request: {{ item.name }}</h1><p>{{ item.category|default:"Service" }} · fulfilled within {{ item.fulfilment_hours }} h · {% prio_pill item.default_priority %}</p></div></div>
+<form class="panel sd-form" method="post">{% csrf_token %}
+  {% if item.description %}<p class="sd-desc">{{ item.description|linebreaksbr }}</p>{% endif %}
+  <div class="form-grid">
+    <div class="field full"><label for="{{ form.details.id_for_label }}">Details</label>{{ form.details }}{% for e in form.details.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+    <div class="field"><label for="{{ form.site.id_for_label }}">Site</label>{{ form.site }}<span class="hint">Leave blank for a global request.</span>{% for e in form.site.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+    <div class="field"><label for="{{ form.client.id_for_label }}">Client</label>{{ form.client }}{% for e in form.client.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+  </div>
+  <div class="sd-form-foot"><a class="btn" href="{% url 'servicedesk:catalog' %}">Cancel</a><button class="btn primary" type="submit">{% icon "check" 16 %}Submit request</button></div>
+</form>
+{% include "servicedesk/_datalists.html" %}
+</div>
+{% endblock %}

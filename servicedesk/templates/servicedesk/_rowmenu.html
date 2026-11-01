@@ -1,0 +1,7 @@
+{% load le %}<details class="row-menu"><summary class="btn icon" aria-label="Actions for {{ t.number }}" title="Actions">{% icon "more" 16 %}</summary>
+  <div class="menu-pop">
+    <a href="{{ t.get_absolute_url }}">{% icon "eye" 14 %}View details</a>
+    {% if can_operate %}<a href="{% url 'servicedesk:edit' t.number %}">{% icon "edit" 14 %}Edit</a>
+    {% if t.assignee_id != request.user.pk and t.is_open %}<form method="post" action="{% url 'servicedesk:assign' t.number %}">{% csrf_token %}<input type="hidden" name="assignee" value="me"><button type="submit">{% icon "user" 14 %}Assign to me</button></form>{% endif %}
+    {% for to, label, style in t.transitions|slice:":3" %}<form method="post" action="{% url 'servicedesk:transition' t.number %}">{% csrf_token %}<input type="hidden" name="to" value="{{ to }}"><button type="submit" class="{% if style == 'danger' %}danger{% endif %}">{% icon "arrow-right" 14 %}{{ label }}</button></form>{% endfor %}{% endif %}
+  </div></details>

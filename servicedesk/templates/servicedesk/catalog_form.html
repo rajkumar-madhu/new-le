@@ -1,0 +1,18 @@
+{% extends "core/base.html" %}{% load static le %}
+{% block title %}{% if item %}Edit {{ item.name }}{% else %}New Catalog Item{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<a href="{% url 'servicedesk:catalog' %}">Service Catalog</a>{% icon "chevron-right" 14 %}<span>{% if item %}Edit{% else %}New item{% endif %}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-formpage">
+<div class="head"><div><h1>{% if item %}Edit “{{ item.name }}”{% else %}New Catalog Item{% endif %}</h1><p>Services people can request. The fulfilment target becomes the resolution SLA of each request.</p></div></div>
+<form class="panel sd-form" method="post">{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <div class="form-grid">
+    {% for f in form %}{% if f.name == "active" %}<label class="inline-check field full"><span class="switch">{{ f }}<span></span></span>Active (shown in the catalog)</label>{% else %}
+    <div class="field{% if f.name == 'description' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>{% endif %}{% endfor %}
+  </div>
+  <div class="sd-form-foot"><a class="btn" href="{% url 'servicedesk:catalog' %}">Cancel</a><button class="btn primary" type="submit">{% icon "check" 16 %}Save item</button></div>
+</form>
+<datalist id="sd-catalog-categories">{% for c in categories %}<option value="{{ c }}">{% endfor %}</datalist>
+</div>
+{% endblock %}

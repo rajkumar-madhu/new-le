@@ -1,0 +1,45 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}Tickets{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<span>Tickets</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-tickets">
+<div class="head">
+  <div class="glyph">{% icon "headset" 40 %}</div>
+  <div><h1>Tickets</h1><p>Every incident, problem, change and service request in one queue</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'servicedesk:export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export CSV</a>
+    {% if can_operate %}<details class="sd-pop sd-newmenu"><summary class="btn primary">{% icon "plus" 17 %}New Ticket{% icon "chevron-down" 15 %}</summary>
+      <div class="menu-pop"><a href="{% url 'servicedesk:create' %}?kind=incident">{% icon "alert" 14 %}Incident</a><a href="{% url 'servicedesk:create' %}?kind=problem">{% icon "file-search" 14 %}Problem</a><a href="{% url 'servicedesk:create' %}?kind=change">{% icon "refresh" 14 %}Change</a><a href="{% url 'servicedesk:catalog' %}">{% icon "grid" 14 %}Service Request</a></div></details>{% endif %}
+  </div>
+</div>
+
+<section class="kpis sd-mini" aria-label="Queue summary">
+  <a class="kpi stacked" href="?status=open"><div class="kpi-top"><div class="tile sq bg-info">{% icon "list" 24 %}</div><div class="kpi-body"><div class="label">Open Tickets</div><div class="value">{{ kpi.open }}</div></div></div><div class="sub">Not yet resolved</div></a>
+  <a class="kpi stacked" href="?status=open&amp;assignee=none"><div class="kpi-top"><div class="tile sq bg-warn">{% icon "user" 24 %}</div><div class="kpi-body"><div class="label">Unassigned</div><div class="value">{{ kpi.unassigned }}</div></div></div><div class="sub">Open, nobody working on it</div></a>
+  <a class="kpi stacked" href="?status=open&amp;sla=breached"><div class="kpi-top"><div class="tile sq bg-crit">{% icon "clock" 24 %}</div><div class="kpi-body"><div class="label">SLA Breached</div><div class="value">{{ kpi.breached }}</div></div></div><div class="sub">Open tickets past a target</div></a>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "plus" 24 %}</div><div class="kpi-body"><div class="label">Opened (24 h)</div><div class="value">{{ kpi.today }}</div></div></div><div class="sub">All ticket types</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Resolved (7 days)</div><div class="value">{{ kpi.resolved7 }}</div></div></div><div class="sub">Resolved, fulfilled or implemented</div></div>
+</section>
+
+<section class="panel sd-list">
+  <nav class="tabs sd-tabs" aria-label="Ticket types">{% for k, label in kind_tabs %}<a href="?{% if k %}kind={{ k }}&amp;{% endif %}{{ kind_query.urlencode }}" class="{% if k == kind %}on{% endif %}">{{ label }}{% if k %}{% with n=kind_counts|get_item:k %}{% if n %}<span class="sd-count">{{ n }}</span>{% endif %}{% endwith %}{% endif %}</a>{% endfor %}</nav>
+  <form class="toolbar sd-toolbar" method="get" role="search" aria-label="Filter tickets">
+    {% if kind %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}{% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}{% if request.GET.site %}<input type="hidden" name="site" value="{{ request.GET.site }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Number, title, CI, fingerprint…" aria-label="Search tickets"></label>
+    <select name="status" data-autosubmit aria-label="Status"><option value="">All Statuses</option><option value="open"{% if request.GET.status == 'open' %} selected{% endif %}>Open</option><option value="done"{% if request.GET.status == 'done' %} selected{% endif %}>Resolved / closed</option>{% for v, l in statuses %}<option value="{{ v }}"{% if request.GET.status == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="priority" data-autosubmit aria-label="Priority"><option value="">All Priorities</option>{% for v, l in priorities %}<option value="{{ v }}"{% if request.GET.priority == v %} selected{% endif %}>{{ v }} · {{ l }}</option>{% endfor %}</select>
+    <select name="category" data-autosubmit aria-label="Category"><option value="">All Categories</option>{% for c in categories %}<option value="{{ c }}"{% if request.GET.category == c %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+    <select name="client" data-autosubmit aria-label="Client"><option value="">All Clients</option>{% for c in clients %}<option value="{{ c }}"{% if request.GET.client == c %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+    <select name="assignee" data-autosubmit aria-label="Assignee"><option value="">All Assignees</option><option value="me"{% if request.GET.assignee == 'me' %} selected{% endif %}>Me</option><option value="none"{% if request.GET.assignee == 'none' %} selected{% endif %}>Unassigned</option>{% for pk, name in assignees %}<option value="{{ pk }}"{% if request.GET.assignee == pk|stringformat:"s" %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>
+    <select name="source" data-autosubmit aria-label="Source"><option value="">All Sources</option>{% for v, l in sources %}<option value="{{ v }}"{% if request.GET.source == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    {% if request.GET.sla %}<input type="hidden" name="sla" value="{{ request.GET.sla }}">{% endif %}
+    <button class="btn primary" type="submit">Search</button>
+    <a class="btn icon blue" href="{% url 'servicedesk:tickets' %}{% if kind %}?kind={{ kind }}{% endif %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>
+  </form>
+  {% include "servicedesk/_table.html" with rows=page show_kind=True %}
+  {% include "core/_pager.html" with pager_noun="tickets" %}
+</section>
+</div>
+{% endblock %}
+{% block scripts %}{% include "servicedesk/_menu_js.html" %}{% endblock %}

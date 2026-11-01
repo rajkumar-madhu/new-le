@@ -1,0 +1,23 @@
+{% extends "core/base.html" %}{% load static le %}
+{% block title %}{% if ticket %}Edit {{ ticket.number }}{% else %}New {{ kind_label }}{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}{% if ticket %}<a href="{{ ticket.get_absolute_url }}">{{ ticket.number }}</a>{% icon "chevron-right" 14 %}<span>Edit</span>{% else %}<span>New {{ kind_label }}</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-formpage">
+<div class="head"><div><h1>{% if ticket %}Edit {{ ticket.number }}{% else %}New {{ kind_label }}{% endif %}</h1>
+  <p>{% if ticket %}{{ ticket.title }}{% elif kind == "incident" %}An unplanned interruption or degradation of a service.{% elif kind == "problem" %}The underlying cause of one or more incidents.{% elif kind == "change" %}A planned change to a configuration item; it needs approval before it is scheduled.{% else %}A standard service request (most come from the <a href="{% url 'servicedesk:catalog' %}">Service Catalog</a>).{% endif %}</p></div></div>
+{% if not ticket %}<nav class="seg" aria-label="Ticket type">{% for k, label in kinds %}<a href="?kind={{ k }}" class="{% if k == kind %}on{% endif %}">{{ label }}</a>{% endfor %}</nav>{% endif %}
+<form class="panel sd-form" method="post">{% csrf_token %}
+  {% if not ticket %}<input type="hidden" name="kind" value="{{ kind }}">{% endif %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <div class="form-grid sd-grid3">
+    {% for f in form.main_fields %}
+    <div class="field{% if f.name in 'title description root_cause workaround implementation_plan backout_plan resolution' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+    {% endfor %}
+  </div>
+  {% if ticket %}<p class="hint sd-note">{% icon "info" 14 %} Status changes are made with the workflow buttons on the ticket. Priority, assignee and problem changes are recorded on the timeline.</p>{% elif kind == "incident" or kind == "request" %}<p class="hint sd-note">{% icon "clock" 14 %} Response and resolution targets come from the <a href="{% url 'servicedesk:sla' %}">SLA policy</a> for the priority.</p>{% endif %}
+  <div class="sd-form-foot"><a class="btn" href="{% if ticket %}{{ ticket.get_absolute_url }}{% else %}{% url 'servicedesk:tickets' %}{% endif %}">Cancel</a><button class="btn primary" type="submit">{% icon "check" 16 %}{% if ticket %}Save changes{% else %}Create {{ kind_label }}{% endif %}</button></div>
+</form>
+{% include "servicedesk/_datalists.html" %}
+</div>
+{% endblock %}

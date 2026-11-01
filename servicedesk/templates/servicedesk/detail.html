@@ -1,0 +1,137 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}{{ t.number }} {{ t.title|truncatechars:40 }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<a href="{{ list_url }}">{{ list_label }}</a>{% icon "chevron-right" 14 %}<span>{{ t.number }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-detail">
+<div class="head sd-dhead">
+  <div class="sd-dtitle">
+    <div class="sd-dnum"><span class="chip sd-kind k-{{ t.kind }}">{{ t.get_kind_display }}</span><b>{{ t.number }}</b>{% prio_pill t.priority %}{% status_pill t.status True %}{% if t.breached and t.is_open %}<span class="chip crit">{% icon "clock" 12 %} SLA breached</span>{% endif %}{% if t.kind == "change" %}<span class="chip {{ t.approval_tone }}">{{ t.approval_label }}</span>{% endif %}</div>
+    <h1>{{ t.title }}</h1>
+    <p>Opened {{ t.opened_at|date:"M j, Y H:i" }} ({{ t.opened_at|ago }}){% if t.reporter_name %} by {{ t.reporter_name }}{% endif %} · {{ t.get_source_display }}{% if t.origin %} ({{ t.origin }}){% endif %}{% if t.site %} · {{ t.site }}{% endif %}</p>
+  </div>
+  <div class="actions">
+    {% if can_operate %}<a class="btn" href="{% url 'servicedesk:edit' t.number %}">{% icon "edit" 16 %}Edit</a>{% endif %}
+    {% if can_admin %}<form method="post" action="{% url 'servicedesk:delete' t.number %}" data-confirm="Delete {{ t.number }} and its timeline? This cannot be undone.">{% csrf_token %}<button class="btn sd-danger" type="submit">{% icon "trash" 16 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+<section class="panel sd-flow">
+  <ol class="sd-steps" aria-label="Workflow">{% for s in steps %}<li class="{% if s.done %}done{% elif s.current %}cur{% endif %}{% if s.key == 'rejected' %} rej{% endif %}"><span class="n">{% if s.done %}{% icon "check" 13 %}{% else %}{{ forloop.counter }}{% endif %}</span>{{ s.label }}</li>{% endfor %}</ol>
+  {% if transitions %}
+  <form class="sd-actbar" method="post" action="{% url 'servicedesk:transition' t.number %}">{% csrf_token %}
+    <input type="text" name="note" maxlength="2000" placeholder="Optional note for the timeline (used as resolution notes when resolving)" aria-label="Transition note">
+    <div class="sd-actbtns">{% for to, label, style in transitions %}<button class="btn{% if style == 'primary' %} primary{% elif style == 'ok' %} sd-ok{% elif style == 'danger' %} sd-danger{% endif %}" type="submit" name="to" value="{{ to }}">{{ label }}</button>{% endfor %}</div>
+  </form>
+  {% elif not can_operate %}<p class="t-mute sd-note">You have read-only access to this ticket.</p>
+  {% else %}<p class="t-mute sd-note">{{ t.get_status_display }} is a final state; no further workflow steps.</p>{% endif %}
+</section>
+
+<section class="grid sd-dgrid">
+<div class="stack">
+  <div class="panel">
+    <div class="panel-h"><h2>Details</h2></div>
+    <div class="sd-desc">{% if t.description %}{{ t.description|linebreaksbr }}{% else %}<span class="t-mute">No description.</span>{% endif %}</div>
+    <dl class="sd-dl">
+      <div><dt>Category</dt><dd>{{ t.category|default:"–" }}</dd></div>
+      <div><dt>Client</dt><dd>{{ t.client|default:"–" }}</dd></div>
+      <div><dt>Site</dt><dd>{{ t.site|default:"All Sites" }}</dd></div>
+      <div><dt>Configuration item</dt><dd>{% if t.ci_name %}{% if ci_url %}<a href="{{ ci_url }}">{{ t.ci_name }}</a>{% else %}{{ t.ci_name }}{% endif %}{% else %}–{% endif %}</dd></div>
+      <div><dt>Reporter</dt><dd>{% if t.reporter %}{% who t.reporter %}{% else %}{{ t.reporter_name|default:"–" }}{% endif %}</dd></div>
+      <div><dt>Source</dt><dd>{{ t.get_source_display }}{% if t.origin %} · {{ t.origin }}{% endif %}</dd></div>
+      {% if t.fingerprint %}<div class="wide"><dt>Fingerprint</dt><dd><code>{{ t.fingerprint }}</code></dd></div>{% endif %}
+      {% if t.resolution %}<div class="wide"><dt>{% if t.kind == "request" %}Fulfilment notes{% else %}Resolution{% endif %}</dt><dd>{{ t.resolution|linebreaksbr }}</dd></div>{% endif %}
+    </dl>
+  </div>
+
+  {% if t.kind == "incident" %}
+  <div class="panel" id="linked"><div class="panel-h"><h2>Linked Items</h2></div>
+    <div class="sd-link-row"><span class="t-mute">Problem</span>{% if t.problem %}<a href="{{ t.problem.get_absolute_url }}">{{ t.problem.number }}</a> {{ t.problem.title|truncatechars:60 }} {% status_pill t.problem.status %}{% else %}<span class="t-mute">Not linked</span>{% endif %}</div>
+    {% if can_operate %}<form class="sd-inline-form" method="post" action="{% url 'servicedesk:link' t.number %}">{% csrf_token %}
+      <select name="problem" aria-label="Problem"><option value="">— Not linked —</option>{% for p in problem_choices %}<option value="{{ p.number }}"{% if t.problem_id == p.pk %} selected{% endif %}>{{ p.number }} · {{ p.title|truncatechars:50 }}</option>{% endfor %}</select>
+      <button class="btn sm" type="submit">{% icon "link" 14 %}Update link</button>
+      <a class="btn sm ghost-primary" href="{% url 'servicedesk:create' %}?kind=problem&amp;title={{ t.title|urlencode }}&amp;category={{ t.category|urlencode }}&amp;ci_name={{ t.ci_name|urlencode }}">{% icon "plus" 14 %}New problem from this</a></form>{% endif %}
+    {% if related %}<h3 class="sd-h3">Other incidents with the same fingerprint</h3><ul class="sd-feed">{% for r in related %}<li><a href="{{ r.get_absolute_url }}">{{ r.number }}</a><span>{{ r.title|truncatechars:50 }}</span>{% status_pill r.status %}<small>{{ r.opened_at|date:"M j, H:i" }}</small></li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% elif t.kind == "problem" %}
+  <div class="panel"><div class="panel-h"><h2>Root Cause &amp; Workaround</h2></div>
+    <dl class="sd-dl one"><div><dt>Root cause</dt><dd>{% if t.root_cause %}{{ t.root_cause|linebreaksbr }}{% else %}<span class="t-mute">Not identified yet.</span>{% endif %}</dd></div>
+      <div><dt>Workaround</dt><dd>{% if t.workaround %}{{ t.workaround|linebreaksbr }}{% else %}<span class="t-mute">None documented.</span>{% endif %}</dd></div></dl></div>
+  <div class="panel" id="linked"><div class="panel-h"><h2>Linked Incidents <small>({{ linked|length }})</small></h2></div>
+    <div class="table-wrap sd-table"><table><thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Status</th><th>Opened</th>{% if can_operate %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for i in linked %}<tr><td><a href="{{ i.get_absolute_url }}">{{ i.number }}</a></td><td class="ttl">{{ i.title|truncatechars:50 }}</td><td>{% prio_pill i.priority %}</td><td>{% status_pill i.status %}</td><td>{{ i.opened_at|date:"M j, H:i" }}</td>
+      {% if can_operate %}<td><form method="post" action="{% url 'servicedesk:link' t.number %}">{% csrf_token %}<input type="hidden" name="incident" value="{{ i.number }}"><input type="hidden" name="unlink" value="1"><button class="btn icon red" type="submit" title="Unlink" aria-label="Unlink {{ i.number }}">{% icon "x" 14 %}</button></form></td>{% endif %}</tr>
+    {% empty %}<tr><td colspan="6" class="empty">No incidents linked yet.</td></tr>{% endfor %}</tbody></table></div>
+    {% if can_operate %}<form class="sd-inline-form" method="post" action="{% url 'servicedesk:link' t.number %}">{% csrf_token %}<input type="text" name="incident" placeholder="Incident number, e.g. INC-1001" aria-label="Incident number" required><button class="btn sm" type="submit">{% icon "link" 14 %}Link incident</button></form>{% endif %}
+  </div>
+  {% elif t.kind == "change" %}
+  <div class="panel"><div class="panel-h"><h2>Change Plan</h2></div>
+    <dl class="sd-dl">
+      <div><dt>Risk</dt><dd>{% if t.risk %}<span class="chip {% if t.risk == 'high' %}crit{% elif t.risk == 'medium' %}warn{% else %}ok{% endif %}">{{ t.get_risk_display }}</span>{% else %}<span class="t-mute">Not assessed</span>{% endif %}</dd></div>
+      <div><dt>Approval</dt><dd><span class="chip {{ t.approval_tone }}">{{ t.approval_label }}</span>{% if t.approved_by %} by {{ t.approved_by.get_full_name|default:t.approved_by.get_username }} · {{ t.approved_at|date:"M j, H:i" }}{% endif %}</dd></div>
+      <div class="wide"><dt>Scheduled window</dt><dd>{% if t.planned_start %}{{ t.planned_start|date:"D, M j Y H:i" }} → {{ t.planned_end|date:"D, M j Y H:i" }} ({{ t.planned_start|timesince:t.planned_end }}){% else %}<span class="t-mute">Not set — required before scheduling.</span>{% endif %}</dd></div>
+      <div class="wide"><dt>Implementation plan</dt><dd>{% if t.implementation_plan %}{{ t.implementation_plan|linebreaksbr }}{% else %}<span class="t-mute">–</span>{% endif %}</dd></div>
+      <div class="wide"><dt>Backout plan</dt><dd>{% if t.backout_plan %}{{ t.backout_plan|linebreaksbr }}{% else %}<span class="t-mute">–</span>{% endif %}</dd></div>
+    </dl>
+    {% if conflicts %}<ul class="messages"><li class="warning">Window overlaps {% for c in conflicts %}<a href="{{ c.get_absolute_url }}">{{ c.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.</li></ul>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Affected Configuration Items <small>({{ cis|length }})</small></h2></div>
+    <ul class="sd-feed">{% for c in cis %}<li>{% icon "server" 15 %}<b>{{ c.ci_name }}</b><span class="t-mute">{{ c.note }}</span>{% if can_operate %}<form method="post" action="{% url 'servicedesk:remove_ci' t.number c.pk %}">{% csrf_token %}<button class="btn icon red" type="submit" title="Remove" aria-label="Remove {{ c.ci_name }}">{% icon "x" 14 %}</button></form>{% endif %}</li>
+    {% empty %}<li class="empty">No configuration items linked.</li>{% endfor %}</ul>
+    {% if can_operate %}<form class="sd-inline-form" method="post" action="{% url 'servicedesk:add_ci' t.number %}">{% csrf_token %}<input type="text" name="ci_name" list="sd-cis" placeholder="CI name" aria-label="Configuration item" required><input type="text" name="note" placeholder="Note (optional)" aria-label="Note" maxlength="200"><button class="btn sm" type="submit">{% icon "plus" 14 %}Add CI</button></form>
+    <datalist id="sd-cis">{% for n in ci_names %}<option value="{{ n }}">{% endfor %}</datalist>{% endif %}
+  </div>
+  {% elif t.kind == "request" %}
+  <div class="panel"><div class="panel-h"><h2>Requested Service</h2></div>
+    {% if item %}<div class="sd-link-row">{% icon "box" 16 %}<b>{{ item.name }}</b>{% if item.category %}<span class="chip">{{ item.category }}</span>{% endif %}<span class="t-mute">{{ item.fulfilment_hours }} h fulfilment target</span></div>{% if item.description %}<p class="t-mute">{{ item.description }}</p>{% endif %}
+    {% else %}<p class="t-mute">Not raised from a catalog item.</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="panel" id="timeline"><div class="panel-h"><h2>Activity</h2><div class="right"><small>{{ timeline|length }} entr{{ timeline|length|pluralize:"y,ies" }}</small></div></div>
+    {% if can_operate %}<form class="sd-comment" method="post" action="{% url 'servicedesk:comment' t.number %}">{% csrf_token %}{{ comment_form.body }}<div><button class="btn primary sm" type="submit">{% icon "plus" 14 %}Add comment</button></div></form>{% endif %}
+    <ol class="sd-timeline">{% for e in timeline %}
+      <li class="k-{{ e.kind }}"><span class="tl-ic">{% if e.kind == "comment" %}{% icon "edit" 14 %}{% elif e.kind == "status" %}{% icon "arrow-right" 14 %}{% elif e.kind == "assignment" %}{% icon "user" 14 %}{% elif e.kind == "priority" %}{% icon "alert" 14 %}{% elif e.kind == "link" %}{% icon "link" 14 %}{% elif e.kind == "sla" %}{% icon "clock" 14 %}{% elif e.kind == "edit" %}{% icon "edit" 14 %}{% else %}{% icon "info" 14 %}{% endif %}</span>
+        <div class="tl-b"><div class="tl-h"><b>{{ e.who }}</b><span class="t-mute">{% if e.kind == "comment" %}commented{% else %}{{ e.get_kind_display|lower }}{% endif %}</span>{% if e.kind == "status" and e.new_value %}{% status_pill e.new_value %}{% endif %}<time datetime="{{ e.created_at|date:'c' }}" title="{{ e.created_at|date:'M j, Y H:i:s' }}">{{ e.created_at|ago }}</time></div>
+          <div class="tl-t{% if e.kind == 'comment' %} cmt{% endif %}">{{ e.body|linebreaksbr }}</div></div></li>
+    {% empty %}<li class="empty">No activity yet.</li>{% endfor %}</ol>
+  </div>
+</div>
+
+<div class="stack">
+  <div class="panel sd-slap"><div class="panel-h"><h2>SLA</h2><div class="right">{% if sla_state == "none" %}<span class="chip mute">No SLA</span>{% elif sla_state == "breached" %}<span class="chip crit">Breached</span>{% elif sla_state == "at_risk" %}<span class="chip warn">At risk</span>{% elif sla_state == "met" %}<span class="chip ok">Met</span>{% else %}<span class="chip ok">On track</span>{% endif %}</div></div>
+    {% if sla_state == "none" %}<p class="t-mute">{% if t.kind == "problem" or t.kind == "change" %}{{ t.get_kind_display }}s have no response/resolution SLA.{% else %}No active SLA policy for {{ t.priority }}. <a href="{% url 'servicedesk:sla' %}">SLA policies</a>{% endif %}</p>
+    {% else %}
+    <div class="sd-clock tone-{{ response.tone }}"><div class="ck-h"><span>Response</span><b>{{ response.label }}</b></div><div class="ck-bar"><i style="width:{{ response.pct|default:0 }}%"></i></div><small>{% if response.due %}Due {{ response.due|date:"M j, H:i" }} · {{ response.text }}{% else %}–{% endif %}{% if t.acknowledged_at %} · responded {{ t.acknowledged_at|date:"M j, H:i" }}{% endif %}</small></div>
+    <div class="sd-clock tone-{{ resolution.tone }}"><div class="ck-h"><span>Resolution</span><b>{{ resolution.label }}</b></div><div class="ck-bar"><i style="width:{{ resolution.pct|default:0 }}%"></i></div><small>{% if resolution.due %}Due {{ resolution.due|date:"M j, H:i" }} · {{ resolution.text }}{% else %}–{% endif %}{% if t.resolved_at %} · resolved {{ t.resolved_at|date:"M j, H:i" }}{% endif %}</small></div>
+    {% if policy %}<p class="hint">Policy: {{ policy.name }} ({{ policy.priority }}){% if item %} · catalog target {{ item.fulfilment_hours }} h{% endif %}</p>{% endif %}
+    {% endif %}
+  </div>
+
+  <div class="panel"><div class="panel-h"><h2>Assignment</h2></div>
+    <div class="sd-assignee">{% who t.assignee %}</div>
+    {% if can_operate %}
+    <div class="sd-btnrow">{% if t.assignee_id != request.user.pk %}<form method="post" action="{% url 'servicedesk:assign' t.number %}">{% csrf_token %}<input type="hidden" name="assignee" value="me"><button class="btn primary sm" type="submit">{% icon "user" 14 %}Assign to me</button></form>{% endif %}
+      {% if t.assignee_id %}<form method="post" action="{% url 'servicedesk:assign' t.number %}">{% csrf_token %}<input type="hidden" name="assignee" value="none"><button class="btn sm" type="submit">Unassign</button></form>{% endif %}</div>
+    <form class="sd-inline-form" method="post" action="{% url 'servicedesk:assign' t.number %}">{% csrf_token %}<select name="assignee" aria-label="Assign to">{% for u in users %}<option value="{{ u.pk }}"{% if u.pk == t.assignee_id %} selected{% endif %}>{{ u.get_full_name|default:u.get_username }}</option>{% endfor %}</select><button class="btn sm" type="submit">Assign</button></form>
+    {% endif %}
+  </div>
+
+  <div class="panel"><div class="panel-h"><h2>Priority</h2><div class="right">{% prio_pill t.priority %}</div></div>
+    {% if can_operate %}<form class="sd-inline-form" method="post" action="{% url 'servicedesk:priority' t.number %}">{% csrf_token %}<select name="priority" aria-label="Priority">{% for v, l in priorities %}<option value="{{ v }}"{% if v == t.priority %} selected{% endif %}>{{ v }} · {{ l }}</option>{% endfor %}</select><button class="btn sm" type="submit">Change</button></form>
+    {% if t.kind == "incident" or t.kind == "request" %}<p class="hint">Changing the priority recalculates the SLA due dates from the opening time.</p>{% endif %}{% endif %}
+  </div>
+
+  <div class="panel"><div class="panel-h"><h2>Dates</h2></div>
+    <dl class="sd-dl one compact">
+      <div><dt>Opened</dt><dd>{{ t.opened_at|date:"M j, Y H:i" }}</dd></div>
+      <div><dt>{% if t.kind == "change" %}Submitted{% else %}Acknowledged{% endif %}</dt><dd>{{ t.acknowledged_at|date:"M j, Y H:i"|default:"–" }}</dd></div>
+      <div><dt>{% if t.kind == "request" %}Fulfilled{% elif t.kind == "change" %}Implemented{% else %}Resolved{% endif %}</dt><dd>{{ t.resolved_at|date:"M j, Y H:i"|default:"–" }}</dd></div>
+      <div><dt>Closed</dt><dd>{{ t.closed_at|date:"M j, Y H:i"|default:"–" }}</dd></div>
+      <div><dt>Last update</dt><dd>{{ t.updated_at|date:"M j, Y H:i" }}</dd></div>
+    </dl>
+  </div>
+</div>
+</section>
+</div>
+{% endblock %}

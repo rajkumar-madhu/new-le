@@ -1,0 +1,26 @@
+{% extends "core/base.html" %}{% load static le sd %}
+{% block title %}SLA Policies{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'servicedesk/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Service Desk</span>{% icon "chevron-right" 14 %}<a href="{% url 'servicedesk:incidents' %}">Incidents</a>{% icon "chevron-right" 14 %}<span>SLA Policies</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-sd sd-sla">
+<div class="head"><div class="glyph">{% icon "clock" 40 %}</div><div><h1>SLA Policies</h1><p>Response and resolution targets per priority for incidents and service requests. Breaches are flagged every minute and raise a warning event.</p></div></div>
+{% if missing %}<ul class="messages"><li class="warning">No policy for {{ missing|join:", " }}: tickets with that priority get no SLA. Add it in the admin.</li></ul>{% endif %}
+<section class="panel">
+  <div class="table-wrap sd-table"><table>
+    <thead><tr><th>Priority</th><th>Name</th><th>Response</th><th>Resolution</th><th>Active</th><th class="num">Open tickets</th><th class="num">Breached (open)</th>{% if can_admin %}<th>Edit</th>{% endif %}</tr></thead>
+    <tbody>{% for r in rows %}<tr>
+      <td>{% prio_pill r.p.priority %}</td><td>{{ r.p.name }}</td><td>{{ r.response }}</td><td>{{ r.resolution }}</td>
+      <td>{% if r.p.active %}<span class="chip ok">Active</span>{% else %}<span class="chip mute">Off</span>{% endif %}</td>
+      <td class="num"><a href="{% url 'servicedesk:tickets' %}?status=open&amp;priority={{ r.p.priority }}">{{ r.open }}</a></td>
+      <td class="num">{% if r.breached %}<a class="t-crit" href="{% url 'servicedesk:tickets' %}?status=open&amp;priority={{ r.p.priority }}&amp;sla=breached">{{ r.breached }}</a>{% else %}0{% endif %}</td>
+      {% if can_admin %}<td><details class="sd-inline"{% if r.form.errors %} open{% endif %}><summary class="btn sm">{% icon "edit" 14 %}Edit</summary>
+        <form method="post" class="sd-slaform">{% csrf_token %}<input type="hidden" name="pk" value="{{ r.p.pk }}">
+          {% for f in r.form %}{% if f.name == "active" %}<label class="inline-check">{{ f }} Active</label>{% else %}<label class="field"><span>{{ f.label }}</span>{{ f }}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</label>{% endif %}{% endfor %}
+          <button class="btn primary sm" type="submit">Save</button></form></details></td>{% endif %}
+    </tr>{% empty %}<tr><td colspan="8" class="empty">No SLA policies. Run the service desk migrations to create the defaults.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="hint sd-note">{% icon "info" 14 %} Response is met when a ticket leaves New; resolution when it is resolved or fulfilled. Requests raised from the catalog use the item's fulfilment target for resolution. Changing a policy affects new tickets and priority changes, not existing due dates.</p>
+</section>
+</div>
+{% endblock %}

@@ -41,6 +41,7 @@ class AccessTests(TestCase):
 
 
 class EventAuditTests(TestCase):
+    @override_settings(INCIDENT_AUTO_CREATE=False)  # isolate from the Service Desk listener
     def test_emit_sends_signal_and_survives_broken_listener(self):
         seen = []
 
@@ -67,7 +68,7 @@ class EventAuditTests(TestCase):
         a = AuditEvent.objects.get()
         self.assertEqual((a.actor_name, a.source_ip, a.details), ("a", "10.0.0.5", {"name": "x"}))
 
-    @override_settings(NOTIFY_WEBHOOK_URLS=["http://hook.example/x"], NOTIFY_EMAILS=[])
+    @override_settings(NOTIFY_WEBHOOK_URLS=["http://hook.example/x"], NOTIFY_EMAILS=[], INCIDENT_AUTO_CREATE=False)
     def test_webhook_notification_for_critical(self):
         with mock.patch("core.notify._post") as post:
             emit("test", "Down", severity="critical")
