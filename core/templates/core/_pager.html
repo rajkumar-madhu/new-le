@@ -1,0 +1,8 @@
+{% load le %}{% if page.paginator.count %}
+<nav class="pager" aria-label="Pages">
+  {% if page.has_previous %}<a href="?{{ query.urlencode }}&page={{ page.previous_page_number }}" aria-label="Previous page">{% icon "chevron-left" 15 %}</a>{% else %}<a aria-disabled="true" class="t-mute" style="pointer-events:none;opacity:.5">{% icon "chevron-left" 15 %}</a>{% endif %}
+  {% for n in page.paginator.page_range %}{% if n == page.number %}<span class="cur">{{ n }}</span>{% elif n <= 5 or n == page.paginator.num_pages %}<a href="?{{ query.urlencode }}&page={{ n }}">{{ n }}</a>{% elif n == 6 %}<span>…</span>{% endif %}{% endfor %}
+  {% if page.has_next %}<a href="?{{ query.urlencode }}&page={{ page.next_page_number }}" aria-label="Next page">{% icon "chevron-right" 15 %}</a>{% else %}<a aria-disabled="true" class="t-mute" style="pointer-events:none;opacity:.5">{% icon "chevron-right" 15 %}</a>{% endif %}
+  <span class="info">Showing {{ page.start_index }} to {{ page.end_index }} of {{ page.paginator.count }}{% if pager_noun %} {{ pager_noun }}{% endif %}</span>
+  <select class="per" data-per-page aria-label="Rows per page"><option value="10"{% if page.paginator.per_page == 10 %} selected{% endif %}>10</option><option value="20"{% if page.paginator.per_page == 20 %} selected{% endif %}>20</option><option value="50"{% if page.paginator.per_page == 50 %} selected{% endif %}>50</option></select>
+</nav>{% endif %}

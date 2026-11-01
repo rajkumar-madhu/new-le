@@ -1,0 +1,87 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Domains{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains dm-ov">
+{% include "domainmonitor/_head.html" %}
+<section class="kpis dm-kpis">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "globe" 28 %}</div><div class="kpi-body"><div class="label">Total Domains</div><div class="value">{{ total }}</div>
+    <div class="sub dm-trend" title="Change in monitored domains vs 7 days ago">{% if trend.total is None %}<span class="t-mute">–</span>{% else %}{% delta trend.total good="up" %}{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% ficon "check-circle" 30 %}</div><div class="kpi-body"><div class="label">Healthy</div><div class="value">{{ n.healthy }}</div><div class="sub dm-pct t-ok">{{ p.healthy|floatformat:1 }}%</div></div></div>
+    <div class="bar"><i class="fill-ok" style="width:{{ p.healthy|floatformat:0 }}%"></i></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-crit">{% ficon "x-circle" 30 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value">{{ n.down }}</div><div class="sub dm-pct t-crit">{{ p.down|floatformat:1 }}%</div></div></div>
+    <div class="bar"><i class="fill-crit" style="width:{{ p.down|floatformat:0 }}%"></i></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-warn">{% ficon "alert" 30 %}</div><div class="kpi-body"><div class="label">SSL Expiring</div><div class="value">{{ n.expiring }}</div><div class="sub dm-pct t-warn" title="Expiring within 30 days or expired">{{ p.expiring|floatformat:1 }}%</div></div></div>
+    <div class="bar"><i class="fill-warn" style="width:{{ p.expiring|floatformat:0 }}%"></i></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "clock" 28 %}</div><div class="kpi-body"><div class="label">Avg. Response Time</div><div class="value">{{ avg_ms|ms }}</div>
+    <div class="sub dm-trend" title="Average response of the last 24 hours vs the 24 hours before">{% if trend.resp is None %}<span class="t-mute">–</span>{% else %}{% delta trend.resp good="down" %}{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "globe" 28 %}</div><div class="kpi-body"><div class="label">Overall Uptime</div><div class="value">{% if uptime is None %}–{% else %}{{ uptime|pct }}{% endif %}</div>
+    <div class="sub dm-trend" title="Last 7 days vs the 7 days before (percentage points)">{% if trend.uptime is None %}<span class="t-mute">–</span>{% else %}{% delta trend.uptime good="up" %}{% endif %}</div></div></div></div>
+</section>
+
+<section class="grid dm-charts">
+  <div class="panel"><div class="panel-h"><h2>Domain Status</h2></div>
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
+      <div class="donut-legend" title="Each domain is counted once: paused, then down, then SSL expiring, then healthy">
+        {% for x in legend %}<span><i class="dot {{ x.cls }}"{% if not x.cls %} style="background:{{ x.color }}"{% endif %}></i>{{ x.label }}</span><b>{{ x.n }} ({{ x.pct|floatformat:1 }}%)</b>
+        {% endfor %}
+      </div></div></div>
+  <div class="panel" id="response"><div class="panel-h nowrap"><h2>Response Time (avg)</h2>
+      <form class="right" method="get">{% for k, v in query.items %}{% if k != 'resp_range' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+        <select name="resp_range" class="dm-sel" data-autosubmit aria-label="Response time period">{% for k, label in resp_ranges %}<option value="{{ k }}"{% if k == resp_range %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
+    <div class="chart" data-chart="line" data-src="d-resp" style="height:150px"></div>
+    <div class="legend dm-legend"><span><i style="background:#1565f0"></i>Average Response Time</span></div></div>
+  <div class="panel" id="uptime"><div class="panel-h nowrap"><h2>Uptime (All Domains)</h2>
+      <form class="right" method="get">{% for k, v in query.items %}{% if k != 'up_range' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+        <select name="up_range" class="dm-sel" data-autosubmit aria-label="Uptime period">{% for k, label in up_ranges %}<option value="{{ k }}"{% if k == up_range %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
+    <div class="chart" data-chart="line" data-src="d-up" style="height:150px"></div>
+    <div class="legend dm-legend"><span><i style="background:#16a34a"></i>Overall Uptime</span></div></div>
+</section>
+
+<section class="panel" id="domains">
+  <div class="panel-h dm-tbar"><h2>Domains ({{ page.paginator.count }})</h2>
+    <form class="dm-filters" method="get">
+      {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+      <select name="status" class="dm-sel" data-autosubmit aria-label="Status"><option value="">All Status</option><option value="up" {% if request.GET.status == 'up' %}selected{% endif %}>Up</option><option value="down" {% if request.GET.status == 'down' %}selected{% endif %}>Down</option><option value="unknown" {% if request.GET.status == 'unknown' %}selected{% endif %}>Not checked</option></select>
+      <select name="ssl" class="dm-sel" data-autosubmit aria-label="SSL status"><option value="">All SSL Status</option>{% for s in ssl_states %}<option {% if request.GET.ssl == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="group" class="dm-sel" data-autosubmit aria-label="Group"><option value="">All Groups</option>{% for g in groups %}<option {% if request.GET.group == g %}selected{% endif %}>{{ g }}</option>{% endfor %}</select>
+      <a class="btn icon blue dm-btn-sq" href="{% url 'domains:overview' %}#domains" aria-label="Clear filters" title="Clear filters">{% icon "refresh" 16 %}</a>
+      <a class="btn ghost-primary dm-export" href="{% url 'domains:export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export</a>
+    </form></div>
+  <div class="table-wrap dense"><table class="dm-table">
+    <thead><tr><th class="cb"><input type="checkbox" data-check-all aria-label="Select all domains"></th><th>Domain</th>
+      <th><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort={% if sort == 'status' %}-status{% else %}status{% endif %}#domains" title="Sort by status">Status {% icon "chevron-right" 12 %}</a></th>
+      <th>IP Address</th><th>Response Time</th><th>Uptime (7d)</th><th>SSL Status</th><th>SSL Expiry</th><th>DNS Status</th><th>Last Checked</th><th class="dm-act">Actions</th></tr></thead>
+    <tbody>{% for d in page %}
+      <tr>
+        <td class="cb"><input type="checkbox" name="sel" value="{{ d.pk }}" aria-label="Select {{ d.hostname }}"></td>
+        <td><a href="{% url 'domains:list' %}?selected={{ d.pk }}">{{ d.hostname }}</a></td>
+        <td title="{{ d.last_error }}">{% badge d.status %}</td>
+        <td>{{ d.ip_address|default:"-" }}</td>
+        <td>{% if d.response_ms is None %}-{% else %}{{ d.response_ms|ms }}{% endif %}</td>
+        <td class="{% if d.uptime7 is not None and d.uptime7 < 99 %}t-crit{% endif %}">{% if d.uptime7 is None %}-{% else %}{{ d.uptime7|pct }}{% endif %}</td>
+        <td>{% badge d.ssl_status %}</td>
+        <td class="{% if d.ssl_days_left is not None and d.ssl_days_left < 30 %}t-crit{% endif %}">{{ d.ssl_expires_at|date:"j M Y"|default:"-" }}</td>
+        <td>{% if d.dns_status == 'Resolved' %}{% badge d.dns_status 'OK' %}{% else %}{% badge d.dns_status %}{% endif %}</td>
+        <td>{% if d.last_checked_at %}{{ d.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</td>
+        <td class="dm-act"><div class="row-actions">
+          <a class="btn icon blue" href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=history" aria-label="Details and history for {{ d.hostname }}" title="Details and history">{% icon "analytics" 15 %}</a>
+          {% if user.is_staff %}<a class="btn icon" href="{% url 'domains:list' %}?edit={{ d.pk }}&selected={{ d.pk }}#domain-form" aria-label="Edit {{ d.hostname }}" title="Edit">{% icon "edit" 14 %}</a>{% endif %}
+          <details class="dm-dd dm-row-dd"><summary class="btn icon" aria-label="More actions for {{ d.hostname }}" title="More">{% icon "more" 16 %}</summary>
+            <div class="dm-menu">
+              <a href="{% url 'domains:list' %}?selected={{ d.pk }}">{% icon "eye" 15 %}View details</a>
+              <a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=dns">{% icon "server" 15 %}DNS records</a>
+              <a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=ssl">{% icon "lock" 15 %}SSL certificate</a>
+              {% if user.is_staff %}<button type="button" data-post="{% url 'domains:action' d.pk 'uptime' %}" data-busy="Checking…">{% icon "play" 15 %}Check now</button>{% endif %}
+            </div></details>
+        </div></td>
+      </tr>
+    {% empty %}<tr><td colspan="11" class="empty">{% if request.GET %}No domains match these filters.{% else %}No domains yet. {% if user.is_staff %}<a href="{% url 'domains:list' %}?add=1#domain-form">Add a domain</a>.{% endif %}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="domains" %}
+</section>
+</div>
+{{ donut|json_script:"d-donut" }}{{ resp|json_script:"d-resp" }}{{ uptime_chart|json_script:"d-up" }}
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}{% endblock %}

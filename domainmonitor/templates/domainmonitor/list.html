@@ -1,0 +1,179 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Domain List{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains dm-list">
+{% include "domainmonitor/_head.html" %}
+<section class="kpis dm-kpis">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "globe" 28 %}</div><div class="kpi-body"><div class="label">Total Domains</div>
+    <div class="value split">{{ k.total }} {% if k.growth is not None %}<span title="Growth vs 30 days ago">{% delta k.growth good="up" %}</span>{% endif %}</div></div></div>
+    <div class="sub dm-sub-split"><span>{{ k.active }} Active</span><span>{{ k.inactive }} Inactive</span><span>{{ k.expiring }} Expiring</span></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% ficon "check-circle" 30 %}</div><div class="kpi-body"><div class="label">Active Domains</div>
+    <div class="value split">{{ k.active }} {% if k.active_pct is not None %}<span class="delta t-ok" title="Share of all domains">{{ k.active_pct|floatformat:1 }}%</span>{% endif %}</div></div></div>
+    <div class="sub">Configured and monitored</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-crit">{% icon "shield-alert" 28 %}</div><div class="kpi-body"><div class="label">SSL Expiring</div>
+    <div class="value split">{{ k.expiring }} {% if k.expiring_pct is not None %}<span class="delta {% if k.expiring %}t-crit{% else %}t-ok{% endif %}" title="Share of active domains">{{ k.expiring_pct|floatformat:1 }}%</span>{% endif %}</div></div></div>
+    <div class="sub" title="Certificates expiring within 30 days or already expired">Certificates expiring in 30 days</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "server" 26 %}</div><div class="kpi-body"><div class="label">DNS Issues</div>
+    <div class="value split">{{ k.dns }} {% if k.dns_pct is not None %}<span class="delta {% if k.dns %}t-crit{% else %}t-ok{% endif %}" title="Share of active domains">{{ k.dns_pct|floatformat:1 }}%</span>{% endif %}</div></div></div>
+    <div class="sub">Domains with DNS resolution issues</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "share" 26 %}</div><div class="kpi-body"><div class="label">Site Mappings</div>
+    <div class="value">{{ k.sites }}</div></div></div>
+    <div class="sub">Mapped to client sites</div></div>
+</section>
+
+<section class="grid dm-list-grid">
+  <div class="panel dm-list-panel">
+    <div class="panel-h"><h2>Domain List</h2></div>
+    <form class="toolbar dm-filters" method="get">
+      <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+      <select name="site" class="dm-sel" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="active" class="dm-sel" data-autosubmit aria-label="Status"><option value="">All Status</option><option value="1" {% if request.GET.active == '1' %}selected{% endif %}>Active</option><option value="0" {% if request.GET.active == '0' %}selected{% endif %}>Inactive</option></select>
+      <select name="type" class="dm-sel" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for t in types %}<option {% if request.GET.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+      <button type="button" class="btn ghost-primary dm-more" data-toggle-more="more-filters" aria-expanded="{% if more_open %}true{% else %}false{% endif %}" aria-controls="more-filters">{% icon "filter" 15 %}More Filters</button>
+      <div class="dm-more-row" id="more-filters" {% if not more_open %}hidden{% endif %}>
+        <select name="dns" class="dm-sel" data-autosubmit aria-label="DNS status"><option value="">All DNS Status</option>{% for s in dns_states %}<option {% if request.GET.dns == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        <select name="ssl" class="dm-sel" data-autosubmit aria-label="SSL status"><option value="">All SSL Status</option>{% for s in ssl_states %}<option {% if request.GET.ssl == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        {% if request.GET %}<a class="btn sm" href="{% url 'domains:list' %}">{% icon "x" 14 %}Clear filters</a>{% endif %}
+      </div>
+    </form>
+    <div class="table-wrap dm-compact"><table>
+      <thead><tr><th class="cb"><input type="checkbox" data-check-all aria-label="Select all domains"></th><th>#</th><th>Domain Name</th><th>Type</th><th>Site</th><th>IP Address</th><th>DNS Status</th><th>SSL Status</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>{% for d in page %}
+        <tr class="{% if selected and d.pk == selected.pk %}sel{% endif %}">
+          <td class="cb"><input type="checkbox" name="ids" value="{{ d.pk }}" aria-label="Select {{ d.hostname }}"></td>
+          <td>{{ page.start_index|add:forloop.counter0 }}</td>
+          <td><a class="dm-host" href="?{{ query.urlencode }}&page={{ page.number }}&selected={{ d.pk }}"><span class="dm-host-ic {{ d.status|tone }}">{% icon "globe" 16 %}</span>{{ d.hostname }}</a></td>
+          <td><span class="chip dm-type-{{ d.domain_type|slugify }}">{{ d.domain_type }}</span></td>
+          <td class="dm-site">{{ d.site_key }}</td>
+          <td>{{ d.ip_address|default:"–" }}</td>
+          <td>{% badge d.dns_status %}</td>
+          <td>{% badge d.ssl_status %}</td>
+          <td>{% if d.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge crit">Inactive</span>{% endif %}</td>
+          <td><div class="row-actions">
+            <a class="btn icon" href="?{{ query.urlencode }}&page={{ page.number }}&selected={{ d.pk }}" aria-label="View {{ d.hostname }}" title="View">{% icon "eye" 15 %}</a>
+            {% if user.is_staff %}<a class="btn icon blue" href="?edit={{ d.pk }}&selected={{ d.pk }}#domain-form" aria-label="Edit {{ d.hostname }}" title="Edit">{% icon "edit" 15 %}</a>
+            <form method="post" action="{% url 'domains:toggle' d.pk %}" data-confirm="{% if d.is_active %}Deactivate{% else %}Reactivate{% endif %} {{ d.hostname }}?">{% csrf_token %}<button class="btn icon red" aria-label="{% if d.is_active %}Deactivate{% else %}Reactivate{% endif %} {{ d.hostname }}" title="{% if d.is_active %}Deactivate{% else %}Reactivate{% endif %}">{% icon "trash" 15 %}</button></form>{% endif %}
+          </div></td>
+        </tr>
+      {% empty %}<tr><td colspan="10" class="empty">No domains match.</td></tr>{% endfor %}
+      </tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="domains" %}
+  </div>
+
+  <div class="stack">
+    {% if show_form and user.is_staff %}
+    <div class="panel" id="domain-form"><div class="panel-h"><h2>{% if editing %}Edit {{ editing.hostname }}{% else %}Add Domain{% endif %}</h2><div class="right"><a href="{% url 'domains:list' %}">Cancel</a></div></div>
+      <form method="post" action="{% url 'domains:list' %}">{% csrf_token %}{% if editing %}<input type="hidden" name="pk" value="{{ editing.pk }}">{% endif %}
+        <div class="form-grid">{% for f in form %}{% if f.name != "monitor_enabled" %}
+          <div class="field{% if f.name == 'description' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+          {% endif %}{% endfor %}
+          <label class="inline-check field full"><span class="switch">{{ form.monitor_enabled }}<span></span></span>{{ form.monitor_enabled.label }}</label>
+          <div class="field full" style="align-items:flex-end"><button class="btn primary" type="submit">Save Domain</button></div>
+        </div></form></div>
+    {% endif %}
+
+    {% if selected %}
+    <div class="panel dm-detail"><div class="panel-h"><h2>Domain Details</h2>{% if user.is_staff %}<div class="right"><a class="btn sm ghost-primary" href="?edit={{ selected.pk }}&selected={{ selected.pk }}#domain-form">{% icon "edit" 14 %}Edit</a></div>{% endif %}</div>
+      <div class="dm-ident">
+        <div class="tile bg-info">{% icon "globe" 28 %}</div>
+        <div><div class="dm-ident-name"><b>{{ selected.hostname }}</b> {% if selected.is_active %}{% badge "active" %}{% else %}{% badge "inactive" %}{% endif %}</div><div class="t-mute">{{ selected.domain_type }} Domain</div></div>
+      </div>
+      <nav class="tabs dm-dtabs" data-tabs role="tablist">
+        <a href="?{{ query.urlencode }}&selected={{ selected.pk }}&dtab=overview" data-tab="overview" role="tab" class="{% if dtab == 'overview' %}on{% endif %}">Overview</a>
+        <a href="?{{ query.urlencode }}&selected={{ selected.pk }}&dtab=dns" data-tab="dns" role="tab" class="{% if dtab == 'dns' %}on{% endif %}">DNS Records</a>
+        <a href="?{{ query.urlencode }}&selected={{ selected.pk }}&dtab=ssl" data-tab="ssl" role="tab" class="{% if dtab == 'ssl' %}on{% endif %}">SSL Certificate</a>
+        <a href="?{{ query.urlencode }}&selected={{ selected.pk }}&dtab=site" data-tab="site" role="tab" class="{% if dtab == 'site' %}on{% endif %}">Site Mapping</a>
+        <a href="?{{ query.urlencode }}&selected={{ selected.pk }}&dtab=history" data-tab="history" role="tab" class="{% if dtab == 'history' %}on{% endif %}">History</a>
+      </nav>
+
+      <div data-tab-panel="overview" {% if dtab != 'overview' %}hidden{% endif %}>
+        <dl class="kv dm-kv">
+          <dt>Domain Name</dt><dd>{{ selected.hostname }}</dd>
+          <dt>Domain Type</dt><dd><a href="?type={{ selected.domain_type|urlencode }}">{{ selected.domain_type }}</a></dd>
+          <dt>Site Mapping</dt><dd><a href="?site={{ selected.site_key|urlencode }}">{{ selected.site_key }}</a></dd>
+          <dt>IP Address</dt><dd>{{ selected.ip_address|default:"–" }}</dd>
+          <dt>DNS Status</dt><dd><span class="dm-dot {{ selected.dns_status|tone }}"><i></i>{{ selected.dns_status }}</span></dd>
+          <dt>SSL Status</dt><dd class="dm-split"><span class="dm-dot {{ selected.ssl_status|tone }}"><i></i>{{ selected.ssl_status }}</span><a href="?{{ query.urlencode }}&selected={{ selected.pk }}&dtab=ssl" data-tab-link="ssl">View Certificate</a></dd>
+          <dt>SSL Expiry Date</dt><dd>{% if selected.ssl_expires_at %}{{ selected.ssl_expires_at|date:"j M Y" }} ({{ selected.ssl_days_left }} days){% else %}–{% endif %}</dd>
+          <dt>Availability</dt><dd>{% if selected.status == 'unknown' %}<span class="dm-dot mute"><i></i>Not checked</span>{% else %}<span class="dm-dot {{ selected.status|tone }}"><i></i>{{ selected.status|title }}</span>{% if selected.http_status %} <span class="t-mute">· HTTP {{ selected.http_status }} · {{ selected.response_ms|ms }}</span>{% endif %}{% endif %}</dd>
+          <dt>Created On</dt><dd>{{ selected.created_at|date:"j M Y H:i" }}</dd>
+          <dt>Last Modified</dt><dd>{{ selected.updated_at|date:"j M Y H:i" }}</dd>
+          <dt>Description</dt><dd>{{ selected.description|default:"–" }}</dd>
+        </dl>
+      </div>
+
+      <div data-tab-panel="dns" {% if dtab != 'dns' %}hidden{% endif %}>
+        <dl class="kv dm-kv">
+          <dt>DNS Status</dt><dd><span class="dm-dot {{ selected.dns_status|tone }}"><i></i>{{ selected.dns_status }}</span></dd>
+          <dt>Current Address</dt><dd>{{ selected.ip_address|default:"–" }}</dd>
+          <dt>Failed lookups</dt><dd>{{ dns_failures }} of the last {{ history_n }} check{{ history_n|pluralize }}</dd>
+        </dl>
+        <div class="table-wrap dm-compact dm-mini"><table><thead><tr><th>Type</th><th>Value</th><th>Seen</th><th>Last seen</th></tr></thead><tbody>
+          {% for r in dns_records %}<tr><td><span class="chip">{{ r.type }}</span></td><td>{{ r.ip }}</td><td>{{ r.seen }}×</td><td>{{ r.last|date:"j M Y H:i" }}</td></tr>
+          {% empty %}<tr><td colspan="4" class="empty">No resolved addresses recorded yet.</td></tr>{% endfor %}</tbody></table></div>
+        <p class="t-mute dm-note">Addresses resolved by the last {{ history_n }} stored check{{ history_n|pluralize }}.</p>
+      </div>
+
+      <div data-tab-panel="ssl" {% if dtab != 'ssl' %}hidden{% endif %}>
+        <dl class="kv dm-kv">
+          <dt>SSL Status</dt><dd><span class="dm-dot {{ selected.ssl_status|tone }}"><i></i>{{ selected.ssl_status }}</span></dd>
+          <dt>Expires</dt><dd>{% if selected.ssl_expires_at %}{{ selected.ssl_expires_at|date:"j M Y H:i" }}{% else %}–{% endif %}</dd>
+          <dt>Days Left</dt><dd class="{% if selected.ssl_days_left is not None and selected.ssl_days_left < 30 %}t-crit{% endif %}">{{ selected.ssl_days_left|default_if_none:"–" }}</dd>
+          <dt>Last Checked</dt><dd>{% if selected.last_checked_at %}{{ selected.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</dd>
+          {% if selected.last_error %}<dt>Last Error</dt><dd class="t-crit">{{ selected.last_error }}</dd>{% endif %}
+        </dl>
+        <div class="table-wrap dm-compact dm-mini"><table><thead><tr><th>Checked</th><th>Status</th><th>Expiry seen</th></tr></thead><tbody>
+          {% for c in ssl_history %}<tr><td>{{ c.checked_at|date:"j M H:i" }}</td><td><span class="dm-dot {{ c.ssl_status|tone }}"><i></i>{{ c.ssl_status }}</span></td><td>{{ c.ssl_expires_at|date:"j M Y"|default:"–" }}</td></tr>
+          {% empty %}<tr><td colspan="3" class="empty">No certificate checks recorded yet.</td></tr>{% endfor %}</tbody></table></div>
+        <p class="dm-note"><a href="{% url 'domains:ssl' %}">All SSL certificates {% icon "arrow-right" 13 %}</a></p>
+      </div>
+
+      <div data-tab-panel="site" {% if dtab != 'site' %}hidden{% endif %}>
+        <dl class="kv dm-kv">
+          <dt>Site</dt><dd><a href="?site={{ selected.site_key|urlencode }}">{{ selected.site_key }}</a></dd>
+          <dt>Group</dt><dd>{{ selected.group|default:"–" }}</dd>
+          <dt>Domain Type</dt><dd>{{ selected.domain_type }}</dd>
+          <dt>Same site</dt><dd>{% for s in siblings %}<a href="?selected={{ s.pk }}&dtab=site">{{ s.hostname }}</a>{% if not forloop.last %}, {% endif %}{% empty %}No other domains{% endfor %}</dd>
+        </dl>
+      </div>
+
+      <div data-tab-panel="history" {% if dtab != 'history' %}hidden{% endif %}>
+        <dl class="kv dm-kv">
+          <dt>Uptime (7d)</dt><dd>{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</dd>
+          <dt>Last Checked</dt><dd>{% if selected.last_checked_at %}{{ selected.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</dd>
+        </dl>
+        <div class="table-wrap dm-compact dm-mini"><table><thead><tr><th>Time</th><th>Status</th><th>DNS</th><th>SSL</th><th>Response</th></tr></thead><tbody>
+        {% for c in recent %}<tr title="{{ c.message }}"><td>{{ c.checked_at|date:"j M H:i" }}</td><td>{% if c.up %}{% badge "up" %}{% else %}{% badge "down" %}{% endif %}</td><td>{% badge c.dns_status %}</td><td>{% badge c.ssl_status %}</td><td>{{ c.response_ms|ms }}</td></tr>
+        {% empty %}<tr><td colspan="5" class="empty">Not checked yet.</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+
+      {% if user.is_staff %}
+      <h3 class="dm-h3">Quick Actions</h3>
+      <div class="dm-qa">
+        <button class="btn sm ghost-primary" data-post="{% url 'domains:action' selected.pk 'dns' %}" data-target="qa-out" data-busy="Resolving…">{% icon "server" 15 %}Test DNS</button>
+        <button class="btn sm ghost-primary" data-post="{% url 'domains:action' selected.pk 'ssl' %}" data-target="qa-out" data-busy="Connecting…">{% icon "lock" 15 %}Test SSL</button>
+        <span class="dm-disabled" title="WHOIS lookup is not available yet"><button class="btn sm ghost-primary" type="button" disabled aria-disabled="true">{% icon "file" 15 %}View WhoIs</button></span>
+        <button class="btn sm ghost-primary" data-post="{% url 'domains:action' selected.pk 'uptime' %}" data-target="qa-out" data-busy="Checking…">{% icon "activity" 15 %}Check Uptime</button>
+      </div>
+      <pre class="log" id="qa-out" hidden style="margin-top:10px"></pre>
+      {% endif %}
+
+      <div class="dm-svc-h"><h3 class="dm-h3">Associated Services ({{ services|length }})</h3><a class="view-all" href="{% url 'urlchecker:index' %}?q={{ selected.hostname|urlencode }}">View All</a></div>
+      <div class="table-wrap dm-compact dm-mini"><table><thead><tr><th>Service Name</th><th>Type</th><th>Port</th><th>Status</th></tr></thead><tbody>
+        {% for s in services|slice:":6" %}<tr title="{{ s.url }}"><td><a href="{% url 'urlchecker:detail' s.pk %}">{{ s.name }}</a></td><td>{{ s.get_check_type_display }} · {{ s.scheme }}</td><td>{{ s.port }}</td>
+          <td><span class="dm-dot {{ s.last_status|tone }}"><i></i>{{ s.get_last_status_display }}</span>{% if s.last_response_ms is not None %} <span class="t-mute">{{ s.last_response_ms|ms }}</span>{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="4" class="empty">No URL checks point at {{ selected.hostname }}.</td></tr>{% endfor %}</tbody></table></div>
+      {% if services|length > 6 %}<p class="dm-note t-mute">Showing 6 of {{ services|length }}. <a href="{% url 'urlchecker:index' %}?q={{ selected.hostname|urlencode }}">View all</a></p>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}<script>
+document.querySelectorAll('[data-tab-link]').forEach(a => a.addEventListener('click', e => {
+  const t = document.querySelector('[data-tabs] [data-tab="' + a.dataset.tabLink + '"]');
+  if (t) { e.preventDefault(); t.click(); }
+}));
+</script>{% endblock %}

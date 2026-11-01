@@ -1,0 +1,9 @@
+{% extends "core/base.html" %}{% load le %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+<div class="head"><div class="glyph bg-mute" style="border-radius:14px">{% icon "clock" 30 %}</div><div><h1>{{ label }}</h1><p>This module is not built in the console yet.</p></div></div>
+<div class="panel" style="max-width:720px"><p style="margin-top:0">The LinkedEye roadmap brings this page in a later phase. What is available now:</p>
+<ul><li><a href="{% url 'urlchecker:index' %}">URL Checker</a>: real HTTP(S) checks, response times and uptime</li>
+<li><a href="{% url 'domains:overview' %}">Domains</a>: DNS, availability and SSL certificate expiry</li>
+<li><a href="{% url 'heatmap' %}">Heatmap</a>, <a href="{% url 'exporters' %}">All Exporters</a>, <a href="{% url 'incidents' %}">Incidents</a> and <a href="{% url 'firewall' %}">FortiGate FG-01</a>: layouts with sample data</li></ul></div>
+{% endblock %}

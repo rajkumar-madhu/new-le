@@ -1,0 +1,170 @@
+{% extends "core/base.html" %}{% load static le %}
+{% block title %}Heatmap{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/heatmap.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-heatmap">
+<div class="head"><div><h1>Heatmap {% include "core/_sample.html" %}</h1><p>Service and infrastructure health at a glance</p></div>
+  <div class="actions hm-live"><span class="hm-live-pill"><i class="dot"></i>LIVE</span><span class="t-mute">{% now "M j, Y H:i:s" %}</span></div></div>
+
+<form class="toolbar hm-toolbar" method="get" id="hm-filters">
+  <div class="hm-filters">
+    <select name="domain" aria-label="Domain"><option value="">All Domains</option>{% for g in d.groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}</select>
+    <select name="service" aria-label="Service"><option value="">All Services</option>{% for s in d.services %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select>
+    <select name="host" aria-label="Host"><option value="">All Hosts</option>{% for h in d.hosts %}<option value="{{ h }}">{{ h }}</option>{% endfor %}</select>
+    <select name="range" aria-label="Time range">{% for r in d.ranges %}<option{% if r == "Last 1 hour" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+  </div>
+  <div class="legend hm-legend"><span><i class="c-ok"></i>Healthy</span><span><i class="c-warn"></i>Warning</span><span><i class="c-crit"></i>Critical</span><span><i class="c-unk"></i>Unknown</span></div>
+  <div class="hm-views">
+    <a class="btn ghost-primary" href="#hm-domains">{% icon "list" 16 %} View as List</a>
+    <a class="btn ghost-primary" href="#topology">{% icon "network" 16 %} View Topology</a>
+    <button type="button" class="btn icon blue hm-sq" id="hm-full" title="Full screen" aria-label="Full screen">{% icon "expand" 16 %}</button>
+  </div>
+</form>
+
+<section class="grid hm-main">
+  <div class="panel hm-heat-panel" id="hm-heat">
+    <table class="heat hm-heat">
+      <colgroup><col class="hm-namecol">{% for c in d.columns %}<col{% if forloop.first %} class="hm-widecol"{% endif %}>{% endfor %}</colgroup>
+      <thead><tr><th>Domain / Service</th>{% for c in d.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      {% for g in d.rows %}<tbody data-group="{{ g.group }}">
+        <tr class="grp"><td><span class="hm-nm">{% icon "chevron-down" 14 %} {{ g.group }}</span></td>{% for c in g.cells %}<td><div class="cell c-{{ c }}" title="{{ g.group }}: {{ c }}"></div></td>{% endfor %}</tr>
+        {% for s in g.services %}<tr class="svc" data-service="{{ s.name }}"><td><span class="hm-nm" title="{{ s.name }}">{{ s.name }}</span></td>{% for c in s.cells %}<td><div class="cell c-{{ c }}" title="{{ s.name }}: {{ c }}"></div></td>{% endfor %}</tr>{% endfor %}
+      </tbody>{% endfor %}
+    </table>
+    <p class="t-mute hm-empty" hidden>No services match the selected filters.</p>
+  </div>
+
+  <div class="stack hm-right">
+    <div class="panel" id="hm-domains">
+      <div class="panel-h hm-dom-h"><div><h2>Domains</h2><small>Business domains and their service health</small></div>
+        <div class="right"><button type="button" class="btn primary">{% icon "plus" 16 %} Add Domain</button></div></div>
+      <div class="kpis hm-kpis">{% for k in d.domain_kpis %}
+        <div class="kpi"><div class="kpi-top"><div class="tile {{ k.tile }}">{% if k.filled %}{% ficon k.icon 22 %}{% else %}{% icon k.icon 20 %}{% endif %}</div>
+          <div class="kpi-body"><div class="label">{{ k.label }}</div><div class="value">{{ k.value }}</div></div></div></div>{% endfor %}
+      </div>
+      <div class="table-wrap hm-table"><table>
+        <thead><tr><th>Domain</th><th>Description</th><th class="num">Services</th><th>Health Status</th><th class="num">Availability</th><th class="num">Error Rate</th><th class="num">p95 Latency</th><th class="hm-act">Actions</th></tr></thead>
+        <tbody>{% for dm in d.domains %}<tr>
+          <td><a class="hm-dom" href="?domain={{ dm.name|urlencode }}" data-domain="{{ dm.name }}"><span class="{{ dm.tone }}">{% icon dm.icon 16 %}</span><span>{{ dm.name }}</span></a></td>
+          <td class="wrap hm-desc">{{ dm.desc }}</td>
+          <td class="num">{{ dm.services }}</td>
+          <td>{% if dm.health == "warning" %}<span class="badge warn hm-plain">Warning</span>{% else %}{% badge dm.health %}{% endif %}</td>
+          <td class="num">{{ dm.avail }}%</td>
+          <td class="num{% if dm.hot %} t-crit{% endif %}">{{ dm.err }}%</td>
+          <td class="num{% if dm.hot %} t-crit{% endif %}">{{ dm.p95 }} ms</td>
+          <td class="hm-act"><button type="button" class="btn icon" aria-label="More actions for {{ dm.name }}">{% icon "more" 16 %}</button></td>
+        </tr>{% endfor %}</tbody></table></div>
+      <div class="pager hm-pager"><span class="t-mute">Showing 1 to {{ d.domains|length }} of {{ d.domains|length }} domains</span>
+        <span class="hm-pages"><button type="button" class="btn icon" disabled aria-label="Previous page">{% icon "chevron-left" 14 %}</button><span class="cur">1</span><button type="button" class="btn icon" disabled aria-label="Next page">{% icon "chevron-right" 14 %}</button></span></div>
+    </div>
+
+    {% with sel=d.selected %}
+    <div class="panel hm-details" id="hm-details">
+      <div class="panel-h"><h2>Domain Details &ndash; {{ sel.name }}</h2>{% badge sel.health %}
+        <div class="right"><select class="hm-sm" aria-label="Details time range">{% for r in d.ranges %}<option{% if r == "Last 1 hour" %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></div></div>
+      <nav class="seg hm-tabs" aria-label="Domain details sections">
+        <a class="on" href="#hm-details">Overview</a>
+        <a href="#hm-top-services">Services ({{ sel.services }})</a>
+        <a href="{% url 'incidents' %}">Incidents ({{ d.open_incidents }})</a>
+        <a href="{% url 'coming_soon' 'logs-events' %}">Logs</a>
+        <a href="{% url 'coming_soon' 'traces' %}">Traces</a>
+        <a href="{% url 'coming_soon' 'metrics-explorer' %}">Metrics</a>
+        <a href="#topology">Topology</a>
+      </nav>
+      <div class="hm-dgrid">
+        <div class="hm-col">
+          <div class="hm-box hm-ov">
+            <span class="hm-ov-ic">{% icon "bar" 36 %}</span>
+            <div class="hm-ov-t"><b>{{ sel.name }}</b><div class="t-mute">{{ sel.desc }}</div></div>
+            <div class="hm-ov-v"><b>{{ sel.avail }}%</b><div class="t-mute">Availability</div></div>
+          </div>
+          <div class="hm-box" id="hm-top-services">
+            <h3>Top Services</h3>
+            <div class="hm-mini-wrap"><table class="hm-mini">
+              <thead><tr><th>Service</th><th>Health</th><th>Availability</th><th>Error Rate</th><th>p95 Latency</th></tr></thead>
+              <tbody>{% for s in d.top_services %}<tr>
+                <td><a href="?service={{ s.name|urlencode }}" data-service="{{ s.name }}">{{ s.name }}</a></td>
+                <td>{% if s.health == "warning" %}<span class="badge warn hm-plain">Warning</span>{% else %}{% badge s.health %}{% endif %}</td>
+                <td>{{ s.avail }}%</td>
+                <td{% if s.err >= 1 %} class="t-crit"{% endif %}>{{ s.err }}%</td>
+                <td{% if s.health != "healthy" %} class="t-crit"{% endif %}>{{ s.p95 }} ms</td>
+              </tr>{% endfor %}</tbody></table></div>
+            <div class="hm-more"><a class="view-all" href="{% url 'coming_soon' 'service-catalog' %}">View Full Services {% icon "arrow-right" 13 %}</a></div>
+          </div>
+        </div>
+        <div class="hm-col">
+          <div class="hm-box">
+            <div class="hm-box-h"><h3>Recent Incidents</h3><a class="view-all" href="{% url 'incidents' %}">View All {% icon "arrow-right" 13 %}</a></div>
+            <table class="hm-inc"><tbody>{% for i in d.incidents %}<tr>
+              <td class="hm-inc-ic">{% ficon "x-circle" 13 %}</td>
+              <td><a href="{% url 'incidents' %}">{{ i.id }}</a></td>
+              <td><span class="hm-prio hm-{{ i.prio|lower }}">{{ i.prio }}</span></td>
+              <td class="hm-inc-t" title="{{ i.title }}">{{ i.title }}</td>
+              <td class="hm-inc-ago">{{ i.ago }}</td>
+            </tr>{% endfor %}</tbody></table>
+          </div>
+          <div class="hm-box" id="topology">
+            <div class="hm-box-h"><h3>Domain Topology</h3><a class="view-all" href="{% url 'coming_soon' 'service-topology' %}">View Full Topology {% icon "arrow-right" 13 %}</a></div>
+            <div class="hm-chain">{% for n in d.chain %}
+              <div class="hm-node{% if n.hot %} hot{% endif %}"><span class="hm-node-ic {{ n.tone }}">{% icon n.icon 22 %}</span><span class="hm-node-l">{{ n.name }}</span></div>
+              {% if not forloop.last %}<span class="hm-arrow" aria-hidden="true"></span>{% endif %}{% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+  </div>
+</section>
+</div>
+<script>
+(function () {
+  var form = document.getElementById('hm-filters');
+  if (!form) return;
+  var groups = document.querySelectorAll('.hm-heat tbody[data-group]');
+  var empty = document.querySelector('.hm-empty');
+  function apply() {
+    var dom = form.elements.domain.value, svc = form.elements.service.value, shown = 0;
+    groups.forEach(function (g) {
+      var okGroup = !dom || g.dataset.group === dom, any = false;
+      g.querySelectorAll('tr.svc').forEach(function (tr) {
+        var ok = okGroup && (!svc || tr.dataset.service === svc);
+        tr.hidden = !ok; if (ok) any = true;
+      });
+      g.hidden = !any; if (any) shown++;
+    });
+    if (empty) empty.hidden = shown > 0;
+  }
+  function sync() {
+    var q = new URLSearchParams(location.search);
+    ['domain', 'service', 'host', 'range'].forEach(function (k) {
+      var v = q.get(k), el = form.elements[k];
+      if (v !== null && el && Array.prototype.some.call(el.options, function (o) { return (o.value || o.text) === v; })) el.value = v;
+    });
+    apply();
+  }
+  form.addEventListener('change', function () {
+    var q = new URLSearchParams();
+    ['domain', 'service', 'host'].forEach(function (k) { if (form.elements[k].value) q.set(k, form.elements[k].value); });
+    history.replaceState(null, '', q.toString() ? '?' + q : location.pathname);
+    apply();
+  });
+  form.addEventListener('submit', function (e) { e.preventDefault(); });
+  document.querySelectorAll('a[data-domain], a[data-service]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      form.elements.domain.value = a.dataset.domain || '';
+      form.elements.service.value = a.dataset.service || '';
+      form.dispatchEvent(new Event('change'));
+      document.getElementById('hm-heat').scrollIntoView({behavior: 'smooth', block: 'start'});
+    });
+  });
+  var full = document.getElementById('hm-full');
+  if (full) full.addEventListener('click', function () {
+    var el = document.getElementById('hm-heat');
+    if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen();
+  });
+  sync();
+})();
+</script>
+{% endblock %}

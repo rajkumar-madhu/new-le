@@ -1,0 +1,52 @@
+<script>
+(function () {
+  'use strict';
+  // dropdown menus (<details class="dm-dd">): one open at a time, close on outside click / Escape.
+  // Row menus sit inside a scrolling table, so they are positioned against the viewport.
+  const dds = document.querySelectorAll('.dm-dd');
+  const place = d => {
+    if (!d.classList.contains('dm-row-dd') || !d.open) return;
+    const m = d.querySelector('.dm-menu'), r = d.querySelector('summary').getBoundingClientRect();
+    m.style.position = 'fixed';
+    m.style.top = Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8) + 'px';
+    m.style.left = Math.max(8, r.right - m.offsetWidth) + 'px';
+  };
+  dds.forEach(d => d.addEventListener('toggle', () => {
+    if (d.open) dds.forEach(o => { if (o !== d) o.open = false; });
+    place(d);
+  }));
+  document.addEventListener('click', e => dds.forEach(d => { if (d.open && !d.contains(e.target)) d.open = false; }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') dds.forEach(d => { d.open = false; }); });
+  addEventListener('scroll', () => dds.forEach(d => { if (d.classList.contains('dm-row-dd')) d.open = false; }), true);
+
+  // select-all checkbox in table headers
+  document.querySelectorAll('[data-check-all]').forEach(all => {
+    const boxes = () => all.closest('table').querySelectorAll('tbody input[type=checkbox]');
+    all.addEventListener('change', () => boxes().forEach(b => { b.checked = all.checked; }));
+    all.closest('table').addEventListener('change', e => {
+      if (e.target === all) return;
+      const bs = [...boxes()], n = bs.filter(b => b.checked).length;
+      all.checked = n === bs.length && n > 0; all.indeterminate = n > 0 && n < bs.length;
+    });
+  });
+
+  // client-side tabs: <nav data-tabs> <a data-tab="x"> ... <div data-tab-panel="x">
+  document.querySelectorAll('[data-tabs]').forEach(nav => {
+    const root = nav.parentElement;
+    nav.addEventListener('click', e => {
+      const a = e.target.closest('[data-tab]');
+      if (!a) return;
+      e.preventDefault();
+      nav.querySelectorAll('[data-tab]').forEach(t => { const on = t === a; t.classList.toggle('on', on); t.setAttribute('aria-selected', on); });
+      root.querySelectorAll('[data-tab-panel]').forEach(p => { p.hidden = p.dataset.tabPanel !== a.dataset.tab; });
+      const u = new URL(location.href); u.searchParams.set('dtab', a.dataset.tab); history.replaceState(null, '', u);
+    });
+  });
+
+  // "More Filters" toggle
+  document.querySelectorAll('[data-toggle-more]').forEach(b => b.addEventListener('click', () => {
+    const t = document.getElementById(b.dataset.toggleMore);
+    t.hidden = !t.hidden; b.setAttribute('aria-expanded', !t.hidden);
+  }));
+})();
+</script>

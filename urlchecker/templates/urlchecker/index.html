@@ -1,0 +1,151 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}URL Checker{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/urlchecker.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Monitoring</span>{% icon "chevron-right" 14 %}<a href="{% url 'urlchecker:index' %}">URL Checker</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-urlchecker">
+<div class="head">
+  <div class="glyph">{% icon "globe" 44 %}</div>
+  <div><h1>URL Checker</h1><p>Monitor website and application endpoints for availability, response time and content</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'urlchecker:export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="{% url 'urlchecker:index' %}?events=all#events">{% icon "file" 17 %}View Logs</a>
+    <a class="btn primary" href="{% url 'urlchecker:index' %}#form">{% icon "plus" 17 %}Add URL</a>
+  </div>
+</div>
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "link" 22 %}</div><div class="kpi-body"><div class="label">Total URLs</div><div class="value split">{{ total }} {% delta total_delta %}</div></div></div><div class="sub">Monitored endpoints</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Online</div><div class="value split">{{ counts.online }} {% if total %}<span class="delta t-ok">{{ pct.online|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">URLs accessible</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value split">{{ counts.down }} {% if total %}<span class="delta t-crit">{{ pct.down|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">URLs not accessible</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "clock" 24 %}</div><div class="kpi-body"><div class="label">Degraded</div><div class="value split">{{ counts.degraded }} {% if total %}<span class="delta t-warn">{{ pct.degraded|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Slow response time</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "bar" 22 %}</div><div class="kpi-body"><div class="label">Avg. Response Time</div><div class="value split">{{ avg_response|ms }} {% delta avg_delta good="down" %}</div></div></div><div class="sub">Across all URLs</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "alarm" 26 %}</div><div class="kpi-body"><div class="label">Overall Uptime</div><div class="value t-ok">{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</div></div></div><div class="sub"><span class="delta t-ok">Last 7 days</span></div></div>
+</section>
+
+<section class="grid g-3 g-charts">
+  <div class="panel"><div class="panel-h"><h2>URL Status Overview</h2></div>
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
+      <div class="donut-legend">
+        <span><i class="dot fill-ok"></i>Online</span><b>{{ counts.online }} ({{ pct.online|floatformat:1 }}%)</b>
+        <span><i class="dot fill-crit"></i>Down</span><b>{{ counts.down }} ({{ pct.down|floatformat:1 }}%)</b>
+        <span><i class="dot fill-warn"></i>Degraded</span><b>{{ counts.degraded }} ({{ pct.degraded|floatformat:1 }}%)</b>
+        {% if counts.unknown %}<span><i class="dot" style="background:#cbd5e1"></i>Not checked</span><b>{{ counts.unknown }} ({{ pct.unknown|floatformat:1 }}%)</b>{% endif %}
+      </div></div></div>
+  <div class="panel"><div class="panel-h nowrap"><h2>Response Time Trend (Last 24 Hours)</h2>
+      <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Minimum</span><span><i style="background:#dc2626"></i>Maximum</span></div></div>
+    <div class="chart" data-chart="line" data-src="d-trend" style="height:162px"></div></div>
+  <div class="panel"><div class="panel-h"><h2>URL Status History (Last 7 days)</h2>
+      <div class="legend square stack-right"><span><i class="fill-ok"></i>Online</span><span><i class="fill-crit"></i>Down</span><span><i class="fill-warn"></i>Degraded</span></div></div>
+    <div class="chart history-chart" data-chart="bars" data-src="d-history" style="height:140px"></div></div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel urls-panel">
+    <div class="panel-h"><h2>Monitored URLs ({{ page.paginator.count }})</h2>
+      <div class="right">
+        {% if user.is_staff %}<button class="btn primary sm" data-post="{% url 'urlchecker:run_all' %}" data-busy="Checking…">{% icon "radar" 15 %}Run Check Now</button>{% endif %}
+        <a class="btn sm ghost-primary" href="{% url 'urlchecker:export' %}?{{ query.urlencode }}">{% icon "download" 15 %}Export</a>
+      </div></div>
+    <form class="toolbar compact" method="get">
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search by URL, name or tag…" aria-label="Search URLs"></label>
+      <select name="site" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="status" data-autosubmit aria-label="Status"><option value="">All Status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="type" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for v, l in types %}<option value="{{ v }}" {% if request.GET.type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <a class="btn icon blue" href="{% url 'urlchecker:index' %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>
+    </form>
+    <div class="table-wrap dense urls-table"><table>
+      <thead><tr><th class="cb"><input type="checkbox" data-check-all="url-ids" aria-label="Select all URLs on this page"></th><th>#</th><th>Name</th><th>URL</th><th>Type</th><th>Site</th><th>Status</th><th>Response Time</th><th>Uptime (24h)</th><th>Last Check</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for c in page %}
+        <tr>
+          <td class="cb"><input type="checkbox" name="url-ids" value="{{ c.pk }}" aria-label="Select {{ c.name }}"></td>
+          <td>{{ page.start_index|add:forloop.counter0 }}</td>
+          <td title="{{ c.name }}"><a href="{% url 'urlchecker:detail' c.pk %}">{{ c.name }}</a></td>
+          <td><span class="cell-link" title="{{ c.url }}">{{ c.url }}</span></td>
+          <td>{{ c.get_check_type_display }}</td>
+          <td>{{ c.site }}</td>
+          <td title="{{ c.last_error }}">{% badge c.last_status %}</td>
+          <td class="{% if c.last_status == 'degraded' %}t-warn{% elif c.last_status == 'down' %}t-crit{% endif %}">{{ c.last_response_ms|ms }}</td>
+          <td class="{% if c.uptime24 is None %}t-mute{% elif c.uptime24 < 99 %}t-crit{% else %}t-ok{% endif %}">{% if c.uptime24 is None %}–{% else %}{{ c.uptime24|pct }}{% endif %}</td>
+          <td>{{ c.last_checked_at|short_dt }}</td>
+          <td><div class="row-actions">
+            {% if user.is_staff %}
+            <button class="btn icon blue" data-post="{% url 'urlchecker:run' c.pk %}" title="Run check now" aria-label="Run check now for {{ c.name }}">{% icon "play" 14 %}</button>
+            <a class="btn icon blue" href="{% url 'urlchecker:edit' c.pk %}#form" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>
+            {% endif %}
+            <details class="row-menu"><summary class="btn icon" title="More actions" aria-label="More actions for {{ c.name }}">{% icon "more" 15 %}</summary>
+              <div class="menu-pop">
+                <a href="{% url 'urlchecker:detail' c.pk %}">{% icon "eye" 14 %}View details</a>
+                <a href="{{ c.url }}" target="_blank" rel="noopener">{% icon "external" 14 %}Open URL</a>
+                {% if user.is_staff %}<form method="post" action="{% url 'urlchecker:delete' c.pk %}" data-confirm="Delete the check “{{ c.name }}” and its history?">{% csrf_token %}<button class="danger" type="submit" aria-label="Delete {{ c.name }}">{% icon "trash" 14 %}Delete</button></form>{% endif %}
+              </div></details>
+          </div></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="11" class="empty">No URL checks match. {% if user.is_staff %}Add one with the form on the right.{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="URLs" %}
+  </div>
+
+  <div class="stack">
+    <div class="panel" id="form">
+      <div class="panel-h"><h2>{% if editing %}Edit “{{ editing.name }}”{% else %}Add / Edit URL Check{% endif %}</h2>{% if editing %}<div class="right"><a href="{% url 'urlchecker:index' %}">Cancel</a></div>{% endif %}</div>
+      {% if user.is_staff %}
+      <form class="url-form" method="post" action="{% if editing %}{% url 'urlchecker:edit' editing.pk %}{% else %}{% url 'urlchecker:index' %}{% endif %}">{% csrf_token %}
+        {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+        <div class="form-grid">
+          {% for f in form.main_fields %}
+          <div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+          {% endfor %}
+          <details class="field full advanced"{% if form.advanced_has_errors %} open{% endif %}><summary>{% icon "sliders" 14 %}Advanced options</summary>
+            <div class="form-grid">
+              {% for f in form.advanced_fields %}
+              <div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+              {% endfor %}
+              <label class="inline-check field"><span class="switch">{{ form.enabled }}<span></span></span>Enabled</label>
+            </div>
+          </details>
+          <div class="field full form-foot">
+            <label class="inline-check"><span class="switch">{{ form.follow_redirects }}<span></span></span>Follow Redirects</label>
+            <button class="btn primary sm" type="submit">{% if editing %}Save changes{% else %}Save URL{% endif %}</button>
+          </div>
+        </div>
+      </form>
+      {% else %}<p class="t-mute">Only operators can add or change checks.</p>{% endif %}
+    </div>
+
+    <div class="panel" id="events">
+      <div class="panel-h"><h2>Recent URL Check Events</h2><div class="right">{% if all_events %}<a class="view-all" href="{% url 'urlchecker:index' %}#events">Show fewer</a>{% else %}<a class="view-all" href="?{% if query.urlencode %}{{ query.urlencode }}&amp;{% endif %}events=all#events">View All</a>{% endif %}</div></div>
+      <div class="table-wrap dense borderless events-table"><table>
+        <thead><tr><th>Time</th><th>URL Name</th><th>Status</th><th>Response</th><th>Message</th></tr></thead>
+        <tbody>{% for e in events %}
+          <tr><td>{{ e.checked_at|short_dt }}</td>
+            <td title="{{ e.url_check.name }}"><a href="{% url 'urlchecker:detail' e.url_check_id %}">{{ e.url_check.name }}</a></td>
+            <td>{% badge e.status %}</td>
+            <td class="{% if e.status != 'online' %}t-{{ e.status|tone }}{% endif %}">{{ e.response_ms|ms }}</td>
+            <td class="msg {% if e.status != 'online' %}t-{{ e.status|tone }}{% endif %}" title="{{ e.message }}">{% if e.message %}{{ e.message|truncatechars:40 }}{% elif e.http_status %}{{ e.http_status }}{% else %}–{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="5" class="empty">No checks have run yet.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+  </div>
+</section>
+</div>
+{{ donut|json_script:"d-donut" }}{{ trend|json_script:"d-trend" }}{{ history|json_script:"d-history" }}
+<script>
+document.querySelectorAll('[data-check-all]').forEach(function (all) {
+  var boxes = function () { return document.querySelectorAll('input[name="' + all.dataset.checkAll + '"]'); };
+  all.addEventListener('change', function () { boxes().forEach(function (b) { b.checked = all.checked; }); });
+  document.addEventListener('change', function (e) {
+    if (e.target.name !== all.dataset.checkAll) return;
+    var list = Array.prototype.slice.call(boxes());
+    all.checked = list.length > 0 && list.every(function (b) { return b.checked; });
+    all.indeterminate = !all.checked && list.some(function (b) { return b.checked; });
+  });
+});
+document.addEventListener('click', function (e) {
+  document.querySelectorAll('.pg-urlchecker details.row-menu[open]').forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
+});
+</script>
+{% endblock %}

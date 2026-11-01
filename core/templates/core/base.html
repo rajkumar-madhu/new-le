@@ -1,0 +1,65 @@
+{% load static le %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}LinkedEye{% endblock %} · LinkedEye</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{% static 'linkedeye/app.css' %}">
+  {% block page_css %}{% endblock %}
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="side" id="side">
+    <a class="brand" href="{% url 'dashboard' %}" style="text-decoration:none">
+      <svg class="eye" viewBox="0 0 48 30" aria-hidden="true"><path d="M2 15C8 5 16 1 24 1s16 4 22 14c-6 10-14 14-22 14S8 25 2 15z" fill="none" stroke="#3b9cff" stroke-width="3"/><circle cx="24" cy="15" r="8" fill="#1565f0"/><circle cx="24" cy="15" r="3.5" fill="#fff"/></svg>
+      <div><b>Linked<span>Eye</span></b><small>ITSM &amp; Monitoring Platform</small></div>
+    </a>
+    <nav class="nav" aria-label="Main">
+      {% for item in nav %}
+        {% if item.children %}
+          <details class="{% if item.open %}on{% endif %}"{% if item.open %} open{% endif %}>
+            <summary>{% icon item.icon 20 %}{{ item.label }}{% icon "chevron-right" 15 "chev" %}</summary>
+            <div class="sub">{% for c in item.children %}<a href="{{ c.href }}" class="{% if c.active %}on{% endif %}">{{ c.label }}</a>{% endfor %}</div>
+          </details>
+        {% else %}
+          <a href="{{ item.href }}" class="{% if item.active %}on{% endif %}">{% icon item.icon 20 %}{{ item.label }}{% if item.chev %}{% icon "chevron-right" 15 "chev" %}{% endif %}</a>
+        {% endif %}
+      {% endfor %}
+    </nav>
+    <div class="side-foot">LinkedEye v{{ le_version }}<br>Full-Stack Observability<div class="ok">System Operational</div></div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <button class="icon-btn menu-btn" type="button" aria-label="Toggle menu" data-toggle-menu>{% icon "menu" 20 %}</button>
+      <form class="search" action="{% url 'search' %}" role="search">{% icon "search" 17 %}<input type="search" name="q" value="{{ request.GET.q|default:'' }}" placeholder="Search devices, domains, tickets, IPs, or runbooks…" aria-label="Search"></form>
+      <div class="spacer"></div>
+      <form class="site-pick" method="get" action="{{ request.path }}"><select name="site" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in le_sites %}<option value="{{ s }}"{% if s == le_site %} selected{% endif %}>{{ s }}</option>{% endfor %}</select></form>
+      <a class="icon-btn" href="{% url 'urlchecker:index' %}?status=down" title="{{ le_problem_count }} check(s) need attention" aria-label="Problems">{% icon "bell" 21 %}{% if le_problem_count %}<span class="count">{{ le_problem_count }}</span>{% endif %}</a>
+      <a class="icon-btn solid hide-sm" href="{% url 'coming_soon' 'help' %}" aria-label="Help">{% ficon "help" 24 %}</a>
+      <a class="icon-btn hide-sm" href="{% url 'admin:index' %}" aria-label="Administration">{% icon "settings" 22 %}</a>
+      <details class="user-menu">
+        <summary class="user">
+          <span class="avatar">{% icon "user" 20 %}</span>
+          <div><b>{{ user.get_full_name|default:user.get_username|capfirst }}</b><small>{% if user.is_superuser %}Super Admin{% elif user.is_staff %}Operator{% else %}Viewer{% endif %}</small></div>
+          {% icon "chevron-down" 18 "t-mute" %}
+        </summary>
+        <div class="menu">
+          <a href="{% url 'admin:index' %}">{% icon "settings" 16 %}Administration</a>
+          <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">{% icon "logout" 16 %}Sign out</button></form>
+        </div>
+      </details>
+    </header>
+    <main class="page">
+      {% block crumbs %}{% endblock %}
+      {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="{% static 'linkedeye/charts.js' %}"></script>
+<script src="{% static 'linkedeye/app.js' %}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

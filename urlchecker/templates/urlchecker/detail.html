@@ -1,0 +1,28 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{{ check.name }}{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'urlchecker:index' %}">URL Checker</a>{% icon "chevron-right" 14 %}<span>{{ check.name }}</span></nav>{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/urlchecker.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-urlchecker">
+<div class="head">
+  <div class="glyph bg-info" style="border-radius:50%">{% icon "link" 26 %}</div>
+  <div><h1>{{ check.name }} {% badge check.last_status %}</h1><p><a href="{{ check.url }}" rel="noopener" target="_blank">{{ check.url }}</a> · {{ check.site }} · every {{ check.get_interval_seconds_display }}</p></div>
+  <div class="actions">{% if user.is_staff %}
+    <button class="btn primary" data-post="{% url 'urlchecker:run' check.pk %}" data-busy="Checking…">{% icon "play" 15 %}Run check now</button>
+    <a class="btn" href="{% url 'urlchecker:edit' check.pk %}#form">{% icon "edit" 15 %}Edit</a>{% endif %}</div>
+</div>
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "bar" 22 %}</div><div class="kpi-body"><div class="label">Last Response</div><div class="value">{{ check.last_response_ms|ms }}</div></div></div><div class="sub">HTTP {{ check.last_http_status|default:"–" }} · expected {{ check.expected_status }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Uptime (24h)</div><div class="value">{% if uptime24 is None %}–{% else %}{{ uptime24|pct }}{% endif %}</div></div></div><div class="sub">Degraded counts as available</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "alarm" 26 %}</div><div class="kpi-body"><div class="label">Uptime (7 days)</div><div class="value t-ok">{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</div></div></div><div class="sub"><span class="delta t-ok">Last 7 days</span></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last Checked</div><div class="value">{{ check.last_checked_at|ago }}</div></div></div><div class="sub" title="{{ check.last_error }}">{{ check.last_error|default:"No errors" }}</div></div>
+</section>
+<div class="panel"><div class="panel-h nowrap"><h2>Response Time Trend (Last 24 Hours)</h2>
+  <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Minimum</span><span><i style="background:#dc2626"></i>Maximum</span></div></div><div class="chart" data-chart="line" data-src="d-trend" style="height:220px"></div></div>
+<div class="panel"><div class="panel-h"><h2>Check History</h2><small>latest 50</small></div>
+  <div class="table-wrap dense check-history"><table><thead><tr><th>Time</th><th>Status</th><th>HTTP</th><th>Response</th><th>TLS expires</th><th>Message</th></tr></thead><tbody>
+  {% for r in results %}<tr><td>{{ r.checked_at|short_dt }}</td><td>{% badge r.status %}</td><td>{{ r.http_status|default:"–" }}</td><td class="{% if r.status != 'online' %}t-{{ r.status|tone }}{% endif %}">{{ r.response_ms|ms }}</td><td>{{ r.tls_expires_at|date:"d M Y"|default:"–" }}</td><td class="wrap">{{ r.message }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No results yet.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+{{ trend|json_script:"d-trend" }}
+{% endblock %}

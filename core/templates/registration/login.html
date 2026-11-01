@@ -1,0 +1,15 @@
+{% load static %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · LinkedEye</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{% static 'linkedeye/app.css' %}"></head>
+<body><div class="login"><form class="card" method="post">{% csrf_token %}
+  <div class="brand"><svg class="eye" viewBox="0 0 48 30" aria-hidden="true"><path d="M2 15C8 5 16 1 24 1s16 4 22 14c-6 10-14 14-22 14S8 25 2 15z" fill="none" stroke="#3b9cff" stroke-width="3"/><circle cx="24" cy="15" r="8" fill="#1565f0"/><circle cx="24" cy="15" r="3.5" fill="#fff"/></svg>
+  <div><b>Linked<span>Eye</span></b><small>ITSM &amp; Monitoring Platform</small></div></div>
+  <h1 style="font-size:20px">Sign in</h1>
+  {% if form.errors %}<ul class="messages"><li class="error">Your username and password didn't match. Try again.</li></ul>{% endif %}
+  <div class="field"><label for="id_username">Username</label><input type="text" name="username" id="id_username" autocomplete="username" required autofocus></div>
+  <div class="field"><label for="id_password">Password</label><input type="password" name="password" id="id_password" autocomplete="current-password" required></div>
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn primary" type="submit" style="justify-content:center">Sign in</button>
+</form></div></body></html>

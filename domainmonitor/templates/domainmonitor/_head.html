@@ -1,0 +1,37 @@
+{% load le %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}{% if tab == 'list' %}<span class="t-mute">Configuration</span>{% icon "chevron-right" 14 %}{% endif %}<a href="{% url 'domains:overview' %}">Domains</a></nav>
+<div class="head dm-head">
+  {% if tab == 'list' %}<div class="glyph dm-glyph-plain">{% icon "globe" 44 %}</div>
+  {% else %}<div class="glyph bg-info dm-glyph">{% icon "globe" 38 %}</div>{% endif %}
+  <div><h1>Domains</h1><p>{% if tab == 'list' %}Manage domain names, DNS settings and site associations{% else %}Monitor website availability, SSL certificates, DNS, and performance for all your domains{% endif %}</p></div>
+  <div class="actions">
+    {% if tab == 'list' %}
+      {% if user.is_staff %}<button class="btn icon dm-btn-sq" data-post="{% url 'domains:run_all' %}" data-busy="…" title="Check all domains now" aria-label="Check all domains now">{% icon "refresh" 16 %}</button>{% endif %}
+      <a class="btn" href="{% url 'domains:export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export</a>
+      {% if user.is_staff %}<a class="btn primary" href="{% url 'domains:list' %}?add=1#domain-form">{% icon "plus" 17 %}Add Domain</a>{% endif %}
+    {% else %}
+      {% if user.is_staff %}<a class="btn primary" href="{% url 'domains:list' %}?add=1#domain-form">{% icon "plus" 17 %}Add Domain</a>{% endif %}
+      <details class="dm-dd">
+        <summary class="btn">Actions {% icon "chevron-down" 14 %}</summary>
+        <div class="dm-menu">
+          {% if user.is_staff %}<button type="button" data-post="{% url 'domains:run_all' %}" data-busy="Checking…">{% icon "refresh" 16 %}Check all now</button>{% endif %}
+          <a href="{% url 'domains:export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export CSV</a>
+          <a href="{% url 'domains:dns' %}">{% icon "server" 16 %}DNS Records</a>
+          <a href="{% url 'domains:ssl' %}">{% icon "lock" 16 %}SSL Certificates</a>
+        </div>
+      </details>
+    {% endif %}
+  </div>
+</div>
+{% if tab != 'list' %}
+<nav class="tabs dm-tabs">
+  <a href="{% url 'domains:overview' %}" class="{% if tab == 'overview' %}on{% endif %}">Overview</a>
+  <a href="{% url 'domains:list' %}">Domain List</a>
+  <a href="{% url 'domains:dns' %}" class="{% if tab == 'dns' %}on{% endif %}">DNS Records</a>
+  <a href="{% url 'domains:ssl' %}" class="{% if tab == 'ssl' %}on{% endif %}">SSL Certificates</a>
+  <a href="{% url 'domains:overview' %}#uptime">Uptime &amp; Availability</a>
+  <a href="{% url 'domains:overview' %}#response">Performance</a>
+  <a href="{% url 'domains:ssl' %}">Security</a>
+  <a href="{% url 'domains:overview' %}?status=down#domains">Alerts</a>
+  <a href="{% url 'domains:export' %}" title="Download the domain report (CSV)">Reports</a>
+</nav>
+{% endif %}

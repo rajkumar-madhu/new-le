@@ -1,0 +1,26 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}DNS Records{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains">
+{% include "domainmonitor/_head.html" %}
+<section class="kpis dm-kpis">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% ficon "check-circle" 30 %}</div><div class="kpi-body"><div class="label">Resolving</div><div class="value">{{ k.resolved }}</div></div></div><div class="sub">Active domains with a DNS answer</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-crit">{% ficon "x-circle" 30 %}</div><div class="kpi-body"><div class="label">Not Resolving</div><div class="value">{{ k.failed }}</div></div></div><div class="sub">Last lookup failed</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-warn">{% icon "refresh" 26 %}</div><div class="kpi-body"><div class="label">Address Changes</div><div class="value">{{ k.changed }}</div></div></div><div class="sub">More than one address in 7 days</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "server" 26 %}</div><div class="kpi-body"><div class="label">Distinct Addresses</div><div class="value">{{ k.ips }}</div></div></div><div class="sub">Seen in the last 7 days</div></div>
+</section>
+<section class="panel"><div class="panel-h"><h2>DNS Records</h2><small>Addresses resolved by the stored checks of the last 7 days</small>
+    <form class="right toolbar" method="get">
+      <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+      <select name="dns" class="dm-sel" data-autosubmit aria-label="DNS status"><option value="">All DNS Status</option>{% for s in dns_states %}<option {% if request.GET.dns == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    </form></div>
+  <div class="table-wrap dense"><table><thead><tr><th>Domain</th><th>DNS Status</th><th>Current Address</th><th>Records (7 days)</th><th class="num">Failed lookups</th><th>Last Checked</th></tr></thead><tbody>
+  {% for d in rows %}<tr><td><a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=dns">{{ d.hostname }}</a></td>
+    <td>{% badge d.dns_status %}</td><td>{{ d.ip_address|default:"–" }}</td>
+    <td class="wrap">{% for r in d.records %}<span class="chip" title="Seen {{ r.n }}×, last {{ r.last|date:'j M Y H:i' }}">{{ r.type }} {{ r.ip }}</span> {% empty %}<span class="t-mute">–</span>{% endfor %}</td>
+    <td class="num {% if d.fail_n %}t-crit{% endif %}">{{ d.fail_n }} / {{ d.checks_n }}</td>
+    <td>{% if d.last_checked_at %}{{ d.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">No active domains match.</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+{% endblock %}

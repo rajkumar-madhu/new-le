@@ -1,0 +1,15 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}SSL Certificates{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains">
+{% include "domainmonitor/_head.html" %}
+<section class="panel"><div class="panel-h"><h2>SSL Certificates</h2><small>Sorted by expiry, soonest first. Expiring = under 30 days.</small></div>
+  <div class="table-wrap dense"><table><thead><tr><th>Domain</th><th>Site</th><th>SSL Status</th><th>Expires</th><th class="num">Days left</th><th>Last Checked</th><th>Message</th></tr></thead><tbody>
+  {% for d in rows %}<tr><td><a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=ssl">{{ d.hostname }}</a></td><td>{{ d.site_key }}</td><td>{% badge d.ssl_status %}</td>
+    <td>{{ d.ssl_expires_at|date:"j M Y"|default:"–" }}</td><td class="num {% if d.ssl_days_left is not None and d.ssl_days_left < 30 %}t-crit{% endif %}">{{ d.ssl_days_left|default_if_none:"–" }}</td>
+    <td>{% if d.last_checked_at %}{{ d.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</td><td class="wrap">{{ d.last_error }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No active domains.</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}{% endblock %}

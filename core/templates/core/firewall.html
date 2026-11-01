@@ -1,0 +1,87 @@
+{% extends "core/base.html" %}{% load static le %}
+{% block title %}FG-01{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/firewall.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'coming_soon' 'all-devices' %}">Network Devices</a>{% icon "chevron-right" 14 %}<a href="{% url 'firewall' %}">Firewalls</a>{% icon "chevron-right" 14 %}<a href="{% url 'firewall' %}">FortiGate</a>{% icon "chevron-right" 14 %}<span>FG-01</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-firewall">
+<div class="head fw-head">
+  <div class="fw-device" aria-hidden="true"><span class="fw-device-lbl">FortiGate</span><span class="fw-device-box">{% icon "server" 26 %}<i></i><i></i><i></i><i></i></span></div>
+  <div class="fw-title">
+    <h1>FG-01 {% badge "online" %} {% include "core/_sample.html" %}</h1>
+    <p>FortiGate 100F<span class="sep">|</span>10.10.1.254<span class="sep">|</span>Site: Mumbai (NSE)<span class="sep">|</span>Uptime: 86 days, 4 hours</p>
+    <p>SN: FG100FTK21012345<span class="sep">|</span>Firmware: v7.4.3<span class="sep">|</span>Version: FortiOS 7.4.3 (build 2654)<span class="sep">|</span>Environment: Production</p>
+  </div>
+  <div class="actions fw-actions">
+    <div class="fw-btns">
+      <button type="button" class="btn">{% icon "edit" 16 %}Edit Device</button>
+      <button type="button" class="btn ghost-primary">{% icon "refresh" 16 %}Run Discovery</button>
+      <a class="btn" href="{% url 'coming_soon' 'topology' %}">{% icon "share" 16 %}Open in Topology</a>
+      <button type="button" class="btn">{% icon "more" 16 %}More</button>
+    </div>
+    <div class="fw-tags">{% for i, label, tone in d.tags %}<span class="fw-tag tone-{{ tone }}">{% icon i 13 %}{{ label }}</span>{% endfor %}</div>
+  </div>
+</div>
+
+<nav class="tabs fw-tabs" aria-label="Device sections">
+  <a class="on" href="#overview">Overview</a><a href="#interfaces">Interfaces</a><a href="#traffic">Traffic</a><a href="#security">Security Events</a>
+  <a href="#vpn">VPN</a><a href="#system">System</a><a href="#policies">Policies</a><a href="#apps">Applications</a><a href="#security">Threats</a>
+  <a href="{% url 'coming_soon' 'logs-events' %}">Logs</a><a href="#device-info">Configuration</a><a href="{% url 'coming_soon' 'all-devices' %}">Inventory</a>
+  <a href="{% url 'coming_soon' 'topology' %}">Topology</a>
+</nav>
+
+<section class="kpis fw-kpis" id="overview">
+  <div class="kpi"><div class="kpi-top"><div class="fw-status">{% ficon "check-circle" 40 %}</div><div class="kpi-body"><div class="label">Device Status</div><div class="value t-ok">Online</div><div class="sub">Last seen: 1 minute ago</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-info sq">{% icon "clock" 24 %}</div><div class="kpi-body"><div class="label">Uptime</div><div class="value">86 days</div><span class="delta t-ok">{% icon "arrow-up" 12 %}99.98%</span></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-ok sq">{% icon "cpu" 24 %}</div><div class="kpi-body"><div class="label">CPU Usage</div><div class="value">18.4%</div></div></div><div class="chart" data-chart="spark" data-src="s-cpu" style="height:20px"></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info sq">{% icon "memory" 24 %}</div><div class="kpi-body"><div class="label">Memory Usage</div><div class="value">62.1%</div></div></div><div class="chart" data-chart="spark" data-src="s-mem" style="height:20px"></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-purple sq">{% icon "database" 24 %}</div><div class="kpi-body"><div class="label">Sessions</div><div class="value">125,430</div><span class="delta t-ok">{% icon "arrow-up" 12 %}12%</span></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-info sq">{% icon "key" 24 %}</div><div class="kpi-body"><div class="label">Active VPN Users</div><div class="value">24 / 200</div><span class="delta t-ok">{% icon "arrow-up" 12 %}3</span></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-crit sq">{% icon "shield" 24 %}</div><div class="kpi-body"><div class="label" title="Threats Blocked (24h)">Threats Blocked (24h)</div><div class="value">1,248</div><span class="delta t-ok">{% icon "arrow-up" 12 %}18%</span></div></div></div>
+</section>
+
+<section class="grid fw-row2">
+  <div class="panel" id="device-info"><div class="panel-h"><h2>Device Information</h2></div>
+    <div class="fw-photo" aria-hidden="true"><span class="fw-photo-lbl">FortiGate 100F</span><span class="fw-appliance">{% icon "server" 26 %}<i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+    <div class="table-wrap dense"><table class="fw-kv"><tbody>
+      {% for k, v in d.info %}<tr><td>{{ k }}</td><td>{% if k == "HA Status" %}<span class="t-ok fw-ha">{% ficon "check-circle" 14 %}{{ v }}</span>{% else %}{{ v }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  <div class="panel" id="interfaces"><div class="panel-h"><h2>Interface Status (Top 10)</h2><a class="right view-all" href="{% url 'coming_soon' 'interfaces' %}">View All Interfaces {% icon "arrow-right" 14 %}</a></div>
+    <div class="table-wrap dense"><table class="fw-ifaces"><thead><tr><th>#</th><th>Interface</th><th>Status</th><th>Type</th><th>In (Mbps)</th><th>Out (Mbps)</th><th>Utilization</th></tr></thead><tbody>
+    {% for n, role, st, t, i, o, u in d.ifaces %}<tr><td>{{ forloop.counter }}</td><td><a href="#interfaces">{{ n }} {% if role|length > 8 %}<small>({{ role }})</small>{% else %}({{ role }}){% endif %}</a></td><td>{% badge st %}</td><td>{{ t }}</td><td>{{ i }}</td><td>{{ o }}</td><td class="fw-util"><span class="util"><i class="{% if u > 60 %}fill-warn{% else %}fill-ok{% endif %}" style="width:{{ u }}%"></i></span>{{ u }}%</td></tr>{% endfor %}
+    </tbody></table></div></div>
+  <div class="stack">
+    <div class="panel" id="traffic"><div class="panel-h nowrap"><h2>Traffic Overview</h2><select class="right fw-sel" aria-label="Traffic range"><option>Last 24 hours</option><option>Last 7 days</option><option>Last 30 days</option></select></div>
+      <div class="chart" data-chart="line" data-src="d-traffic" style="height:132px"></div>
+      <div class="legend fw-legend"><span><i style="background:#1565f0"></i>Inbound <b>680 Mbps</b></span><span><i style="background:#f97316"></i>Outbound <b>520 Mbps</b></span></div></div>
+    <div class="panel"><div class="panel-h nowrap"><h2>Session Count</h2><select class="right fw-sel" aria-label="Session range"><option>Last 24 hours</option><option>Last 7 days</option><option>Last 30 days</option></select></div>
+      <div class="chart" data-chart="line" data-src="d-sessions" style="height:102px"></div>
+      <div class="legend fw-legend"><span><i style="background:#16a34a"></i>Active Sessions <b>125,430</b></span></div></div>
+  </div>
+</section>
+
+<section class="grid fw-row3">
+  <div class="panel" id="security"><div class="panel-h"><h2>Security Events (Top 10)</h2><a class="right view-all" href="{% url 'coming_soon' 'logs-events' %}">View All {% icon "arrow-right" 14 %}</a></div>
+    <div class="table-wrap dense"><table class="fw-sec"><thead><tr><th>Time</th><th>Severity</th><th>Event Type</th><th>Source</th><th>Destination</th><th>Message</th></tr></thead><tbody>
+    {% for t, s, e, src, dst, m in d.security %}<tr><td>{{ t }}</td><td class="sev-{{ s|lower }}">{% badge s %}</td><td>{{ e }}</td><td>{{ src }}</td><td>{{ dst }}</td><td>{{ m }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="panel" id="apps"><div class="panel-h nowrap"><h2>Top Applications <small>(by Bandwidth)</small></h2><select class="right fw-sel" aria-label="Applications range"><option>Last 24 hours</option><option>Last 7 days</option></select></div>
+    <div class="hbar fw-apps">{% for n, mb, p, c in d.apps %}<span>{{ n }}</span><span class="track"><i style="width:{% widthratio mb 320 100 %}%;background:{{ c }}"></i></span><span>{{ mb }} Mbps</span><span>{{ p }}%</span><button type="button" class="fw-more" aria-label="{{ n }} options">{% icon "more" 14 %}</button>{% endfor %}</div></div>
+</section>
+
+<section class="grid fw-row4">
+  <div class="panel" id="vpn"><div class="panel-h"><h2>VPN Status</h2><a class="right view-all" href="{% url 'coming_soon' 'vpn' %}">View All {% icon "arrow-right" 14 %}</a></div>
+    <div class="fw-minis">{% for i, label, value, note, nt, tt in d.vpn %}
+      <div class="fw-mini"><div class="fw-mt bg-{{ tt }}">{% icon i 18 %}</div><div class="fw-mb"><div class="label">{{ label }}</div><b>{{ value }}</b>{% if note %}<div class="fw-note t-{{ nt }}">{% if nt == "ok" %}{% icon "arrow-up" 11 %}{% else %}{% ficon "x-circle" 11 %}{% endif %}{{ note }}</div>{% endif %}</div></div>{% endfor %}
+    </div></div>
+  <div class="panel" id="policies"><div class="panel-h"><h2>Security Policy Stats</h2></div>
+    <div class="fw-minis">{% for i, label, value, tt in d.policies %}
+      <div class="fw-mini"><div class="fw-mt bg-{{ tt }}">{% icon i 18 %}</div><div class="fw-mb"><div class="label">{{ label }}</div><b>{{ value }}</b></div></div>{% endfor %}
+    </div></div>
+  <div class="panel" id="system"><div class="panel-h nowrap"><h2>System Resources</h2><select class="right fw-sel" aria-label="Resources range"><option>Last 24 hours</option><option>Last 7 days</option></select></div>
+    <div class="fw-minis">{% for i, label, value, tt, src in d.resources %}
+      <div class="fw-mini fw-res"><div class="fw-res-top"><div class="fw-mt bg-{{ tt }}">{% icon i 18 %}</div><div class="fw-mb"><div class="label">{{ label }}</div><b>{{ value }}</b></div></div><div class="chart" data-chart="spark" data-src="{{ src }}" style="height:20px"></div></div>{% endfor %}
+    </div></div>
+</section>
+</div>
+{{ d.traffic|json_script:"d-traffic" }}{{ d.sessions|json_script:"d-sessions" }}{{ d.spark_cpu|json_script:"s-cpu" }}{{ d.spark_mem|json_script:"s-mem" }}
+{{ d.spark_cpu2|json_script:"s-cpu2" }}{{ d.spark_mem2|json_script:"s-mem2" }}{{ d.spark_disk|json_script:"s-disk" }}
+{% endblock %}

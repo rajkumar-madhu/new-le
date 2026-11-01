@@ -1,0 +1,22 @@
+{% extends "core/base.html" %}{% load le %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="head"><div><h1>Dashboard</h1><p>What needs attention across URL checks and domains</p></div>
+  <div class="actions"><a class="btn" href="{% url 'heatmap' %}">{% icon "activity" 16 %}Heatmap</a><a class="btn primary" href="{% url 'urlchecker:index' %}#form">{% icon "plus" 16 %}Add URL check</a></div></div>
+<section class="kpis">
+  <a class="kpi" href="{% url 'urlchecker:index' %}" style="color:inherit;text-decoration:none"><div class="tile bg-info">{% icon "link" 22 %}</div><div><div class="label">URL checks online</div><div class="value">{{ urls_online }} / {{ urls_total }}</div><div class="sub">Enabled checks</div></div></a>
+  <a class="kpi" href="{% url 'domains:overview' %}" style="color:inherit;text-decoration:none"><div class="tile bg-ok">{% icon "globe" 22 %}</div><div><div class="label">Domains up</div><div class="value">{{ domains_up }} / {{ domains_total }}</div><div class="sub">Active domains</div></div></a>
+  <a class="kpi" href="{% url 'domains:ssl' %}" style="color:inherit;text-decoration:none"><div class="tile bg-warn">{% icon "lock" 22 %}</div><div><div class="label">SSL expiring or expired</div><div class="value">{{ ssl_soon }}</div><div class="sub">Within 30 days</div></div></a>
+  <div class="kpi"><div class="tile bg-purple">{% icon "clock" 22 %}</div><div><div class="label">URL uptime</div><div class="value">{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</div><div class="sub">Last 7 days</div></div></div>
+</section>
+<section class="grid g-main">
+  <div class="panel"><div class="panel-h"><h2>Needs attention ({{ problems|length }})</h2></div>
+    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Name</th><th>Status</th><th>Detail</th><th>Last check</th></tr></thead><tbody>
+    {% for p in problems %}<tr><td>{{ p.kind }}</td><td><a href="{{ p.href }}">{{ p.name }}</a></td><td>{% badge p.status %}</td><td class="wrap">{{ p.detail|truncatechars:90 }}</td><td>{{ p.when|ago }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">Everything that is monitored is healthy.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="panel"><div class="panel-h"><h2>Recent failed checks</h2></div>
+    <div class="table-wrap"><table><tbody>
+    {% for e in events %}<tr><td>{{ e.checked_at|short_dt }}</td><td><a href="{% url 'urlchecker:detail' e.url_check_id %}">{{ e.url_check.name }}</a></td><td>{% badge e.status %}</td></tr>
+    {% empty %}<tr><td class="empty">No failed checks recorded.</td></tr>{% endfor %}</tbody></table></div></div>
+</section>
+{% endblock %}
