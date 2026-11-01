@@ -1,0 +1,6 @@
+{% load le %}<nav class="tabs cm-subnav" aria-label="CMDB sections">
+  <a href="{% url 'cmdb:topology' %}" class="{% if section == 'topology' %}on{% endif %}">Topology</a>
+  <a href="{% url 'cmdb:items' %}" class="{% if section == 'items' %}on{% endif %}">Configuration Items</a>
+  <a href="{% url 'cmdb:relationships' %}" class="{% if section == 'relationships' %}on{% endif %}">Relationships</a>
+  <a href="{% url 'cmdb:heatmap' %}" class="{% if section == 'heatmap' %}on{% endif %}">Heatmap</a>
+</nav>

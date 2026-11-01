@@ -1,0 +1,163 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{{ ci.name }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>CMDB</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:items' %}">Configuration Items</a>{% icon "chevron-right" 14 %}<span>{{ ci.name }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb cm-detail">
+<div class="head">
+  <div class="glyph cm-glyph t-{{ ci.ci_type }}">{% icon ci.icon 30 %}</div>
+  <div class="cm-title">
+    <h1>{{ ci.name }}</h1>
+    <p><span>{{ ci.get_ci_type_display }}</span> · {% include "cmdb/_status.html" with s=ci.status label=ci.get_status_display %} · <span class="chip env-{{ ci.environment }}">{{ ci.get_environment_display }}</span> · {% include "cmdb/_health.html" with state=health %}{% if ci.is_example %} · <span class="chip mute">example</span>{% endif %}</p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'cmdb:topology' %}?root={{ ci.pk }}">{% icon "share" 17 %}Topology</a>
+    {% if on_heatmap %}<a class="btn" href="{% url 'cmdb:heatmap' %}?{% if ci.ci_type == 'business_domain' %}domain={{ ci.name|urlencode }}{% else %}service={{ ci.name|urlencode }}{% endif %}">{% icon "grid" 17 %}Heatmap</a>{% endif %}
+    {% if can_edit %}<a class="btn primary" href="{% url 'cmdb:item_edit' ci.pk %}">{% icon "edit" 17 %}Edit</a>{% endif %}
+    {% if can_delete %}<form method="post" action="{% url 'cmdb:item_delete' ci.pk %}" data-confirm="Delete “{{ ci.name }}” and its {{ rel_count }} relationship(s)?">{% csrf_token %}<button class="btn cm-danger" type="submit">{% icon "trash" 17 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+<section class="kpis cm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "flame" 22 %}</div><div class="kpi-body"><div class="label">Impacted if it fails</div><div class="value">{{ impact|length }}</div></div></div><div class="sub">{{ impact_services }} service-level item{{ impact_services|pluralize }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Depends on</div><div class="value">{{ deps|length }}</div></div></div><div class="sub">Transitive dependencies</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "share" 22 %}</div><div class="kpi-body"><div class="label">Relationships</div><div class="value">{{ rel_count }}</div></div></div><div class="sub">{{ outgoing|length }} outgoing · {{ incoming|length }} incoming</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "radar" 22 %}</div><div class="kpi-body"><div class="label">Linked checks</div><div class="value">{{ checks|length }}</div></div></div><div class="sub">URL checks and domains</div></div>
+</section>
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel" id="relationships">
+      <div class="panel-h"><h2>Relationships</h2><div class="right"><a class="view-all" href="{% url 'cmdb:relationships' %}?ci={{ ci.pk }}">All relationships {% icon "arrow-right" 13 %}</a></div></div>
+      <h3 class="cm-h3">Outgoing <small class="t-mute">{{ ci.name }} → …</small></h3>
+      <div class="table-wrap dense"><table>
+        <thead><tr><th>Relationship</th><th>Target</th><th>Type</th><th>Health</th><th>Origin</th><th>Note</th>{% if can_admin %}<th></th>{% endif %}</tr></thead>
+        <tbody>{% for r in outgoing %}<tr>
+          <td><span class="chip rel-{{ r.rel_type }}">{{ r.get_rel_type_display }}</span></td>
+          <td><a class="cm-name" href="{{ r.target.get_absolute_url }}"><span class="cm-ic t-{{ r.target.ci_type }}">{% icon r.target.icon 15 %}</span>{{ r.target.name }}</a></td>
+          <td>{{ r.target.get_ci_type_display }}</td>
+          <td>{% include "cmdb/_health.html" with state=r.target.health %}</td>
+          <td>{{ r.get_origin_display }}{% if r.confidence < 100 %} <span class="t-mute">({{ r.confidence }}%)</span>{% endif %}</td>
+          <td class="wrap cm-note">{{ r.note|default:"–" }}</td>
+          {% if can_admin %}<td><form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}#relationships"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form></td>{% endif %}
+        </tr>{% empty %}<tr><td colspan="7" class="empty">No outgoing relationships.</td></tr>{% endfor %}</tbody></table></div>
+      <h3 class="cm-h3">Incoming <small class="t-mute">… → {{ ci.name }}</small></h3>
+      <div class="table-wrap dense"><table>
+        <thead><tr><th>Source</th><th>Relationship</th><th>Type</th><th>Health</th><th>Origin</th><th>Note</th>{% if can_admin %}<th></th>{% endif %}</tr></thead>
+        <tbody>{% for r in incoming %}<tr>
+          <td><a class="cm-name" href="{{ r.source.get_absolute_url }}"><span class="cm-ic t-{{ r.source.ci_type }}">{% icon r.source.icon 15 %}</span>{{ r.source.name }}</a></td>
+          <td><span class="chip rel-{{ r.rel_type }}">{{ r.get_rel_type_display }}</span></td>
+          <td>{{ r.source.get_ci_type_display }}</td>
+          <td>{% include "cmdb/_health.html" with state=r.source.health %}</td>
+          <td>{{ r.get_origin_display }}{% if r.confidence < 100 %} <span class="t-mute">({{ r.confidence }}%)</span>{% endif %}</td>
+          <td class="wrap cm-note">{{ r.note|default:"–" }}</td>
+          {% if can_admin %}<td><form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.path }}#relationships"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form></td>{% endif %}
+        </tr>{% empty %}<tr><td colspan="7" class="empty">No incoming relationships.</td></tr>{% endfor %}</tbody></table></div>
+      {% if can_edit %}
+      <details class="cm-add"{% if not outgoing and not incoming %} open{% endif %}><summary>{% icon "plus" 14 %}Add relationship</summary>
+        <form method="post" action="{% url 'cmdb:relationship_create' %}" class="cm-relform">{% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.path }}#relationships"><input type="hidden" name="origin" value="manual"><input type="hidden" name="confidence" value="100">
+          <div class="field"><label for="rf-source">Source</label><select id="rf-source" name="source" required>{% for o in rel_form.fields.source.queryset %}<option value="{{ o.pk }}"{% if o.pk == ci.pk %} selected{% endif %}>{{ o.name }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="rf-type">Relationship</label><select id="rf-type" name="rel_type">{% for v, l in rel_types %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+          <div class="field"><label for="rf-target">Target</label><select id="rf-target" name="target" required><option value="">Choose…</option>{% for o in rel_form.fields.target.queryset %}{% if o.pk != ci.pk %}<option value="{{ o.pk }}">{{ o.name }}</option>{% endif %}{% endfor %}</select></div>
+          <div class="field"><label for="rf-note">Note</label><input id="rf-note" type="text" name="note" maxlength="300" placeholder="Optional"></div>
+          <div class="field cm-relform-go"><button class="btn primary sm" type="submit">Add</button></div>
+        </form>
+        <p class="hint t-mute">Impact flows from a target to its sources for <b>depends on</b>, <b>runs on</b> and <b>hosted on</b>, and from a source to its target for <b>part of</b>.</p>
+      </details>
+      {% endif %}
+    </div>
+
+    <div class="panel" id="impact">
+      <div class="panel-h"><h2>Impact Analysis</h2><small>Every item that transitively depends on {{ ci.name }}</small>
+        <div class="right"><a class="view-all" href="{% url 'cmdb:topology' %}?root={{ ci.pk }}">View on topology {% icon "arrow-right" 13 %}</a></div></div>
+      {% if impact %}
+      <div class="table-wrap dense"><table>
+        <thead><tr><th class="num">Hops</th><th>Impacted item</th><th>Type</th><th>Domain</th><th>Health</th><th>Via</th></tr></thead>
+        <tbody>{% for r in impact %}<tr>
+          <td class="num">{{ r.depth }}</td>
+          <td><a class="cm-name" href="{{ r.ci.get_absolute_url }}"><span class="cm-ic t-{{ r.ci.ci_type }}">{% icon r.ci.icon 15 %}</span>{{ r.ci.name }}</a></td>
+          <td>{{ r.ci.get_ci_type_display }}</td>
+          <td>{{ r.ci.business_domain|default:"–" }}</td>
+          <td>{% include "cmdb/_health.html" with state=r.health %}</td>
+          <td class="t-mute">{{ r.via_text }}</td>
+        </tr>{% endfor %}</tbody></table></div>
+      {% else %}<p class="empty">Nothing depends on {{ ci.name }}. A failure here has no recorded downstream impact.</p>{% endif %}
+    </div>
+
+    <div class="panel" id="dependencies">
+      <div class="panel-h"><h2>Depends On</h2><small>What {{ ci.name }} relies on, directly or indirectly</small></div>
+      {% if deps %}<div class="cm-deps">{% for c, depth in deps %}<a class="cm-dep" href="{{ c.get_absolute_url }}"><span class="cm-ic t-{{ c.ci_type }}">{% icon c.icon 15 %}</span><span>{{ c.name }}</span><small>{{ c.get_ci_type_display }} · {{ depth }} hop{{ depth|pluralize }}</small></a>{% endfor %}</div>
+      {% else %}<p class="empty">No dependencies recorded.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Details</h2></div>
+      <dl class="kv">
+        <dt>Type</dt><dd>{{ ci.get_ci_type_display }}</dd>
+        <dt>Status</dt><dd>{{ ci.get_status_display }}</dd>
+        <dt>Environment</dt><dd>{{ ci.get_environment_display }}</dd>
+        <dt>Site</dt><dd>{{ ci.site }}</dd>
+        <dt>Business domain</dt><dd>{% if ci.business_domain %}<a href="{% url 'cmdb:items' %}?domain={{ ci.business_domain|urlencode }}">{{ ci.business_domain }}</a>{% else %}–{% endif %}</dd>
+        <dt>Owner</dt><dd>{{ ci.owner|default:"–" }}</dd>
+        <dt>IP address</dt><dd>{{ ci.ip_address|default:"–" }}</dd>
+        <dt>Prometheus</dt><dd>{% if ci.prometheus_instance %}<code>{{ ci.prometheus_instance }}</code>{% else %}–{% endif %}</dd>
+        <dt>Description</dt><dd>{{ ci.description|default:"–"|linebreaksbr }}</dd>
+        <dt>Updated</dt><dd>{{ ci.updated_at|short_dt }} ({{ ci.updated_at|ago }})</dd>
+      </dl>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>Asset &amp; Lifecycle</h2></div>
+      <dl class="kv">
+        <dt>Vendor / model</dt><dd>{{ ci.vendor|default:"–" }}{% if ci.model %} · {{ ci.model }}{% endif %}</dd>
+        <dt>Serial</dt><dd>{{ ci.serial|default:"–" }}</dd>
+        <dt>Asset tag</dt><dd>{{ ci.asset_tag|default:"–" }}</dd>
+        <dt>Purchased</dt><dd>{{ ci.purchase_date|date:"d M Y"|default:"–" }}</dd>
+        <dt>Warranty ends</dt><dd>{% if ci.warranty_end %}{{ ci.warranty_end|date:"d M Y" }} <span class="{{ warranty_cls }}">({% include "cmdb/_days.html" with d=ci.warranty_days %})</span>{% else %}–{% endif %}</dd>
+        <dt>End of life</dt><dd>{% if ci.eol_date %}{{ ci.eol_date|date:"d M Y" }} <span class="{{ eol_cls }}">({% include "cmdb/_days.html" with d=ci.eol_days %})</span>{% else %}–{% endif %}</dd>
+        <dt>Cost</dt><dd>{% if ci.cost is not None %}{{ ci.cost|floatformat:2 }}{% else %}–{% endif %}</dd>
+      </dl>
+    </div>
+
+    <div class="panel" id="checks">
+      <div class="panel-h"><h2>Linked Checks</h2><small>Live status</small></div>
+      {% if checks %}<ul class="cm-checks">{% for r in checks %}
+        <li><span class="cm-dot {{ r.state }}"></span>
+          <div class="cm-check-main"><a href="{{ r.url|default:'#' }}">{{ r.name }}</a><small class="t-mute">{{ r.kind }} · {{ r.target|truncatechars:48 }}</small>
+            {% if r.message %}<small class="t-crit" title="{{ r.message }}">{{ r.message|truncatechars:70 }}</small>{% endif %}</div>
+          <div class="cm-check-side">{% badge r.status %}<small class="t-mute">{{ r.response_ms|ms }} · {{ r.checked|ago }}</small></div></li>
+      {% endfor %}</ul>
+      {% else %}<p class="empty">No URL checks or domains linked.{% if can_edit %} <a href="{% url 'cmdb:item_edit' ci.pk %}#f-monitoring">Link some</a> to drive health and the heatmap.{% endif %}</p>{% endif %}
+    </div>
+
+    {% if host %}<div class="panel">
+      <div class="panel-h"><h2>Host Metrics</h2><small>node_exporter · {{ ci.prometheus_instance }}</small></div>
+      {% if not host.connected %}<p class="cm-nc">{% icon "plug" 16 %}Prometheus not connected. Set <code>LINKEDEYE_PROMETHEUS_URL</code> to show CPU, memory, disk and network.</p>
+      {% elif host.error %}<p class="cm-nc t-crit">{% icon "alert" 16 %}{{ host.error }}</p>
+      {% else %}<div class="cm-metrics">{% for m in host.metrics %}<div class="cm-metric s-{{ m.state }}"><small>{{ m.label }}</small><b>{{ m.text }}</b></div>{% endfor %}</div>{% endif %}
+    </div>{% endif %}
+
+    <div class="panel">
+      <div class="panel-h"><h2>Software</h2><div class="right"><a class="view-all" href="{% url 'cmdb:software' %}">Software register {% icon "arrow-right" 13 %}</a></div></div>
+      {% if software %}<ul class="cm-list">{% for s in software %}<li><a href="{% url 'cmdb:software_detail' s.pk %}">{{ s.name }}</a> <span class="t-mute">{{ s.version }}</span><small class="t-mute">{{ s.vendor }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="empty">No software recorded on this item.</p>{% endif %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>Recent Incidents</h2>{% if incidents and incidents.list_url %}<div class="right"><a class="view-all" href="{{ incidents.list_url }}">View all {% icon "arrow-right" 13 %}</a></div>{% endif %}</div>
+      {% if incidents is None %}<p class="cm-nc">{% icon "plug" 16 %}Service Desk not connected.</p>
+      {% elif incidents.items %}<ul class="cm-list">{% for i in incidents.items %}<li><a href="{{ i.url }}">{{ i.number }}</a> <span class="cm-prio p-{{ i.priority|lower }}">{{ i.priority }}</span> <span class="cm-inc-t" title="{{ i.title }}">{{ i.title }}</span><small class="t-mute">{{ i.status|title }} · {{ i.created|ago }}</small></li>{% endfor %}</ul>
+      {% else %}<p class="empty">No incidents recorded against {{ ci.name }}.</p>{% endif %}
+    </div>
+
+    {% if attributes %}<div class="panel">
+      <div class="panel-h"><h2>Attributes</h2></div>
+      <dl class="kv">{% for k, v in attributes %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+    </div>{% endif %}
+  </div>
+</section>
+</div>
+{% endblock %}

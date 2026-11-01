@@ -1,0 +1,29 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if obj %}Edit {{ obj }}{% else %}Add {{ kind }}{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>{{ section }}</span>{% icon "chevron-right" 14 %}<a href="{{ list_url }}">{{ list_label }}</a>{% icon "chevron-right" 14 %}<span>{% if obj %}Edit{% else %}Add{% endif %}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb cm-formpage">
+<div class="head">
+  <div class="glyph bg-info">{% icon icon 30 %}</div>
+  <div><h1>{% if obj %}Edit {{ obj }}{% else %}Add {{ kind }}{% endif %}</h1></div>
+</div>
+<form method="post" class="panel cm-form" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <div class="form-grid cm-grid">
+  {% for f in form %}
+    <div class="field{% if f.name == 'description' or f.name == 'notes' or f.name == 'installs' %} full{% endif %}">
+      <label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}
+      {% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}
+      {% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}
+    </div>
+  {% endfor %}
+  </div>
+  {% if datalist %}<datalist id="{{ datalist.0 }}">{% for v in datalist.1 %}<option value="{{ v }}">{% endfor %}</datalist>{% endif %}
+  <div class="cm-form-foot">
+    <a class="btn" href="{{ list_url }}">Cancel</a>
+    <button class="btn primary" type="submit">{% if obj %}Save changes{% else %}Create{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}

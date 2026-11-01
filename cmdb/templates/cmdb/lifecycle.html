@@ -1,0 +1,45 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Lifecycle{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Assets</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:lifecycle' %}">Lifecycle</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb">
+<div class="head">
+  <div class="glyph bg-info">{% icon "calendar-range" 30 %}</div>
+  <div><h1>Lifecycle</h1><p>Warranty ends, end-of-life dates and license renewals coming up</p></div>
+  <div class="actions"><a class="btn" href="{% url 'cmdb:lifecycle_export' %}">{% icon "download" 17 %}Export CSV</a></div>
+</div>
+{% with section="lifecycle" %}{% include "cmdb/_assets_nav.html" %}{% endwith %}
+
+<section class="kpis cm-kpis" aria-label="Summary">
+  <a class="kpi stacked cm-kpi-link" href="{% url 'cmdb:assets' %}?lifecycle=warranty_expired"><div class="kpi-top"><div class="tile s-crit">{% icon "shield-alert" 22 %}</div><div class="kpi-body"><div class="label">Out of warranty</div><div class="value">{{ k_warranty_expired }}</div></div></div><div class="sub">Hardware not retired</div></a>
+  <a class="kpi stacked cm-kpi-link" href="{% url 'cmdb:assets' %}?lifecycle=warranty_90"><div class="kpi-top"><div class="tile s-warn">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Warranty ≤ 90 days</div><div class="value">{{ k_warranty_90 }}</div></div></div><div class="sub">Plan renewals</div></a>
+  <a class="kpi stacked cm-kpi-link" href="{% url 'cmdb:assets' %}?lifecycle=eol_passed"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Past end of life</div><div class="value">{{ k_eol_passed }}</div></div></div><div class="sub">Unsupported hardware</div></a>
+  <a class="kpi stacked cm-kpi-link" href="{% url 'cmdb:assets' %}?lifecycle=eol_180"><div class="kpi-top"><div class="tile s-purple">{% icon "calendar" 22 %}</div><div class="kpi-body"><div class="label">EOL ≤ 180 days</div><div class="value">{{ k_eol_180 }}</div></div></div><div class="sub">Plan replacements</div></a>
+  <a class="kpi stacked cm-kpi-link" href="{% url 'cmdb:assets' %}?lifecycle=no_warranty"><div class="kpi-top"><div class="tile s-mute">{% icon "help" 22 %}</div><div class="kpi-body"><div class="label">Undated hardware</div><div class="value">{{ k_undated }}</div></div></div><div class="sub">of {{ k_hw }} without warranty or EOL</div></a>
+</section>
+
+<div class="panel">
+  <div class="panel-h nowrap"><h2>Timeline – next 12 months</h2>
+    <div class="right legend square"><span><i style="background:#f59e0b"></i>Warranty end</span><span><i style="background:#dc2626"></i>End of life</span><span><i style="background:#7c3aed"></i>License expiry</span></div></div>
+  {% if has_timeline %}<div class="chart" data-chart="bars" data-src="lc-timeline" style="height:190px"></div>
+  {% else %}<p class="empty">No warranty, end-of-life or license dates fall in the next 12 months.</p>{% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-h"><h2>Upcoming Milestones</h2>
+    <div class="right"><nav class="seg" aria-label="Window">{% for k, l, n in windows %}<a href="?window={{ k }}{% if kind %}&amp;kind={{ kind|urlencode }}{% endif %}" class="{% if window == k %}on{% endif %}">{{ l }} <b>{{ n }}</b></a>{% endfor %}</nav>
+      <form method="get"><input type="hidden" name="window" value="{{ window }}"><select name="kind" data-autosubmit aria-label="Milestone"><option value="">All milestones</option><option{% if kind == "Warranty end" %} selected{% endif %}>Warranty end</option><option{% if kind == "End of life" %} selected{% endif %}>End of life</option><option{% if kind == "License expiry" %} selected{% endif %}>License expiry</option></select></form></div></div>
+  <div class="table-wrap dense"><table class="cm-table">
+    <thead><tr><th>Date</th><th>When</th><th>Milestone</th><th>Item</th><th>Type</th><th>Vendor</th><th>Site</th><th>Owner</th></tr></thead>
+    <tbody>{% for e in events %}<tr>
+      <td>{{ e.date|date:"d M Y" }}</td>
+      <td class="{% if e.days < 0 %}t-crit{% elif e.days <= 30 %}t-warn{% else %}t-mute{% endif %}">{% include "cmdb/_days.html" with d=e.days %}</td>
+      <td>{% if e.kind == "End of life" %}<span class="chip crit">End of life</span>{% elif e.kind == "Warranty end" %}<span class="chip warn">Warranty end</span>{% else %}<span class="chip purple">License expiry</span>{% endif %}</td>
+      <td><a class="cm-name" href="{{ e.url }}"><span class="cm-ic">{% icon e.icon 15 %}</span>{{ e.name }}</a></td>
+      <td>{{ e.type }}</td><td>{{ e.vendor|default:"–" }}</td><td>{{ e.site|default:"–" }}</td><td>{{ e.owner|default:"–" }}</td>
+    </tr>{% empty %}<tr><td colspan="8" class="empty">Nothing in this window.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+</div>
+{{ timeline|json_script:"lc-timeline" }}
+{% endblock %}

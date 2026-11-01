@@ -1,0 +1,74 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Topology{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>CMDB</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:topology' %}">Topology</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb">
+<div class="head">
+  <div class="glyph bg-info">{% icon "network" 30 %}</div>
+  <div><h1>Topology</h1><p>{{ scope }}</p></div>
+  <div class="actions">
+    {% if root %}<a class="btn" href="{{ root.get_absolute_url }}">{% icon "eye" 17 %}Open {{ root.name }}</a>{% endif %}
+    <a class="btn" href="{% url 'cmdb:heatmap' %}{% if domain %}?domain={{ domain|urlencode }}{% endif %}">{% icon "grid" 17 %}Heatmap</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'cmdb:relationships' %}#add">{% icon "plus" 17 %}Add Relationship</a>{% endif %}
+  </div>
+</div>
+{% with section="topology" %}{% include "cmdb/_cmdb_nav.html" %}{% endwith %}
+
+<div class="panel cm-topo-panel">
+  <form class="toolbar cm-filters" method="get" id="topo-filters">
+    <select name="domain" data-autosubmit aria-label="Business domain"><option value="">All business domains</option>{% for n in domains %}<option{% if domain == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    <select name="root" data-autosubmit aria-label="Root item"><option value="">Any root item</option>{% for c in roots %}<option value="{{ c.pk }}"{% if root and root.pk == c.pk %} selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    <select name="env" data-autosubmit aria-label="Environment"><option value="">All environments</option>{% for v, l in envs %}<option value="{{ v }}"{% if env == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <label class="inline-check cm-check"><input type="checkbox" name="isolated" value="1" data-autosubmit{% if request.GET.isolated == "1" %} checked{% endif %}>Unrelated items</label>
+    <label class="inline-check cm-check"><input type="checkbox" name="retired" value="1" data-autosubmit{% if show_retired %} checked{% endif %}>Retired</label>
+    {% if domain or root or env or request.GET.isolated or show_retired %}<a class="btn sm" href="{% url 'cmdb:topology' %}">{% icon "x" 14 %}Clear</a>{% endif %}
+    <div class="cm-topo-tools">
+      <div class="legend"><span><i class="c-ok"></i>Healthy</span><span><i class="c-warn"></i>Warning</span><span><i class="c-crit"></i>Critical</span><span><i class="c-unk"></i>No data</span></div>
+      <button type="button" class="btn icon" data-zoom="-1" title="Zoom out" aria-label="Zoom out">−</button>
+      <button type="button" class="btn icon" data-zoom="0" title="Fit to width" aria-label="Fit to width">{% icon "expand" 14 %}</button>
+      <button type="button" class="btn icon" data-zoom="1" title="Zoom in" aria-label="Zoom in">+</button>
+    </div>
+  </form>
+  {% if note %}<p class="cm-nc">{% icon "info" 16 %}{{ note }}</p>{% endif %}
+  <p class="t-mute cm-topo-meta">{{ graph.nodes|length }} item{{ graph.nodes|length|pluralize }} · {{ edge_count }} relationship{{ edge_count|pluralize }}{% if isolated %} · {{ isolated }} unrelated item{{ isolated|pluralize }} hidden (<a href="?{% if query.urlencode %}{{ query.urlencode }}&amp;{% endif %}isolated=1">show</a>){% endif %} · click an item to open it</p>
+  {% if graph.nodes %}
+  <div class="cm-topo-wrap" id="topo-wrap">
+    <svg class="cm-topo" id="topo" viewBox="0 0 {{ graph.width }} {{ graph.height }}" width="{{ graph.width }}" height="{{ graph.height }}" data-w="{{ graph.width }}" role="img" aria-label="Configuration item topology">
+      <defs>
+        <marker id="cm-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+        <marker id="cm-arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1565f0"/></marker>
+      </defs>
+      {% for l in graph.layers %}<text class="layer" x="12" y="{{ l.y }}">{{ l.label }}</text>{% endfor %}
+      <g class="edges">{% for e in graph.edges %}<path class="edge rel-{{ e.rel }}{% if e.hot %} hot{% endif %}" d="{{ e.path }}" marker-end="url(#{% if e.hot %}cm-arr-hot{% else %}cm-arr{% endif %})"><title>{{ e.title }}</title></path>{% endfor %}</g>
+      <g class="nodes">{% for n in graph.nodes %}<a href="{{ n.ci.get_absolute_url }}" class="node s-{{ n.cls }}{% if n.root %} root{% endif %}{% if n.retired %} retired{% endif %}"><g transform="translate({{ n.x }},{{ n.y }})">
+        <title>{{ n.ci.name }} – {{ n.ci.get_ci_type_display }} ({{ n.state }})</title>
+        <rect class="box" width="{{ n.w }}" height="{{ n.h }}" rx="8"/><rect class="stripe" width="5" height="{{ n.h }}" rx="2"/>
+        <g class="ico" transform="translate(13,12) scale(.9)" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">{{ n.icon|safe }}</g>
+        <text class="nm" x="42" y="20">{{ n.label }}</text><text class="sub" x="42" y="35">{{ n.sub }}</text>
+      </g></a>{% endfor %}</g>
+    </svg>
+  </div>
+  {% else %}
+  <div class="empty">{% if domain or root %}Nothing to draw for this filter.{% else %}No configuration items with relationships yet.{% if can_operate %} <a href="{% url 'cmdb:item_create' %}">Add items</a> and <a href="{% url 'cmdb:relationships' %}">relate them</a>, or run <code>manage.py seed_cmdb</code> for an example.{% endif %}{% endif %}</div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(function () {
+  var svg = document.getElementById('topo'), wrap = document.getElementById('topo-wrap');
+  if (!svg) return;
+  var base = +svg.dataset.w, scale = 1;
+  function fit() { scale = Math.min(1, (wrap.clientWidth - 2) / base); apply(); }
+  function apply() { svg.setAttribute('width', Math.round(base * scale)); svg.setAttribute('height', Math.round(svg.viewBox.baseVal.height * scale)); }
+  document.querySelectorAll('[data-zoom]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var z = +b.dataset.zoom;
+      if (z === 0) fit(); else { scale = Math.max(.3, Math.min(2.5, scale * (z > 0 ? 1.2 : 1 / 1.2))); apply(); }
+    });
+  });
+  // start fitted to the panel, but never so small that labels become unreadable (the panel scrolls instead)
+  if (wrap.clientWidth < base) { fit(); if (scale < .6) { scale = .6; apply(); } }
+})();
+</script>{% endblock %}

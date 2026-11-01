@@ -1,0 +1,173 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Heatmap{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Monitoring</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:heatmap' %}">Heatmap</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb pg-heat" data-refresh="120">
+<div class="head"><div><h1>Heatmap</h1><p>Service and infrastructure health at a glance</p></div>
+  <div class="actions hm-live"><span class="hm-live-pill"><i class="dot"></i>LIVE</span><span class="t-mute">{% now "M j, Y H:i:s" %}</span>
+    <a class="btn sm ghost-primary" href="{{ request.get_full_path }}">{% icon "refresh" 15 %}Refresh</a></div></div>
+
+<form class="toolbar hm-toolbar" method="get" id="hm-filters">
+  <div class="hm-filters">
+    <select name="domain" data-autosubmit aria-label="Domain"><option value="">All Domains</option>{% for n in d.domain_names %}<option{% if f.domain|lower == n|lower %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    <select name="service" data-autosubmit aria-label="Service"><option value="">All Services</option>{% for n in d.service_names %}<option{% if f.service == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    <select name="host" data-autosubmit aria-label="Host"><option value="">All Hosts</option>{% for h in d.hosts %}<option value="{{ h.pk }}"{% if f.host == h.pk|stringformat:"s" %} selected{% endif %}>{{ h.name }}</option>{% endfor %}</select>
+    <select name="window" data-autosubmit aria-label="Time window">{% for k, l in d.windows %}<option value="{{ k }}"{% if d.window == k %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  </div>
+  <div class="legend hm-legend"><span><i class="c-ok"></i>Healthy</span><span><i class="c-warn"></i>Warning</span><span><i class="c-crit"></i>Critical</span><span><i class="c-unk"></i>Unknown</span></div>
+  <div class="hm-views">
+    <a class="btn ghost-primary" href="#hm-domains">{% icon "list" 16 %} View as List</a>
+    <a class="btn ghost-primary" href="{% url 'cmdb:topology' %}{% if sel and not sel.unassigned %}?domain={{ sel.name|urlencode }}{% endif %}">{% icon "network" 16 %} View Topology</a>
+    <button type="button" class="btn icon blue hm-sq" id="hm-full" title="Full screen" aria-label="Full screen">{% icon "expand" 16 %}</button>
+  </div>
+</form>
+
+{% if not prom_configured %}<p class="cm-nc hm-note">{% icon "plug" 16 %}<span>Host columns (CPU, Memory, Disk, Network) are <b>not connected</b>: set <code>LINKEDEYE_PROMETHEUS_URL</code> and give hosts a Prometheus instance. They show as Unknown until then.</span></p>
+{% elif d.prometheus_error %}<p class="cm-nc hm-note t-crit">{% icon "alert" 16 %}<span>Prometheus: {{ d.prometheus_error }}</span></p>{% endif %}
+{% if d.service_count and not d.linked_checks %}<p class="cm-nc hm-note">{% icon "info" 16 %}<span>No service is linked to a URL check or domain yet, so Availability, Response, Errors and Latency are Unknown. Link checks on each service's edit page.</span></p>{% endif %}
+
+{% if not d.service_count %}
+<div class="panel empty hm-empty-state">
+  <p><b>No services in the CMDB yet.</b></p>
+  <p>The heatmap groups configuration items of type Service, Application, Database and Middleware under their business domain and colours them from linked URL checks, domains and Prometheus.</p>
+  {% if can_operate %}<p><a class="btn primary" href="{% url 'cmdb:item_create' %}?type=service&amp;next={% url 'cmdb:heatmap' %}">{% icon "plus" 15 %}Add a service</a> <a class="btn" href="{{ links.add_domain }}">{% icon "plus" 15 %}Add a business domain</a></p>
+  <p class="t-mute">For a demo, run <code>manage.py seed_cmdb</code>.</p>{% endif %}
+</div>
+{% else %}
+<section class="grid hm-main">
+  <div class="panel hm-heat-panel" id="hm-heat">
+    <div class="hm-heat-scroll">
+    <table class="heat hm-heat">
+      <colgroup><col class="hm-namecol">{% for c in d.columns %}<col>{% endfor %}</colgroup>
+      <thead><tr><th>Domain / Service</th>{% for c in d.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      {% for g in d.rows %}<tbody data-group="{{ g.group }}">
+        <tr class="grp"><td><button type="button" class="hm-toggle" aria-expanded="true" title="Collapse {{ g.group }}">{% icon "chevron-down" 14 %}</button><a class="hm-nm" href="?domain={{ g.group|urlencode }}&amp;window={{ d.window }}" title="{{ g.group }}">{{ g.group }}</a></td>{% for c in g.cells %}<td><div class="cell c-{{ c.cls }}" title="{{ g.group }} – {{ c.title }}"></div></td>{% endfor %}</tr>
+        {% for s in g.services %}<tr class="svc"><td><a class="hm-nm" href="{{ s.ci.get_absolute_url }}" title="{{ s.name }}{% if s.instances %} · {{ s.instances|join:', ' }}{% endif %}">{{ s.name }}</a></td>{% for c in s.cells %}<td><div class="cell c-{{ c.cls }}" title="{{ s.name }} – {{ c.title }}"></div></td>{% endfor %}</tr>{% endfor %}
+      </tbody>{% empty %}<tbody><tr><td colspan="9" class="empty">No services match the selected filters.</td></tr></tbody>{% endfor %}
+    </table>
+    </div>
+    <p class="hm-foot t-mute">{{ d.window_label }} · {{ d.service_count }} service{{ d.service_count|pluralize }} · {{ d.linked_checks }} linked check{{ d.linked_checks|pluralize }}. Hover a cell for the value.</p>
+  </div>
+
+  <div class="stack hm-right">
+    <div class="panel" id="hm-domains">
+      <div class="panel-h hm-dom-h"><div><h2>Domains</h2><small>Business domains and their service health</small></div>
+        {% if can_operate %}<div class="right"><a class="btn primary" href="{{ links.add_domain }}">{% icon "plus" 16 %} Add Domain</a></div>{% endif %}</div>
+      <div class="kpis hm-kpis">{% for k in kpis %}
+        <div class="kpi"><div class="kpi-top"><div class="tile {{ k.tile }}">{% if k.filled %}{% ficon k.icon 22 %}{% else %}{% icon k.icon 20 %}{% endif %}</div>
+          <div class="kpi-body"><div class="label">{{ k.label }}</div><div class="value">{{ k.value }}</div></div></div></div>{% endfor %}
+      </div>
+      <div class="table-wrap hm-table"><table>
+        <thead><tr><th>Domain</th><th>Description</th><th class="num">Services</th><th>Health Status</th><th class="num">Availability</th><th class="num">Error Rate</th><th class="num">p95 Latency</th><th class="hm-act">Actions</th></tr></thead>
+        <tbody>{% for dm in dpage %}<tr{% if sel and dm.name == sel.name %} class="sel"{% endif %}>
+          <td><a class="hm-dom" href="?{% if keep.window %}window={{ keep.window }}&amp;{% endif %}domain={{ dm.name|urlencode }}"><span class="t-{{ dm.cls }}">{% if dm.unassigned %}{% icon "box" 16 %}{% elif dm.ci %}{% icon dm.ci.icon 16 %}{% else %}{% icon "grid" 16 %}{% endif %}</span><span>{{ dm.name }}</span></a></td>
+          <td class="wrap hm-desc">{{ dm.description|default:"–"|truncatechars:70 }}</td>
+          <td class="num">{{ dm.services }}</td>
+          <td>{% include "cmdb/_health.html" with state=dm.health %}</td>
+          <td class="num">{{ dm.availability|pct }}</td>
+          <td class="num{% if dm.hot_errors %} t-crit{% endif %}">{{ dm.errors|pct:1 }}</td>
+          <td class="num{% if dm.hot_latency %} t-crit{% endif %}">{{ dm.p95|ms }}</td>
+          <td class="hm-act"><details class="hm-menu"><summary class="btn icon" aria-label="Actions for {{ dm.name }}">{% icon "more" 16 %}</summary><div class="hm-pop">
+            <a href="?{% if keep.window %}window={{ keep.window }}&amp;{% endif %}domain={{ dm.name|urlencode }}">{% icon "grid" 14 %}Focus heatmap</a>
+            {% if not dm.unassigned %}<a href="{% url 'cmdb:topology' %}?domain={{ dm.name|urlencode }}">{% icon "network" 14 %}Topology</a>
+            <a href="{% url 'cmdb:items' %}?domain={{ dm.name|urlencode }}">{% icon "list" 14 %}Configuration items</a>{% endif %}
+            {% if dm.ci %}<a href="{{ dm.ci.get_absolute_url }}">{% icon "eye" 14 %}Open domain record</a>{% endif %}
+          </div></details></td>
+        </tr>{% empty %}<tr><td colspan="8" class="empty">No business domains.</td></tr>{% endfor %}</tbody></table></div>
+      <div class="pager hm-pager"><span class="t-mute">Showing {{ dpage.start_index }} to {{ dpage.end_index }} of {{ dpage.paginator.count }} domains</span>
+        <span class="hm-pages">{% if dpage.has_previous %}<a class="btn icon" href="?{{ keep.urlencode }}&amp;dpage={{ dpage.previous_page_number }}#hm-domains" aria-label="Previous page">{% icon "chevron-left" 14 %}</a>{% else %}<span class="btn icon" aria-disabled="true">{% icon "chevron-left" 14 %}</span>{% endif %}
+          <span class="cur">{{ dpage.number }}</span>
+          {% if dpage.has_next %}<a class="btn icon" href="?{{ keep.urlencode }}&amp;dpage={{ dpage.next_page_number }}#hm-domains" aria-label="Next page">{% icon "chevron-right" 14 %}</a>{% else %}<span class="btn icon" aria-disabled="true">{% icon "chevron-right" 14 %}</span>{% endif %}</span></div>
+    </div>
+
+    {% if details %}{% with dom=details.dom %}
+    <div class="panel hm-details" id="hm-details">
+      <div class="panel-h"><h2>Domain Details &ndash; {{ dom.name }}</h2>{% include "cmdb/_health.html" with state=dom.health %}
+        <div class="right"><span class="chip mute">{{ d.window_label }}</span></div></div>
+      <nav class="seg hm-tabs" aria-label="Domain details sections">
+        <a class="{% if details.tab == 'overview' %}on{% endif %}" href="?{{ keep.urlencode }}{% if not keep.domain %}&amp;domain={{ dom.name|urlencode }}{% endif %}&amp;tab=overview#hm-details">Overview</a>
+        <a class="{% if details.tab == 'services' %}on{% endif %}" href="?{{ keep.urlencode }}{% if not keep.domain %}&amp;domain={{ dom.name|urlencode }}{% endif %}&amp;tab=services#hm-details">Services ({{ dom.services }})</a>
+        <a class="{% if details.tab == 'incidents' %}on{% endif %}" href="?{{ keep.urlencode }}{% if not keep.domain %}&amp;domain={{ dom.name|urlencode }}{% endif %}&amp;tab=incidents#hm-details">Incidents{% if details.incidents %} ({{ details.incidents.open }}){% endif %}</a>
+        {% if links.logs %}<a href="{{ links.logs }}">Logs</a>{% endif %}
+        {% if links.metrics %}<a href="{{ links.metrics }}">Metrics</a>{% endif %}
+        {% if not dom.unassigned %}<a href="{% url 'cmdb:topology' %}?domain={{ dom.name|urlencode }}">Topology</a>{% endif %}
+      </nav>
+
+      {% if details.tab == "services" %}
+        <div class="hm-mini-wrap"><table class="hm-mini hm-mini-full">
+          <thead><tr><th>Service</th><th>Type</th><th>Health</th><th>Availability</th><th>Avg Response</th><th>Error Rate</th><th>p95 Latency</th><th>Checks</th></tr></thead>
+          <tbody>{% for s in details.rows %}<tr>
+            <td><a href="{{ s.ci.get_absolute_url }}">{{ s.name }}</a></td><td>{{ s.ci.get_ci_type_display }}</td>
+            <td>{% include "cmdb/_health.html" with state=s.health %}</td>
+            <td>{{ s.metrics.availability|pct }}</td><td>{{ s.metrics.response|ms }}</td>
+            <td{% if s.metrics.errors >= 1 %} class="t-crit"{% endif %}>{{ s.metrics.errors|pct:1 }}</td>
+            <td>{{ s.metrics.latency|ms }}</td><td>{{ s.checks }}</td>
+          </tr>{% empty %}<tr><td colspan="8" class="empty">No services in this domain.</td></tr>{% endfor %}</tbody></table></div>
+      {% elif details.tab == "incidents" %}
+        {% include "cmdb/_hm_incidents.html" with inc=details.incidents full=1 %}
+      {% else %}
+      <div class="hm-dgrid">
+        <div class="hm-col">
+          <div class="hm-box hm-ov">
+            <span class="hm-ov-ic t-{{ dom.cls }}">{% icon "bar" 34 %}</span>
+            <div class="hm-ov-t"><b>{{ dom.name }}</b><div class="t-mute">{{ dom.description|default:"Business domain"|truncatechars:90 }}</div></div>
+            <div class="hm-ov-v"><b>{{ dom.availability|pct }}</b><div class="t-mute">Availability</div></div>
+          </div>
+          <div class="hm-box" id="hm-top-services">
+            <h3>Top Services</h3>
+            <div class="hm-mini-wrap"><table class="hm-mini">
+              <thead><tr><th>Service</th><th>Health</th><th>Availability</th><th>Error Rate</th><th>p95 Latency</th></tr></thead>
+              <tbody>{% for s in details.rows %}<tr>
+                <td><a href="{{ s.ci.get_absolute_url }}">{{ s.name }}</a></td>
+                <td>{% include "cmdb/_health.html" with state=s.health %}</td>
+                <td>{{ s.metrics.availability|pct }}</td>
+                <td{% if s.metrics.errors >= 1 %} class="t-crit"{% endif %}>{{ s.metrics.errors|pct:1 }}</td>
+                <td{% if s.health == "critical" or s.health == "warning" %} class="t-crit"{% endif %}>{{ s.metrics.latency|ms }}</td>
+              </tr>{% empty %}<tr><td colspan="5" class="empty">No services in this domain.</td></tr>{% endfor %}</tbody></table></div>
+            {% if dom.services > details.rows|length %}<div class="hm-more"><a class="view-all" href="?{{ keep.urlencode }}{% if not keep.domain %}&amp;domain={{ dom.name|urlencode }}{% endif %}&amp;tab=services#hm-details">View Full Services {% icon "arrow-right" 13 %}</a></div>{% endif %}
+          </div>
+        </div>
+        <div class="hm-col">
+          <div class="hm-box">
+            <div class="hm-box-h"><h3>Recent Incidents</h3>{% if details.incidents and details.incidents.list_url %}<a class="view-all" href="{{ details.incidents.list_url }}">View All {% icon "arrow-right" 13 %}</a>{% endif %}</div>
+            {% include "cmdb/_hm_incidents.html" with inc=details.incidents %}
+          </div>
+          <div class="hm-box" id="topology">
+            <div class="hm-box-h"><h3>Domain Topology</h3>{% if not dom.unassigned %}<a class="view-all" href="{% url 'cmdb:topology' %}?domain={{ dom.name|urlencode }}">View Full Topology {% icon "arrow-right" 13 %}</a>{% endif %}</div>
+            {% if details.chain %}<div class="hm-chain">{% for n in details.chain %}
+              <a class="hm-node{% if n.hot %} hot{% endif %}" href="{{ n.ci.get_absolute_url }}" title="{{ n.name }} ({{ n.state }})"><span class="hm-node-ic t-{{ n.cls }}">{% icon n.icon 22 %}</span><span class="hm-node-l">{{ n.name }}</span></a>
+              {% if not forloop.last %}<span class="hm-arrow" aria-hidden="true"></span>{% endif %}{% endfor %}
+            </div>{% else %}<p class="t-mute hm-small">No dependency relationships recorded for this domain.</p>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endwith %}{% endif %}
+  </div>
+</section>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(function () {
+  document.querySelectorAll('.hm-heat .hm-toggle').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var body = b.closest('tbody'), open = b.getAttribute('aria-expanded') === 'true';
+      body.querySelectorAll('tr.svc').forEach(function (tr) { tr.hidden = open; });
+      b.setAttribute('aria-expanded', open ? 'false' : 'true');
+      body.classList.toggle('collapsed', open);
+    });
+  });
+  var full = document.getElementById('hm-full');
+  if (full) full.addEventListener('click', function () {
+    var el = document.getElementById('hm-heat');
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen(); else if (el.requestFullscreen) el.requestFullscreen();
+  });
+  document.addEventListener('click', function (e) {
+    document.querySelectorAll('.pg-heat details.hm-menu[open]').forEach(function (m) { if (!m.contains(e.target)) m.removeAttribute('open'); });
+  });
+})();
+</script>{% endblock %}

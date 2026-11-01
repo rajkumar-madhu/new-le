@@ -1,0 +1,6 @@
+{% load le %}<nav class="tabs cm-subnav" aria-label="Assets sections">
+  <a href="{% url 'cmdb:assets' %}" class="{% if section == 'assets' %}on{% endif %}">IT Assets</a>
+  <a href="{% url 'cmdb:software' %}" class="{% if section == 'software' %}on{% endif %}">Software</a>
+  <a href="{% url 'cmdb:licenses' %}" class="{% if section == 'licenses' %}on{% endif %}">Licenses</a>
+  <a href="{% url 'cmdb:lifecycle' %}" class="{% if section == 'lifecycle' %}on{% endif %}">Lifecycle</a>
+</nav>

@@ -1,0 +1,38 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Import {% if assets %}IT Assets{% else %}Configuration Items{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}{% if assets %}<span>Assets</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:assets' %}">IT Assets</a>{% else %}<span>CMDB</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:items' %}">Configuration Items</a>{% endif %}{% icon "chevron-right" 14 %}<span>Import</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb cm-formpage">
+<div class="head">
+  <div class="glyph bg-info">{% icon "upload" 30 %}</div>
+  <div><h1>Import {% if assets %}IT Assets{% else %}Configuration Items{% endif %}</h1><p>Upload a CSV. Every row is validated first; if any row has a problem nothing is imported.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'cmdb:import_template' %}">{% icon "download" 17 %}Download template</a></div>
+</div>
+<section class="grid g-main">
+  <div class="panel">
+    <div class="panel-h"><h2>Upload CSV</h2></div>
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}
+      <div class="form-grid cm-grid-1">
+        <div class="field"><label for="{{ form.file.id_for_label }}">{{ form.file.label }} <span class="req">*</span></label>{{ form.file }}<span class="hint">{{ form.file.help_text }}</span>{% for e in form.file.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+        <label class="inline-check field"><span class="switch">{{ form.update_existing }}<span></span></span>{{ form.update_existing.label }}</label>
+        <div class="field cm-form-foot"><a class="btn" href="{{ back }}">Cancel</a><button class="btn primary" type="submit">{% icon "upload" 15 %}Import</button></div>
+      </div>
+    </form>
+    {% if result and result.errors %}
+    <div class="cm-errors" role="alert"><h3>{{ result.errors|length }} problem{{ result.errors|length|pluralize }} found – nothing was imported</h3>
+      <div class="table-wrap dense"><table><thead><tr><th class="num">Row</th><th>Problem</th></tr></thead>
+      <tbody>{% for n, msg in result.errors|slice:":200" %}<tr><td class="num">{{ n }}</td><td class="wrap">{{ msg }}</td></tr>{% endfor %}</tbody></table></div>
+    </div>{% endif %}
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h2>Columns</h2></div>
+    <p class="t-mute cm-p">The header row must contain <code>name</code>; other columns are optional and unknown columns are ignored. Missing columns keep their current value on updates.</p>
+    <ul class="cm-cols">{% for c in columns %}<li><code>{{ c }}</code></li>{% endfor %}</ul>
+    <p class="t-mute cm-p"><code>type</code>: server, virtual_machine, network_device, application, database, middleware, service, business_domain, kubernetes_cluster, storage, other.
+      <code>status</code>: planned, active, maintenance, retired. <code>environment</code>: prod, uat, dr, dev.
+      Dates as YYYY-MM-DD. <code>url_checks</code> and <code>domains</code>: names separated by <code>;</code>.</p>
+  </div>
+</section>
+</div>
+{% endblock %}

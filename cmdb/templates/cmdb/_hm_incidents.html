@@ -1,0 +1,9 @@
+{% load le %}{% if inc is None %}<p class="cm-nc hm-small">{% icon "plug" 14 %}Service Desk not connected.</p>
+{% elif inc.items %}<table class="hm-inc{% if full %} hm-inc-full{% endif %}"><tbody>{% for i in inc.items %}<tr>
+  <td class="hm-inc-ic">{% if i.status == "resolved" or i.status == "closed" %}<span class="t-ok">{% ficon "check-circle" 13 %}</span>{% else %}{% ficon "x-circle" 13 %}{% endif %}</td>
+  <td class="hm-inc-n"><a href="{{ i.url }}">{{ i.number }}</a></td>
+  <td class="hm-inc-p"><span class="hm-prio hm-{{ i.priority|lower }}">{{ i.priority }}</span></td>
+  <td class="hm-inc-t" title="{{ i.title }}">{{ i.title }}{% if full %} <small class="t-mute">· {{ i.ci_name }}</small>{% endif %}</td>
+  <td class="hm-inc-ago">{{ i.created|ago|cut:" ago" }}</td>
+</tr>{% endfor %}</tbody></table>
+{% else %}<p class="t-mute hm-small">No incidents recorded for this domain's services.</p>{% endif %}

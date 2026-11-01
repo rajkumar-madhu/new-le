@@ -1,0 +1,1 @@
+{% if d is None %}–{% elif d < 0 %}{% widthratio d 1 -1 %} days ago{% elif d == 0 %}today{% else %}in {{ d }} day{{ d|pluralize }}{% endif %}

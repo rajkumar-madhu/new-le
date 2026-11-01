@@ -1,0 +1,72 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Relationships{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>CMDB</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:relationships' %}">Relationships</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb">
+<div class="head">
+  <div class="glyph bg-purple">{% icon "share" 30 %}</div>
+  <div><h1>Relationships</h1><p>How configuration items depend on, run on and connect to each other</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'cmdb:relationships_export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export</a>
+    <a class="btn" href="{% url 'cmdb:topology' %}">{% icon "network" 17 %}Topology</a>
+  </div>
+</div>
+{% with section="relationships" %}{% include "cmdb/_cmdb_nav.html" %}{% endwith %}
+
+<section class="kpis cm-kpis cm-kpis-6" aria-label="Relationships by type">
+  <div class="kpi"><div class="kpi-top"><div class="tile s-purple">{% icon "share" 20 %}</div><div class="kpi-body"><div class="label">Total</div><div class="value">{{ total }}</div></div></div></div>
+  {% for v, l, n in by_type %}<a class="kpi cm-kpi-link{% if request.GET.type == v %} on{% endif %}" href="?type={{ v }}"><div class="kpi-top"><div class="tile bg-info">{% icon "arrow-right" 18 %}</div><div class="kpi-body"><div class="label">{{ l }}</div><div class="value">{{ n }}</div></div></div></a>{% endfor %}
+</section>
+
+<section class="grid g-main">
+  <div class="panel">
+    <div class="panel-h"><h2>Relationships ({{ page.paginator.count }})</h2>{% if discovered %}<small>{{ discovered }} discovered</small>{% endif %}</div>
+    <form class="toolbar cm-filters" method="get">
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+      {% if request.GET.ci %}<input type="hidden" name="ci" value="{{ request.GET.ci }}">{% endif %}
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search source, target or note…" aria-label="Search relationships"></label>
+      <select name="type" data-autosubmit aria-label="Relationship type"><option value="">All Types</option>{% for v, l in types %}<option value="{{ v }}"{% if request.GET.type == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="origin" data-autosubmit aria-label="Origin"><option value="">All Origins</option><option value="manual"{% if request.GET.origin == 'manual' %} selected{% endif %}>Manual</option><option value="discovered"{% if request.GET.origin == 'discovered' %} selected{% endif %}>Discovered</option></select>
+      {% if filtered %}<a class="btn sm" href="{% url 'cmdb:relationships' %}">{% icon "x" 14 %}Clear</a>{% endif %}
+    </form>
+    <div class="table-wrap dense"><table>
+      <thead><tr><th>Source</th><th>Relationship</th><th>Target</th><th>Origin</th><th class="num">Confidence</th><th>Note</th>{% if can_admin %}<th>Actions</th>{% endif %}</tr></thead>
+      <tbody>{% for r in page %}<tr>
+        <td><a class="cm-name" href="{{ r.source.get_absolute_url }}"><span class="cm-ic t-{{ r.source.ci_type }}">{% icon r.source.icon 15 %}</span>{{ r.source.name }}</a></td>
+        <td><span class="chip rel-{{ r.rel_type }}">{{ r.get_rel_type_display }}</span></td>
+        <td><a class="cm-name" href="{{ r.target.get_absolute_url }}"><span class="cm-ic t-{{ r.target.ci_type }}">{% icon r.target.icon 15 %}</span>{{ r.target.name }}</a></td>
+        <td>{% if r.origin == "discovered" %}<span class="chip teal">Discovered</span>{% else %}<span class="chip mute">Manual</span>{% endif %}</td>
+        <td class="num">{{ r.confidence }}%</td>
+        <td class="wrap cm-note">{{ r.note|default:"–" }}</td>
+        {% if can_admin %}<td><form method="post" action="{% url 'cmdb:relationship_delete' r.pk %}" data-confirm="Remove “{{ r }}”?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" title="Remove" aria-label="Remove {{ r }}">{% icon "trash" 14 %}</button></form></td>{% endif %}
+      </tr>{% empty %}<tr><td colspan="7" class="empty">{% if filtered %}No relationships match.{% else %}No relationships yet. Add one with the form.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="relationships" %}
+  </div>
+
+  <div class="stack">
+    <div class="panel" id="add">
+      <div class="panel-h"><h2>Add Relationship</h2></div>
+      {% if can_operate %}
+      <form method="post" action="{% url 'cmdb:relationship_create' %}">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <div class="form-grid cm-grid-1">
+          {% for f in form %}<div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}</div>{% endfor %}
+          <div class="field"><button class="btn primary" type="submit">{% icon "plus" 15 %}Add relationship</button></div>
+        </div>
+      </form>
+      {% else %}<p class="t-mute">Only operators can add relationships.</p>{% endif %}
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>How impact flows</h2></div>
+      <ul class="cm-help">
+        <li><b>A depends on B</b>, <b>A runs on B</b>, <b>A hosted on B</b>: if B fails, A is impacted.</li>
+        <li><b>A part of B</b>: if A fails, B (e.g. its business domain) is impacted.</li>
+        <li><b>A connects to B</b>: drawn on the topology, no impact propagation.</li>
+        <li>Relationships that would create a dependency loop are refused.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

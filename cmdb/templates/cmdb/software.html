@@ -1,0 +1,52 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Software{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Assets</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:software' %}">Software</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb">
+<div class="head">
+  <div class="glyph bg-info">{% icon "app" 30 %}</div>
+  <div><h1>Software</h1><p>Software titles, versions and where they are installed</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'cmdb:software_export' %}">{% icon "download" 17 %}Export CSV</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'cmdb:software_create' %}">{% icon "plus" 17 %}Add Software</a>{% endif %}
+  </div>
+</div>
+{% with section="software" %}{% include "cmdb/_assets_nav.html" %}{% endwith %}
+
+<section class="kpis cm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "app" 22 %}</div><div class="kpi-body"><div class="label">Software Titles</div><div class="value">{{ total }}</div></div></div><div class="sub">{{ vendor_count }} vendor{{ vendor_count|pluralize }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "server" 22 %}</div><div class="kpi-body"><div class="label">Installations</div><div class="value">{{ installs_total }}</div></div></div><div class="sub">Across configuration items</div></div>
+  <a class="kpi stacked cm-kpi-link" href="?licensed=no"><div class="kpi-top"><div class="tile s-warn">{% icon "key" 22 %}</div><div class="kpi-body"><div class="label">Without a license</div><div class="value">{{ unlicensed }}</div></div></div><div class="sub">No license record linked</div></a>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Categories</div><div class="value">{{ categories|length }}</div></div></div><div class="sub">{% for c, n in top_categories|slice:":3" %}{{ c }} ({{ n }}){% if not forloop.last %}, {% endif %}{% empty %}–{% endfor %}</div></div>
+</section>
+
+<div class="panel">
+  <div class="panel-h"><h2>Software Register ({{ page.paginator.count }})</h2></div>
+  <form class="toolbar cm-filters" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search name, vendor, version…" aria-label="Search software"></label>
+    <select name="vendor" data-autosubmit aria-label="Vendor"><option value="">All Vendors</option>{% for v in vendors %}<option{% if request.GET.vendor == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <select name="category" data-autosubmit aria-label="Category"><option value="">All Categories</option>{% for v in categories %}<option{% if request.GET.category == v %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <select name="licensed" data-autosubmit aria-label="License"><option value="">Any License</option><option value="no"{% if request.GET.licensed == 'no' %} selected{% endif %}>Without license</option></select>
+    {% if filtered %}<a class="btn sm" href="{% url 'cmdb:software' %}">{% icon "x" 14 %}Clear</a>{% endif %}
+  </form>
+  <div class="table-wrap dense"><table class="cm-table">
+    <thead><tr><th>Software</th><th>Version</th><th>Vendor</th><th>Category</th><th class="num">Installs</th><th>Licenses</th><th>Actions</th></tr></thead>
+    <tbody>{% for s in page %}<tr>
+      <td><a class="cm-name" href="{% url 'cmdb:software_detail' s.pk %}"><span class="cm-ic t-application">{% icon "app" 15 %}</span>{{ s.name }}</a></td>
+      <td>{{ s.version|default:"–" }}</td>
+      <td>{{ s.vendor|default:"–" }}</td>
+      <td>{% if s.category %}<span class="chip">{{ s.category }}</span>{% else %}–{% endif %}</td>
+      <td class="num">{{ s.n_installs }}</td>
+      <td>{% if s.license_list %}{% if s.over %}<span class="badge crit" title="Over-allocated: {{ s.n_installs }} installs for {{ s.seats }} seats">{% ficon "alert" 13 %}{{ s.n_installs }}/{{ s.seats }} seats</span>{% else %}<span class="badge ok">{{ s.n_installs }}/{{ s.seats }} seats</span>{% endif %}{% else %}<span class="badge mute">Unlicensed</span>{% endif %}</td>
+      <td><div class="row-actions">
+        <a class="btn icon" href="{% url 'cmdb:software_detail' s.pk %}" title="View" aria-label="View {{ s }}">{% icon "eye" 15 %}</a>
+        {% if can_operate %}<a class="btn icon blue" href="{% url 'cmdb:software_edit' s.pk %}" title="Edit" aria-label="Edit {{ s }}">{% icon "edit" 15 %}</a>{% endif %}
+        {% if can_admin %}<form method="post" action="{% url 'cmdb:software_delete' s.pk %}" data-confirm="Delete software “{{ s }}”?">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ s }}">{% icon "trash" 15 %}</button></form>{% endif %}
+      </div></td>
+    </tr>{% empty %}<tr><td colspan="7" class="empty">{% if filtered %}No software matches.{% else %}No software recorded yet.{% if can_operate %} <a href="{% url 'cmdb:software_create' %}">Add a title</a>.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="titles" %}
+</div>
+</div>
+{% endblock %}

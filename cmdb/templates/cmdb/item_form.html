@@ -1,0 +1,34 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if ci %}Edit {{ ci.name }}{% else %}Add Configuration Item{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>CMDB</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:items' %}">Configuration Items</a>{% icon "chevron-right" 14 %}{% if ci %}<a href="{{ ci.get_absolute_url }}">{{ ci.name }}</a>{% icon "chevron-right" 14 %}<span>Edit</span>{% else %}<span>Add</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb cm-formpage">
+<div class="head">
+  <div class="glyph bg-info">{% icon "database" 30 %}</div>
+  <div><h1>{% if ci %}Edit {{ ci.name }}{% else %}Add Configuration Item{% endif %}</h1><p>Servers and other hardware also appear on the IT Assets page; services, applications, databases and middleware feed the heatmap.</p></div>
+</div>
+<form method="post" class="panel cm-form" novalidate>{% csrf_token %}
+  {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  {% for title, fields in form.groups %}
+  <fieldset id="f-{{ title|slugify }}"><legend>{{ title }}</legend>
+    <div class="form-grid cm-grid">
+    {% for f in fields %}
+      <div class="field{% if f.name == 'description' or f.name == 'attributes' %} full{% endif %}">
+        <label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}
+        {% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}
+        {% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      </div>
+    {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+  <datalist id="cmdb-domains">{% for d in domains %}<option value="{{ d }}">{% endfor %}</datalist>
+  <div class="cm-form-foot">
+    <a class="btn" href="{% if next %}{{ next }}{% elif ci %}{{ ci.get_absolute_url }}{% else %}{% url 'cmdb:items' %}{% endif %}">Cancel</a>
+    <button class="btn primary" type="submit">{% if ci %}Save changes{% else %}Create item{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Configuration Items{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>CMDB</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:items' %}">Configuration Items</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb">
+<div class="head">
+  <div class="glyph bg-info">{% icon "database" 30 %}</div>
+  <div><h1>Configuration Items</h1><p>Every server, service, database and business domain, with its relationships and live health</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'cmdb:items_export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export</a>
+    {% if can_operate %}<a class="btn" href="{% url 'cmdb:items_import' %}">{% icon "upload" 17 %}Import</a>
+    <a class="btn primary" href="{% url 'cmdb:item_create' %}">{% icon "plus" 17 %}Add Item</a>{% endif %}
+  </div>
+</div>
+{% with section="items" %}{% include "cmdb/_cmdb_nav.html" %}{% endwith %}
+
+<section class="kpis cm-kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "database" 22 %}</div><div class="kpi-body"><div class="label">Configuration Items</div><div class="value">{{ total }}</div></div></div><div class="sub">{{ type_counts|length }} type{{ type_counts|length|pluralize }} in use</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Active</div><div class="value">{{ active }}</div></div></div><div class="sub">{{ maintenance }} in maintenance · {{ retired }} retired</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "share" 22 %}</div><div class="kpi-body"><div class="label">Relationships</div><div class="value">{{ relationships }}</div></div></div><div class="sub"><a href="{% url 'cmdb:relationships' %}">Manage relationships</a></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "radar" 22 %}</div><div class="kpi-body"><div class="label">Monitored</div><div class="value">{{ linked }}</div></div></div><div class="sub">Linked to URL checks or domains</div></div>
+</section>
+
+{% if type_counts %}<div class="cm-typechips" aria-label="Items by type">{% for v, l, n in type_counts %}<a class="chip{% if request.GET.type == v %} on{% endif %}" href="?type={{ v }}">{{ l }} <b>{{ n }}</b></a>{% endfor %}</div>{% endif %}
+
+<div class="panel">
+  <div class="panel-h"><h2>Configuration Items ({{ page.paginator.count }})</h2></div>
+  <form class="toolbar cm-filters" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search name, IP, owner, serial…" aria-label="Search configuration items"></label>
+    <select name="type" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for v, l in types %}<option value="{{ v }}"{% if request.GET.type == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="status" data-autosubmit aria-label="Status"><option value="">All Status</option>{% for v, l in statuses %}<option value="{{ v }}"{% if request.GET.status == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="env" data-autosubmit aria-label="Environment"><option value="">All Environments</option>{% for v, l in envs %}<option value="{{ v }}"{% if request.GET.env == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="domain" data-autosubmit aria-label="Business domain"><option value="">All Domains</option>{% for n in domains %}<option{% if request.GET.domain == n %} selected{% endif %}>{{ n }}</option>{% endfor %}</select>
+    <select name="site" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option{% if request.GET.site == s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    {% if filtered %}<a class="btn sm" href="{% url 'cmdb:items' %}">{% icon "x" 14 %}Clear</a>{% endif %}
+  </form>
+  <div class="table-wrap dense"><table class="cm-table">
+    <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Env</th><th>Business Domain</th><th>Site</th><th>Owner</th><th>Health</th><th class="num">Relations</th><th>Updated</th><th>Actions</th></tr></thead>
+    <tbody>{% for c in page %}
+      <tr>
+        <td><a class="cm-name" href="{{ c.get_absolute_url }}"><span class="cm-ic t-{{ c.ci_type }}">{% icon c.icon 16 %}</span>{{ c.name }}</a></td>
+        <td>{{ c.get_ci_type_display }}</td>
+        <td>{% include "cmdb/_status.html" with s=c.status label=c.get_status_display %}</td>
+        <td><span class="chip env-{{ c.environment }}">{{ c.get_environment_display }}</span></td>
+        <td>{% if c.business_domain %}<a href="?domain={{ c.business_domain|urlencode }}">{{ c.business_domain }}</a>{% else %}<span class="t-mute">–</span>{% endif %}</td>
+        <td>{{ c.site }}</td>
+        <td>{{ c.owner|default:"–" }}</td>
+        <td>{% include "cmdb/_health.html" with state=c.health %}</td>
+        <td class="num"><a href="{% url 'cmdb:relationships' %}?ci={{ c.pk }}" title="{{ c.n_out }} outgoing, {{ c.n_in }} incoming">{{ c.n_out|add:c.n_in }}</a></td>
+        <td title="{{ c.updated_at }}">{{ c.updated_at|ago }}</td>
+        <td><div class="row-actions">
+          <a class="btn icon" href="{{ c.get_absolute_url }}" title="View" aria-label="View {{ c.name }}">{% icon "eye" 15 %}</a>
+          <a class="btn icon blue" href="{% url 'cmdb:topology' %}?root={{ c.pk }}" title="Topology" aria-label="Topology around {{ c.name }}">{% icon "share" 15 %}</a>
+          {% if can_operate %}<a class="btn icon blue" href="{% url 'cmdb:item_edit' c.pk %}" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>{% endif %}
+          {% if can_admin %}<form method="post" action="{% url 'cmdb:item_delete' c.pk %}" data-confirm="Delete “{{ c.name }}” and its relationships?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ c.name }}">{% icon "trash" 15 %}</button></form>{% endif %}
+        </div></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="11" class="empty">{% if filtered %}No configuration items match these filters.{% else %}No configuration items yet. {% if can_operate %}<a href="{% url 'cmdb:item_create' %}">Add one</a>, <a href="{% url 'cmdb:items_import' %}">import a CSV</a> or run <code>manage.py seed_cmdb</code> for examples.{% endif %}{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="items" %}
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{{ sw }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'cmdb/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Assets</span>{% icon "chevron-right" 14 %}<a href="{% url 'cmdb:software' %}">Software</a>{% icon "chevron-right" 14 %}<span>{{ sw }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-cmdb">
+<div class="head">
+  <div class="glyph bg-info">{% icon "app" 30 %}</div>
+  <div><h1>{{ sw.name }} {% if sw.version %}<span class="t-mute">{{ sw.version }}</span>{% endif %}</h1><p>{{ sw.vendor|default:"Unknown vendor" }}{% if sw.category %} · {{ sw.category }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_operate %}<a class="btn" href="{% url 'cmdb:license_create' %}?software={{ sw.pk }}">{% icon "key" 17 %}Add License</a>
+    <a class="btn primary" href="{% url 'cmdb:software_edit' sw.pk %}">{% icon "edit" 17 %}Edit</a>{% endif %}
+    {% if can_admin %}<form method="post" action="{% url 'cmdb:software_delete' sw.pk %}" data-confirm="Delete software “{{ sw }}”?">{% csrf_token %}<button class="btn cm-danger" type="submit">{% icon "trash" 17 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+{% if sw.description %}<p class="cm-lead">{{ sw.description }}</p>{% endif %}
+<section class="grid g-main">
+  <div class="panel" id="installs">
+    <div class="panel-h"><h2>Installed On ({{ installs|length }})</h2></div>
+    {% if can_operate and candidates %}
+    <form class="toolbar cm-filters" method="post" action="{% url 'cmdb:software_installs' sw.pk %}">{% csrf_token %}
+      <select name="ci" aria-label="Configuration item" required><option value="">Record an installation on…</option>{% for c in candidates %}<option value="{{ c.pk }}">{{ c.name }} ({{ c.get_ci_type_display }})</option>{% endfor %}</select>
+      <button class="btn primary sm" type="submit">{% icon "plus" 14 %}Add</button>
+    </form>{% endif %}
+    <div class="table-wrap dense"><table>
+      <thead><tr><th>Configuration item</th><th>Type</th><th>Environment</th><th>Site</th><th>Health</th>{% if can_operate %}<th></th>{% endif %}</tr></thead>
+      <tbody>{% for c in installs %}<tr>
+        <td><a class="cm-name" href="{{ c.get_absolute_url }}"><span class="cm-ic t-{{ c.ci_type }}">{% icon c.icon 15 %}</span>{{ c.name }}</a></td>
+        <td>{{ c.get_ci_type_display }}</td><td>{{ c.get_environment_display }}</td><td>{{ c.site }}</td>
+        <td>{% include "cmdb/_health.html" with state=c.health %}</td>
+        {% if can_operate %}<td><form method="post" action="{% url 'cmdb:software_installs' sw.pk %}" data-confirm="Remove {{ sw }} from {{ c.name }}?">{% csrf_token %}<input type="hidden" name="remove" value="{{ c.pk }}"><button class="btn icon red" title="Remove installation" aria-label="Remove from {{ c.name }}">{% icon "x" 14 %}</button></form></td>{% endif %}
+      </tr>{% empty %}<tr><td colspan="6" class="empty">Not recorded on any configuration item.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>License Position</h2></div>
+      {% if licenses %}
+        <div class="cm-usage{% if over %} over{% endif %}"><div class="cm-usage-h"><b>{{ used }}</b> of <b>{{ seats }}</b> seats used</div>
+          <div class="cm-bar"><i style="width:{% widthratio used seats 100 %}%"></i></div>
+          {% if over %}<p class="t-crit">{% ficon "alert" 14 %} Over-allocated: {{ used }} installations for {{ seats }} seats.</p>{% endif %}</div>
+        <ul class="cm-list">{% for l in licenses %}<li><a href="{% url 'cmdb:license_edit' l.pk %}">{{ l.product }}</a> <span class="t-mute">{{ l.seats }} seat{{ l.seats|pluralize }}</span><small class="{% if l.expired %}t-crit{% elif l.days_left is not None and l.days_left <= 60 %}t-warn{% else %}t-mute{% endif %}">{% if l.expiry %}Expires {{ l.expiry|date:"d M Y" }}{% else %}No expiry{% endif %}</small></li>{% endfor %}</ul>
+      {% else %}<p class="empty">No license linked to this software.{% if can_operate %} <a href="{% url 'cmdb:license_create' %}?software={{ sw.pk }}">Add one</a>.{% endif %}</p>{% endif %}
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}
