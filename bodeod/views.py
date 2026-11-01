@@ -6,12 +6,12 @@ from datetime import timedelta
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.access import can, require, scope_by_site
 from core.audit import audit
@@ -55,6 +55,27 @@ def _next(request, fallback):
     return fallback
 
 
+def _pk(value):
+    """A primary key from a query/form parameter; anything that is not a positive integer is a 404 (not a 500)."""
+    try:
+        pk = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise Http404("Invalid id")
+    if pk <= 0:
+        raise Http404("Invalid id")
+    return pk
+
+
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(value):
+    """Neutralise spreadsheet formulas in free-text CSV cells (CSV injection)."""
+    if isinstance(value, str) and value.startswith(CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _deny(request, text="You do not have permission to do that.", fallback=None):
     if _wants_json(request):
         return JsonResponse({"error": text}, status=403)
@@ -69,6 +90,11 @@ def _perms(request):
 
 def _modes(request):
     return scope_by_site(services.modes_qs(), request.user, field="site")
+
+
+def _admin_modes(request):
+    """Modes the user may reconfigure: admin on the mode's own site (global modes use the user's best role)."""
+    return [m for m in _modes(request) if user_can(request.user, "admin", m.site)]
 
 
 def _runs(request):
@@ -383,8 +409,8 @@ def history_export(request):
     for r in _run_counts(qs)[:10000]:
         w.writerow([r.pk, r.mode.code, r.trading_date.isoformat(), timezone.localtime(r.started_at, IST).strftime("%Y-%m-%d %H:%M:%S"),
                     timezone.localtime(r.finished_at, IST).strftime("%Y-%m-%d %H:%M:%S") if r.finished_at else "",
-                    "" if r.duration_seconds is None else round(r.duration_seconds, 1), r.trigger, r.by_label, r.status,
-                    r.n_ok, r.n_warn, r.n_crit, r.n_unknown, r.n_pending, r.summary])
+                    "" if r.duration_seconds is None else round(r.duration_seconds, 1), r.trigger, _cell(r.by_label), r.status,
+                    r.n_ok, r.n_warn, r.n_crit, r.n_unknown, r.n_pending, _cell(r.summary)])
     return resp
 
 
@@ -401,7 +427,8 @@ def detail(request, pk):
     for r in results:
         if r.signed_off_at:
             timeline.append({"at": r.signed_off_at, "tone": "ok", "icon": "check",
-                             "text": f"“{r.name}” signed off by {r.signed_off_by_name}" + (f": {r.note}" if r.note else "")})
+                             "text": f"“{r.name}” signed off by {r.signed_off_by_name}" + (f": {r.note}" if r.note else "")
+                             + (" (carried forward from an earlier run today)" if r.signed_off_at < run.started_at else "")})
         elif r.checked_at and r.automated:
             timeline.append({"at": r.checked_at, "tone": r.tone, "icon": "radar",
                              "text": f"“{r.name}” {r.code_label} – {r.detail}"})
@@ -432,19 +459,33 @@ def _ref_suggestions():
     return out
 
 
+def _checklist_sections(request, modes):
+    return [{"mode": m, "rows": _live_rows(list(m.items.all())), "can_edit": user_can(request.user, "admin", m.site)}
+            for m in modes]
+
+
+@require_http_methods(["GET", "POST"])
 def checklist(request):
     modes = list(_modes(request))
-    can_admin = can(request.user, "admin")
+    admin_modes = _admin_modes(request)
+    admin_pks = [m.pk for m in admin_modes]
+    can_admin = bool(admin_modes) or can(request.user, "admin")
     editing = None
     if request.GET.get("edit"):
-        editing = get_object_or_404(ChecklistItem, pk=request.GET["edit"], mode__in=modes)
+        editing = get_object_or_404(ChecklistItem, pk=_pk(request.GET["edit"]), mode__in=modes)
+        if editing.mode_id not in admin_pks:
+            editing = None
+            messages.error(request, "You cannot change the checklist of that mode.")
     if request.method == "POST":
         if not can_admin:
             return _deny(request, "Only administrators can change the checklist.", reverse("bodeod:checklist"))
         pk = request.POST.get("pk")
-        editing = get_object_or_404(ChecklistItem, pk=pk, mode__in=modes) if pk else None
+        editing = get_object_or_404(ChecklistItem, pk=_pk(pk), mode__in=modes) if pk else None
+        if editing is not None and editing.mode_id not in admin_pks:
+            return _deny(request, f"Only administrators of {editing.mode.site} can change the {editing.mode.code} checklist.",
+                         reverse("bodeod:checklist"))
         form = ChecklistItemForm(request.POST, instance=editing)
-        form.fields["mode"].queryset = _modes(request)
+        form.fields["mode"].queryset = Mode.objects.filter(pk__in=admin_pks)
         if form.is_valid():
             item = form.save()
             audit(request, "update" if editing else "create", item, mode=item.mode.code, kind=item.kind,
@@ -458,23 +499,23 @@ def checklist(request):
     else:
         initial = {}
         if not editing:
-            m = next((m for m in modes if m.code == request.GET.get("mode")), modes[0] if modes else None)
+            m = next((m for m in admin_modes if m.code == request.GET.get("mode")), admin_modes[0] if admin_modes else None)
             if m is not None:
                 last = m.items.order_by("-order").first()
                 initial = {"mode": m, "order": (last.order + 10) if last else 10}
         form = ChecklistItemForm(instance=editing, initial=initial)
-        form.fields["mode"].queryset = _modes(request)
+        form.fields["mode"].queryset = Mode.objects.filter(pk__in=admin_pks)
     mode_edit = None
     if request.GET.get("mode_edit"):
-        mode_edit = get_object_or_404(_modes(request), pk=request.GET["mode_edit"])
-    mode_form = ModeForm(instance=mode_edit) if (mode_edit or request.GET.get("mode_new")) else None
-    sections = []
-    for m in modes:
-        items = list(m.items.all())
-        sections.append({"mode": m, "rows": _live_rows(items)})
+        mode_edit = get_object_or_404(_modes(request), pk=_pk(request.GET["mode_edit"]))
+        if mode_edit.pk not in admin_pks:
+            mode_edit = None
+            messages.error(request, "You cannot change the settings of that mode.")
+    mode_form = ModeForm(instance=mode_edit, user=request.user) if (mode_edit or request.GET.get("mode_new")) else None
     existing = {m.code for m in services.modes_qs()}
-    ctx = {"sections": sections, "form": form, "editing": editing, "mode_form": mode_form, "mode_edit": mode_edit,
-           "can_add_mode": can_admin and len(existing) < len(Mode.CODES), "refs": _ref_suggestions(),
+    ctx = {"sections": _checklist_sections(request, modes), "form": form, "editing": editing, "mode_form": mode_form,
+           "mode_edit": mode_edit, "can_add_mode": can_admin and len(existing) < len(Mode.CODES), "refs": _ref_suggestions(),
+           "can_edit_items": bool(admin_modes),
            "show_form": can_admin and (editing is not None or request.method == "POST" or request.GET.get("new")),
            **_perms(request)}
     return render(request, "bodeod/checklist.html", ctx)
@@ -484,8 +525,11 @@ def checklist(request):
 @require("admin")
 def mode_save(request):
     pk = request.POST.get("pk")
-    instance = get_object_or_404(_modes(request), pk=pk) if pk else None
-    form = ModeForm(request.POST, instance=instance)
+    instance = get_object_or_404(_modes(request), pk=_pk(pk)) if pk else None
+    if instance is not None and not user_can(request.user, "admin", instance.site):
+        return _deny(request, f"Only administrators of {instance.site} can change the {instance.code} mode.",
+                     reverse("bodeod:checklist"))
+    form = ModeForm(request.POST, instance=instance, user=request.user)
     if form.is_valid():
         mode = form.save(commit=False)
         if not instance:
@@ -496,14 +540,15 @@ def mode_save(request):
         messages.success(request, f"Saved mode {mode.code} ({mode.window_label}).")
         return redirect(reverse("bodeod:checklist") + f"#mode-{mode.code}")
     modes = list(_modes(request))
-    sections = [{"mode": m, "rows": _live_rows(list(m.items.all()))} for m in modes]
+    admin_pks = [m.pk for m in _admin_modes(request)]
     item_form = ChecklistItemForm()
-    item_form.fields["mode"].queryset = _modes(request)
+    item_form.fields["mode"].queryset = Mode.objects.filter(pk__in=admin_pks)
     existing = {m.code for m in services.modes_qs()}
     messages.error(request, "Please correct the mode settings below.")
     return render(request, "bodeod/checklist.html", {
-        "sections": sections, "form": item_form, "editing": None, "mode_form": form, "mode_edit": instance,
-        "can_add_mode": len(existing) < len(Mode.CODES), "refs": _ref_suggestions(), "show_form": False, **_perms(request)},
+        "sections": _checklist_sections(request, modes), "form": item_form, "editing": None, "mode_form": form,
+        "mode_edit": instance, "can_add_mode": len(existing) < len(Mode.CODES), "refs": _ref_suggestions(),
+        "can_edit_items": bool(admin_pks), "show_form": False, **_perms(request)},
         status=400)
 
 
@@ -511,6 +556,9 @@ def mode_save(request):
 @require("admin")
 def item_delete(request, pk):
     item = get_object_or_404(ChecklistItem, pk=pk, mode__in=_modes(request))
+    if not user_can(request.user, "admin", item.mode.site):
+        return _deny(request, f"Only administrators of {item.mode.site} can change the {item.mode.code} checklist.",
+                     reverse("bodeod:checklist"))
     code, name = item.mode.code, item.name
     audit(request, "delete", item, mode=code, kind=item.kind, ref_name=item.ref_name)
     item.delete()
@@ -522,16 +570,23 @@ def item_delete(request, pk):
 @require("admin")
 def item_move(request, pk):
     item = get_object_or_404(ChecklistItem, pk=pk, mode__in=_modes(request))
+    if not user_can(request.user, "admin", item.mode.site):
+        return _deny(request, f"Only administrators of {item.mode.site} can change the {item.mode.code} checklist.",
+                     reverse("bodeod:checklist"))
+    direction = request.POST.get("direction")
+    if direction not in ("up", "down"):
+        messages.error(request, "Choose whether to move the item up or down.")
+        return redirect(reverse("bodeod:checklist") + f"#mode-{item.mode.code}")
     items = list(item.mode.items.order_by("order", "pk"))
     i = items.index(item)
-    j = i - 1 if request.POST.get("direction") == "up" else i + 1
+    j = i - 1 if direction == "up" else i + 1
     if 0 <= j < len(items):
         items[i], items[j] = items[j], items[i]
         for n, it in enumerate(items, start=1):
             if it.order != n * 10:
                 it.order = n * 10
                 it.save(update_fields=["order", "updated_at"])
-        audit(request, "reorder", item, mode=item.mode.code, direction=request.POST.get("direction", "down"), order=item.order)
+        audit(request, "reorder", item, mode=item.mode.code, direction=direction, order=item.order)
         messages.success(request, f"Moved “{item.name}” {'up' if j < i else 'down'}.")
     return redirect(reverse("bodeod:checklist") + f"#mode-{item.mode.code}")
 
@@ -574,6 +629,7 @@ def _months(year, holidays):
     return months
 
 
+@require_http_methods(["GET", "POST"])
 def holidays(request):
     year = _year(request)
     can_configure = can(request.user, "configure")
@@ -646,6 +702,6 @@ def holidays_export(request):
     w = csv.writer(resp)
     w.writerow(["date", "exchange", "description", "weekday", "source"])
     for h in _holiday_qs(request, year):
-        w.writerow([h.date.isoformat(), h.exchange, h.description, h.date.strftime("%A"), h.source])
+        w.writerow([h.date.isoformat(), h.exchange, _cell(h.description), h.date.strftime("%A"), h.source])
     return resp
 

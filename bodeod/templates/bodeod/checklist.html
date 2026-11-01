@@ -9,7 +9,7 @@
   <div><h1>Checklist</h1><p>Modes, market windows and the ordered items each run validates</p></div>
   <div class="actions">
     {% if can_add_mode %}<a class="btn" href="?mode_new=1#mode-form">{% icon "plus" 17 %}Add mode</a>{% endif %}
-    {% if can_admin and sections %}<a class="btn primary" href="?new=1#item-form">{% icon "plus" 17 %}Add item</a>{% endif %}
+    {% if can_edit_items %}<a class="btn primary" href="?new=1#item-form">{% icon "plus" 17 %}Add item</a>{% endif %}
   </div>
 </div>
 {% include "bodeod/_tabs.html" with tab="checklist" %}
@@ -20,7 +20,7 @@
   {% for s in sections %}
     <div class="panel{% if not s.mode.enabled %} is-disabled{% endif %}" id="mode-{{ s.mode.code }}">
       <div class="panel-h"><span class="bod-code">{{ s.mode.code }}</span><h2>{{ s.mode.name }}</h2>{% if not s.mode.enabled %}<span class="chip mute">Disabled</span>{% endif %}
-        <div class="right">{% if can_admin %}<a class="btn sm" href="?mode_edit={{ s.mode.pk }}#mode-form">{% icon "settings" 14 %}Mode settings</a>
+        <div class="right">{% if can_admin and not s.can_edit %}<span class="chip mute" title="You are not an administrator of {{ s.mode.site }}">read-only</span>{% endif %}{% if s.can_edit %}<a class="btn sm" href="?mode_edit={{ s.mode.pk }}#mode-form">{% icon "settings" 14 %}Mode settings</a>
           <a class="btn sm ghost-primary" href="?mode={{ s.mode.code }}&amp;new=1#item-form">{% icon "plus" 14 %}Item</a>{% endif %}</div></div>
       <dl class="bod-modeinfo">
         <div><dt>Window</dt><dd>{{ s.mode.window_label }}</dd></div>
@@ -30,21 +30,21 @@
       </dl>
       {% if s.mode.description %}<p class="t-mute bod-desc">{{ s.mode.description }}</p>{% endif %}
       <div class="table-wrap dense"><table>
-        <thead><tr><th>Order</th><th>Item</th><th>Reference</th><th>Live</th>{% if can_admin %}<th>Actions</th>{% endif %}</tr></thead>
+        <thead><tr><th>Order</th><th>Item</th><th>Reference</th><th>Live</th>{% if s.can_edit %}<th>Actions</th>{% endif %}</tr></thead>
         <tbody>{% for r in s.rows %}
           <tr class="{% if not r.item.enabled %}is-off{% endif %}{% if editing and editing.pk == r.item.pk %} sel{% endif %}">
             <td>{{ r.item.order }}</td>
             <td class="wrap"><b>{{ r.name }}</b>{% if r.critical %} <span class="chip crit" title="A critical result fails the run">critical</span>{% endif %}{% if not r.item.enabled %} <span class="chip mute">disabled</span>{% endif %}{% if r.item.instructions %}<div class="bod-instr" title="{{ r.item.instructions }}">{{ r.item.instructions|truncatechars:90 }}</div>{% endif %}</td>
             <td class="bod-ref"><small>{{ r.get_kind_display }}</small>{% if r.kind == "manual" %}<span class="t-mute">operator sign-off</span>{% elif r.link %}<a href="{{ r.link }}" title="{{ r.ref_name }}">{{ r.ref_name }}</a>{% else %}<span title="{{ r.ref_name }}">{{ r.ref_name|default:"–" }}</span> <span class="chip warn" title="{{ r.detail }}">missing</span>{% endif %}</td>
                         <td title="{{ r.detail }}">{% code r.status %}</td>
-            {% if can_admin %}<td><div class="row-actions">
+            {% if s.can_edit %}<td><div class="row-actions">
               <form method="post" action="{% url 'bodeod:item_move' r.item.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="up"><button class="btn icon" type="submit" title="Move up" aria-label="Move {{ r.name }} up"{% if forloop.first %} disabled{% endif %}>{% icon "arrow-up" 14 %}</button></form>
               <form method="post" action="{% url 'bodeod:item_move' r.item.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="down"><button class="btn icon" type="submit" title="Move down" aria-label="Move {{ r.name }} down"{% if forloop.last %} disabled{% endif %}>{% icon "arrow-down" 14 %}</button></form>
               <a class="btn icon blue" href="?edit={{ r.item.pk }}#item-form" title="Edit" aria-label="Edit {{ r.name }}">{% icon "edit" 14 %}</a>
               <form method="post" action="{% url 'bodeod:item_delete' r.item.pk %}" data-confirm="Delete the checklist item “{{ r.name }}”? Past run results keep their copy.">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ r.name }}">{% icon "trash" 14 %}</button></form>
             </div></td>{% endif %}
           </tr>
-        {% empty %}<tr><td colspan="5" class="empty">No items yet.{% if can_admin %} <a href="?mode={{ s.mode.code }}&amp;new=1#item-form">Add the first item</a>.{% endif %}</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="5" class="empty">No items yet.{% if s.can_edit %} <a href="?mode={{ s.mode.code }}&amp;new=1#item-form">Add the first item</a>.{% endif %}</td></tr>{% endfor %}
         </tbody></table></div>
     </div>
   {% empty %}
@@ -70,7 +70,7 @@
     </div>
     {% endif %}
 
-    {% if can_admin and sections %}
+    {% if can_edit_items %}
     <div class="panel" id="item-form">
       <div class="panel-h"><h2>{% if editing %}Edit “{{ editing.name }}”{% else %}Add checklist item{% endif %}</h2>{% if editing %}<div class="right"><a href="{% url 'bodeod:checklist' %}">Cancel</a></div>{% endif %}</div>
       <form method="post" action="{% url 'bodeod:checklist' %}">{% csrf_token %}{% if editing %}<input type="hidden" name="pk" value="{{ editing.pk }}">{% endif %}

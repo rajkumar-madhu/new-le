@@ -230,6 +230,8 @@ def status_of(kind, obj):
         if obj.ssl_status == "Expiring":
             days = obj.ssl_days_left
             return "warning", f"Up; SSL expiring{f' in {days} days' if days is not None else ''} (checked {when})"
+        if obj.ssl_status == "Unreachable":
+            return "warning", f"Up, but the SSL certificate could not be checked (checked {when})"
         return "ok", f"Up, DNS resolved, SSL {obj.ssl_status.lower()} (checked {when})"
 
     label = "URL check" if kind == "url_check" else "TCP check"
@@ -300,8 +302,10 @@ def refresh_references(items, resolver):
 # ------------------------------------------------------------------ run status
 def compute_status(results):
     """fail if a critical item is critical; warn if anything is warning/unknown/pending (or a non-critical item is
-    critical); otherwise pass."""
+    critical); otherwise pass. A run that validated nothing proves nothing, so it warns instead of passing."""
     results = list(results)
+    if not results:
+        return "warn"
     if any(r.status == "critical" and r.critical for r in results):
         return "fail"
     if any(r.status in ("warning", "unknown", "pending", "critical") for r in results):
@@ -320,6 +324,8 @@ def counts(results):
 
 def summarize(results):
     c = counts(results)
+    if not c["total"]:
+        return "No enabled checklist items: nothing was validated"
     parts = [f"{c['done']}/{c['total']} OK"]
     for key, word in (("critical", "critical"), ("warning", "warning"), ("unknown", "unknown"), ("pending", "pending sign-off")):
         if c[key]:
@@ -507,6 +513,9 @@ def due_modes(now=None):
             continue  # not yet, or the window passed while the scheduler was down: no late runs
         if mode.runs.filter(trading_date=today, trigger="scheduler").exists():
             continue
+        if not mode.items.filter(enabled=True).exists():
+            log.info("bodeod: %s has no enabled checklist items; not starting a scheduled run", mode.code)
+            continue
         out.append(mode)
     return out
 
@@ -609,11 +618,13 @@ def parse_holidays_csv(data, default_exchange="NSE"):
         out.errors.append("Header must contain 'date' and 'description' columns (optional 'exchange').")
         return out
     seen = set()
+    processed = 0
     for line_no, row in enumerate(reader, start=2):
         if not any(c.strip() for c in row):
             continue
-        if len(out.rows) >= MAX_CSV_ROWS:
-            out.errors.append(f"Stopped after {MAX_CSV_ROWS} rows.")
+        processed += 1
+        if len(out.rows) >= MAX_CSV_ROWS or processed > MAX_CSV_ROWS * 2:
+            out.errors.append(f"Stopped at line {line_no}: at most {MAX_CSV_ROWS} holidays (and {MAX_CSV_ROWS * 2} rows) per file.")
             break
         get = lambda i: row[i].strip() if i is not None and i < len(row) else ""  # noqa: E731
         d = parse_date(get(i_date))

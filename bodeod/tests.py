@@ -64,7 +64,8 @@ class StatusRuleTests(TestCase):
         self.assertEqual(c([self.ri("ok"), self.ri("pending")]), "warn")
         self.assertEqual(c([self.ri("ok"), self.ri("critical", critical=False)]), "warn")
         self.assertEqual(c([self.ri("warning"), self.ri("critical", critical=True)]), "fail")
-        self.assertEqual(c([]), "pass")
+        self.assertEqual(c([]), "warn")  # nothing validated is not a pass
+        self.assertIn("nothing was validated", services.summarize([]))
 
     def test_codes(self):
         self.assertEqual([self.ri(s).code for s in ("ok", "signed_off", "warning", "critical", "unknown", "pending")],
@@ -632,3 +633,138 @@ class SeedTests(TestCase):
         call_command("seed_bodeod", "--remove", stdout=mock.MagicMock())
         self.assertFalse(Holiday.objects.exists())
         self.assertFalse(ChecklistItem.objects.exists())
+
+
+# ------------------------------------------------------------------ regressions found by the e2e review
+class RegressionTests(TestCase):
+    def setUp(self):
+        from core.models import Site
+        self.viewer, self.operator, self.admin = users()
+        self.mumbai = Site.objects.create(name="Mumbai", code="mumbai")
+        self.chennai = Site.objects.create(name="Chennai", code="chennai")
+        self.bod = make_mode("BOD", site="Mumbai")
+        self.eod = make_mode("EOD", site="Chennai", window_start=time(15, 30), window_end=time(16, 0), auto_run_time=None)
+        self.bod_item = ChecklistItem.objects.create(mode=self.bod, name="BOD feed", kind="manual", order=10)
+        self.eod_item = ChecklistItem.objects.create(mode=self.eod, name="EOD file", kind="manual", order=10)
+        self.eod_item2 = ChecklistItem.objects.create(mode=self.eod, name="EOD backup", kind="manual", order=20)
+        # admin on Mumbai only, viewer on Chennai
+        self.site_admin = User.objects.create_user("siteadmin")
+        Membership.objects.create(user=self.site_admin, site=self.mumbai, role="admin")
+        Membership.objects.create(user=self.site_admin, site=self.chennai, role="viewer")
+
+    # non-numeric ids used to raise ValueError -> HTTP 500
+    def test_non_numeric_ids_are_404_not_500(self):
+        c = client_for(self.admin)
+        for q in ("?edit=abc", "?mode_edit=abc", "?edit=-1", "?mode_edit=1.5"):
+            self.assertEqual(c.get(reverse("bodeod:checklist") + q).status_code, 404, q)
+        r = c.post(reverse("bodeod:checklist"), {"pk": "abc", "mode": self.bod.pk, "name": "x", "kind": "manual", "order": 1})
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(c.post(reverse("bodeod:mode_save"), {"pk": "abc"}).status_code, 404)
+        self.assertFalse(ChecklistItem.objects.filter(name="x").exists())
+
+    # a site admin could edit, move, delete and re-site another site's mode (IDOR across sites)
+    def test_site_admin_cannot_change_other_sites_checklist(self):
+        c = client_for(self.site_admin)
+        r = c.post(reverse("bodeod:checklist"), {"pk": self.eod_item.pk, "mode": self.eod.pk, "name": "Hijacked",
+                                                 "kind": "manual", "order": 1, "enabled": "on"})
+        self.assertEqual(r.status_code, 302)
+        self.eod_item.refresh_from_db()
+        self.assertEqual(self.eod_item.name, "EOD file")
+        # nor move a Mumbai item into the Chennai mode
+        c.post(reverse("bodeod:checklist"), {"pk": self.bod_item.pk, "mode": self.eod.pk, "name": "BOD feed",
+                                             "kind": "manual", "order": 1, "enabled": "on"})
+        self.bod_item.refresh_from_db()
+        self.assertEqual(self.bod_item.mode, self.bod)
+        c.post(reverse("bodeod:item_move", args=[self.eod_item.pk]), {"direction": "down"})
+        self.eod_item.refresh_from_db()
+        self.assertEqual(self.eod_item.order, 10)
+        c.post(reverse("bodeod:item_delete", args=[self.eod_item.pk]))
+        self.assertTrue(ChecklistItem.objects.filter(pk=self.eod_item.pk).exists())
+        c.post(reverse("bodeod:mode_save"), {"pk": self.eod.pk, "name": "Hijacked", "site": "Mumbai", "window_start": "15:30",
+                                             "window_end": "16:00", "enabled": "on"})
+        self.eod.refresh_from_db()
+        self.assertEqual((self.eod.name, self.eod.site), ("End of Day", "Chennai"))
+        self.assertFalse(AuditEvent.objects.filter(object_type__in=["bodeod.checklistitem", "bodeod.mode"]).exists())
+        # the editor shows the Chennai mode read-only and the item form only offers Mumbai modes
+        r = c.get(reverse("bodeod:checklist"))
+        self.assertNotContains(r, f'aria-label="Edit {self.eod_item.name}"')
+        self.assertContains(r, f'aria-label="Edit {self.bod_item.name}"')
+        self.assertEqual(list(r.context["form"].fields["mode"].queryset), [self.bod])
+        r = c.get(reverse("bodeod:checklist") + f"?edit={self.eod_item.pk}")
+        self.assertIsNone(r.context["editing"])
+        # their own site still works
+        c.post(reverse("bodeod:item_move", args=[self.bod_item.pk]), {"direction": "down"})
+        c.post(reverse("bodeod:checklist"), {"pk": self.bod_item.pk, "mode": self.bod.pk, "name": "BOD feed live",
+                                             "kind": "manual", "order": 10, "enabled": "on"})
+        self.bod_item.refresh_from_db()
+        self.assertEqual(self.bod_item.name, "BOD feed live")
+
+    def test_site_admin_cannot_assign_a_mode_to_a_site_they_do_not_admin(self):
+        c = client_for(self.site_admin)
+        r = c.post(reverse("bodeod:mode_save"), {"pk": self.bod.pk, "name": "BOD", "site": "Chennai", "window_start": "07:00",
+                                                 "window_end": "09:00", "enabled": "on"})
+        self.assertEqual(r.status_code, 400)
+        self.assertContains(r, "not an administrator of Chennai", status_code=400)
+        self.bod.refresh_from_db()
+        self.assertEqual(self.bod.site, "Mumbai")
+
+    def test_mode_site_must_be_a_known_site(self):
+        c = client_for(self.admin)
+        r = c.post(reverse("bodeod:mode_save"), {"code": "ADP", "name": "ADP", "site": "Atlantis", "window_start": "16:00",
+                                                 "window_end": "20:00"})
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(Mode.objects.filter(code="ADP").exists())
+        r = c.post(reverse("bodeod:mode_save"), {"code": "ADP", "name": "ADP", "site": "Chennai", "window_start": "16:00",
+                                                 "window_end": "20:00"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(Mode.objects.get(code="ADP").site, "Chennai")
+        self.assertContains(c.get(reverse("bodeod:checklist") + "?mode_new=1"), '<option value="Mumbai">')
+
+    def test_move_rejects_unknown_direction(self):
+        c = client_for(self.admin)
+        c.post(reverse("bodeod:item_move", args=[self.eod_item.pk]), {"direction": "sideways"})
+        self.eod_item.refresh_from_db()
+        self.assertEqual(self.eod_item.order, 10)
+        self.assertFalse(AuditEvent.objects.filter(action="reorder").exists())
+
+    def test_checklist_and_holidays_reject_other_methods(self):
+        c = client_for(self.admin)
+        self.assertEqual(c.put(reverse("bodeod:checklist")).status_code, 405)
+        self.assertEqual(c.delete(reverse("bodeod:holidays")).status_code, 405)
+
+    # a scheduled run of a mode without enabled items used to "pass" and resolve earlier alerts
+    def test_scheduler_skips_modes_without_items_and_empty_runs_warn(self):
+        ChecklistItem.objects.filter(mode=self.bod).update(enabled=False)
+        services.auto_run(ist(MONDAY, 7, 16))
+        self.assertFalse(Run.objects.exists())
+        run = services.start_run(self.bod)
+        self.assertEqual(run.status, "warn")
+        self.assertEqual(Event.objects.get(object_id=str(run.pk)).severity, "warning")
+
+    def test_domain_ssl_unreachable_is_a_warning(self):
+        d = Domain.objects.create(tenant_key=services.tenant(), site_key="x", hostname="nse.example.com", status="up",
+                                  dns_status="Resolved", ssl_status="Unreachable", last_checked_at=timezone.now())
+        self.assertEqual(services.status_of("domain", d)[0], "warning")
+
+    # CSV exports must not hand spreadsheets a formula
+    def test_csv_exports_neutralise_formulas(self):
+        Holiday.objects.create(exchange="NSE", date=date(2026, 1, 26), description="=HYPERLINK(\"http://x\")")
+        body = client_for(self.admin).get(reverse("bodeod:holidays_export") + "?year=2026").content.decode()
+        self.assertIn("'=HYPERLINK", body)
+        evil = User.objects.create_user("=cmd|calc", is_staff=True)
+        services.start_run(self.bod, user=evil)
+        body = client_for(self.admin).get(reverse("bodeod:history_export")).content.decode()
+        self.assertIn("'=cmd|calc", body)
+
+    def test_csv_parse_is_bounded_on_bad_rows(self):
+        data = "date,description\n" + "bad,x\n" * (services.MAX_CSV_ROWS * 3)
+        out = services.parse_holidays_csv(data.encode())
+        self.assertLessEqual(len(out.errors), services.MAX_CSV_ROWS * 2 + 1)
+        self.assertIn("Stopped at line", out.errors[-1])
+
+    def test_detail_timeline_marks_carried_sign_offs(self):
+        run = services.start_run(self.bod)
+        services.sign_off(run.results.get(name="BOD feed"), self.admin, "feed ok")
+        run2 = services.start_run(self.bod)
+        r = client_for(self.admin).get(reverse("bodeod:detail", args=[run2.pk]))
+        self.assertContains(r, "carried forward from an earlier run today")

@@ -1,7 +1,14 @@
 from django import forms
 
-from .models import ChecklistItem, Holiday, Mode
-from .services import MAX_CSV_BYTES, modes_qs
+from .models import GLOBAL_SITES, ChecklistItem, Holiday, Mode
+from .services import MAX_CSV_BYTES, modes_qs, user_can
+
+
+def site_names():
+    from django.conf import settings
+
+    from core.models import Site
+    return list(Site.objects.filter(tenant_key=settings.LINKEDEYE_TENANT).order_by("name").values_list("name", flat=True))
 
 
 class ModeForm(forms.ModelForm):
@@ -18,11 +25,26 @@ class ModeForm(forms.ModelForm):
         labels = {"window_start": "Window start (IST)", "window_end": "Window end (IST)",
                   "auto_run_time": "Auto-run at (IST)", "refresh_checks": "Re-run referenced checks before validating"}
 
-    def __init__(self, *args, tenant_key=None, **kwargs):
+    def __init__(self, *args, tenant_key=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.tenant_key = tenant_key
+        self.user = user
         if self.instance.pk:
             self.fields["code"].disabled = True
+        # the site must be a configured site (or "All Sites"), not free text
+        names = site_names()
+        current = self.instance.site if self.instance.pk else ""
+        if current and current not in names and current not in GLOBAL_SITES:
+            names.append(current)  # keep a legacy value selectable
+        self.fields["site"] = forms.ChoiceField(
+            choices=[("All Sites", "All Sites")] + [(n, n) for n in names], initial="All Sites",
+            label="Site", help_text=Mode._meta.get_field("site").help_text)
+
+    def clean_site(self):
+        site = self.cleaned_data.get("site") or "All Sites"
+        if self.user is not None and not user_can(self.user, "admin", site):
+            raise forms.ValidationError(f"You are not an administrator of {site}.")
+        return site
 
     def clean(self):
         data = super().clean()
