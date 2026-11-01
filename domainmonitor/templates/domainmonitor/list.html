@@ -52,7 +52,7 @@
           <td>{% if d.is_active %}<span class="badge ok">Active</span>{% else %}<span class="badge crit">Inactive</span>{% endif %}</td>
           <td><div class="row-actions">
             <a class="btn icon" href="?{{ query.urlencode }}&page={{ page.number }}&selected={{ d.pk }}" aria-label="View {{ d.hostname }}" title="View">{% icon "eye" 15 %}</a>
-            {% if can_operate %}<a class="btn icon blue" href="?edit={{ d.pk }}&selected={{ d.pk }}#domain-form" aria-label="Edit {{ d.hostname }}" title="Edit">{% icon "edit" 15 %}</a>
+            {% if d.can_op %}<a class="btn icon blue" href="?edit={{ d.pk }}&selected={{ d.pk }}#domain-form" aria-label="Edit {{ d.hostname }}" title="Edit">{% icon "edit" 15 %}</a>
             <form method="post" action="{% url 'domains:toggle' d.pk %}" data-confirm="{% if d.is_active %}Deactivate{% else %}Reactivate{% endif %} {{ d.hostname }}?">{% csrf_token %}<button class="btn icon red" aria-label="{% if d.is_active %}Deactivate{% else %}Reactivate{% endif %} {{ d.hostname }}" title="{% if d.is_active %}Deactivate{% else %}Reactivate{% endif %}">{% icon "trash" 15 %}</button></form>{% endif %}
           </div></td>
         </tr>
@@ -74,7 +74,7 @@
     {% endif %}
 
     {% if selected %}
-    <div class="panel dm-detail"><div class="panel-h"><h2>Domain Details</h2>{% if can_operate %}<div class="right"><a class="btn sm ghost-primary" href="?edit={{ selected.pk }}&selected={{ selected.pk }}#domain-form">{% icon "edit" 14 %}Edit</a></div>{% endif %}</div>
+    <div class="panel dm-detail"><div class="panel-h"><h2>Domain Details</h2>{% if selected.can_op %}<div class="right"><a class="btn sm ghost-primary" href="?edit={{ selected.pk }}&selected={{ selected.pk }}#domain-form">{% icon "edit" 14 %}Edit</a></div>{% endif %}</div>
       <div class="dm-ident">
         <div class="tile bg-info">{% icon "globe" 28 %}</div>
         <div><div class="dm-ident-name"><b>{{ selected.hostname }}</b> {% if selected.is_active %}{% badge "active" %}{% else %}{% badge "inactive" %}{% endif %}</div><div class="t-mute">{{ selected.domain_type }} Domain</div></div>
@@ -148,7 +148,7 @@
         {% empty %}<tr><td colspan="5" class="empty">Not checked yet.</td></tr>{% endfor %}</tbody></table></div>
       </div>
 
-      {% if can_operate %}
+      {% if selected.can_op %}
       <h3 class="dm-h3">Quick Actions</h3>
       <div class="dm-qa">
         <button class="btn sm ghost-primary" data-post="{% url 'domains:action' selected.pk 'dns' %}" data-target="qa-out" data-busy="Resolving…">{% icon "server" 15 %}Test DNS</button>

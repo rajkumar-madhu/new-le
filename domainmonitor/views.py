@@ -22,6 +22,7 @@ from core.audit import audit
 from probes import checks, runner
 from urlchecker.models import UrlCheck
 
+from . import analytics
 from .forms import DomainForm
 from .models import Domain, DomainCheck
 
@@ -36,6 +37,38 @@ SORTS = {"status": ("status", "hostname"), "-status": ("-status", "hostname"), "
 RESP_RANGES = {"6": ("Last 6 hours", 360, 15, 4, "%H:%M"), "24": ("Last 24 hours", 1440, 30, 8, "%H:%M"),
                "168": ("Last 7 days", 10080, 180, 8, "%b %d")}
 UP_RANGES = {"7": ("Last 7 days", 7, 1), "14": ("Last 14 days", 14, 2), "30": ("Last 30 days", 30, 5)}
+
+
+GLOBAL_SITES = ("", "All Sites")
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def can_operate_on(user, site_key):
+    """Operate permission for one domain's site. 'All Sites' domains need operate on any site (as Service Desk does);
+    a site domain needs operate on that site, so an operator of site A who only views site B cannot change B."""
+    return can(user, "operate", None if (site_key or "") in GLOBAL_SITES else site_key)
+
+
+def mark_operable(user, domains):
+    """Set d.can_op on each domain so templates show per-row actions only where the user may use them."""
+    for d in domains:
+        d.can_op = can_operate_on(user, d.site_key)
+    return domains
+
+
+def csv_safe(value):
+    """Neutralise spreadsheet formulas in exported text (header values come from remote servers)."""
+    if isinstance(value, str) and value.startswith(CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+class SafeCsvWriter:
+    def __init__(self, fh):
+        self._w = csv.writer(fh)
+
+    def writerow(self, row):
+        return self._w.writerow([csv_safe(v) for v in row])
 
 
 def _scope(request=None):
@@ -165,14 +198,7 @@ def overview(request):
     # uptime per day
     up_key = request.GET.get("up_range") if request.GET.get("up_range") in UP_RANGES else "7"
     up_label, ndays, up_every = UP_RANGES[up_key]
-    today = timezone.localdate()
-    per_day = defaultdict(lambda: [0, 0])
-    for at, up in DomainCheck.objects.filter(domain_id__in=ids, checked_at__date__gte=today - timedelta(days=ndays - 1)).values_list("checked_at", "up"):
-        p = per_day[timezone.localtime(at).date()]
-        p[0] += 1
-        p[1] += up
-    days = [today - timedelta(days=ndays - 1 - i) for i in range(ndays)]
-    up_series = [round(100 * per_day[d][1] / per_day[d][0], 2) if per_day[d][0] else None for d in days]
+    days, up_series, _per_domain = analytics.daily_availability(ids, ndays)   # counted in the database
     known = [v for v in up_series if v is not None]
     y_min = min(99.5, max(0.0, math.floor(2 * (min(known) - 0.5)) / 2)) if known else 95.0
     uptime_chart = {"labels": [d.strftime("%b %d") for d in days], "unit": "%", "yMin": y_min, "yMax": 100, "yTicks": 4,
@@ -201,6 +227,7 @@ def overview(request):
         qs = qs.order_by(*SORTS[sort])
     page = Paginator(qs, _per_page(request)).get_page(request.GET.get("page"))
     up7 = _uptime([d.pk for d in page], 24 * 7)
+    mark_operable(request.user, page)
     for d in page:
         d.uptime7 = up7.get(d.pk)
     resp_vals = [d.response_ms for d in domains if d.response_ms is not None]
@@ -255,16 +282,29 @@ def domain_list(request):
             page_no = ids.index(selected.pk) // paginator.per_page + 1
     page = paginator.get_page(page_no)
     selected = selected or (page.object_list[0] if page.object_list else None)
+    mark_operable(request.user, page)
+    if selected:
+        mark_operable(request.user, [selected])
 
     editing = None
     if request.GET.get("edit"):
         editing = get_object_or_404(scope, pk=edit_pk or 0)
+        if not can_operate_on(request.user, editing.site_key):
+            editing = None
     if request.method == "POST":
         if not can(request.user, "operate"):
             messages.error(request, "Only operators can add or change domains.")
             return redirect("domains:list")
-        editing = scope.filter(pk=request.POST.get("pk")).first() if request.POST.get("pk") else None
+        editing = None
+        if request.POST.get("pk"):
+            # an unknown or out-of-scope pk must not silently turn the edit into a new domain
+            editing = get_object_or_404(scope, pk=_int(request.POST.get("pk")) or 0)
+            if not can_operate_on(request.user, editing.site_key):
+                messages.error(request, f"You can only view domains of {editing.site_key}.")
+                return redirect(f"{request.path}?selected={editing.pk}")
         form = DomainForm(request.POST, instance=editing)
+        if form.is_valid() and not can_operate_on(request.user, form.cleaned_data["site_key"]):
+            form.add_error("site_key", "You do not have operator rights on this site.")
         if form.is_valid():
             obj = form.save(commit=False)
             obj.tenant_key = settings.LINKEDEYE_TENANT
@@ -369,7 +409,7 @@ def export_csv(request):
     up7 = _uptime(list(qs.values_list("pk", flat=True)), 24 * 7)
     resp = HttpResponse(content_type="text/csv")
     resp["Content-Disposition"] = 'attachment; filename="domains.csv"'
-    w = csv.writer(resp)
+    w = SafeCsvWriter(resp)
     w.writerow(["hostname", "type", "site", "group", "active", "status", "ip_address", "response_ms", "uptime_7d",
                 "dns_status", "ssl_status", "ssl_expires_at", "last_checked_at", "description"])
     for d in qs:
@@ -385,6 +425,9 @@ def export_csv(request):
 @require("operate")
 def deactivate(request, pk):
     d = get_object_or_404(_scope(request), pk=pk)
+    if not can_operate_on(request.user, d.site_key):
+        messages.error(request, f"You do not have operator rights on {d.site_key}.")
+        return redirect(f"/domains/list/?selected={d.pk}")
     d.is_active = not d.is_active
     d.save(update_fields=["is_active", "updated_at"])
     audit(request, "update", d, is_active=d.is_active)
@@ -397,6 +440,8 @@ def deactivate(request, pk):
 @require("operate")
 def action(request, pk, kind):
     d = get_object_or_404(_scope(request), pk=pk)
+    if not can_operate_on(request.user, d.site_key):
+        return JsonResponse({"error": f"'operate' permission required on {d.site_key}"}, status=403)
     if kind in ("dns", "ssl", "uptime"):
         audit(request, "run", d, check=kind)
     if kind == "dns":
@@ -422,7 +467,8 @@ def action(request, pk, kind):
 @require_POST
 @require("operate")
 def run_all(request):
-    items = list(_scope(request).filter(is_active=True, monitor_enabled=True))
+    items = [d for d in _scope(request).filter(is_active=True, monitor_enabled=True)
+             if can_operate_on(request.user, d.site_key)]
     runner.run_domain_checks(items)
     audit(request, "run", None, object_type="domainmonitor.domain", check="all", count=len(items))
     return JsonResponse({"checked": len(items), "summary": f"Checked {len(items)} domain(s)"})
@@ -465,6 +511,7 @@ def api_domains(request):
                      description=str(data.get("description", ""))[:5000])
         obj.full_clean()
         obj.save()
+        audit(request, "create", obj, via="api", hostname=obj.hostname, site=obj.site_key, tenant=obj.tenant_key)
         return JsonResponse({"id": obj.pk, "status": "created"}, status=201)
     except (KeyError, ValueError, TypeError, json.JSONDecodeError, ValidationError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -483,6 +530,7 @@ def api_detail(request, pk):
     if request.method == "DELETE":
         obj.is_active = False  # non-destructive deactivation
         obj.save(update_fields=["is_active", "updated_at"])
+        audit(request, "update", obj, via="api", is_active=False)
         return JsonResponse({"status": "deactivated"})
     try:
         data = json.loads(request.body)
@@ -492,6 +540,7 @@ def api_detail(request, pk):
                 setattr(obj, field, data[key])
         obj.full_clean()
         obj.save()
+        audit(request, "update", obj, via="api", fields=sorted(k for k in allowed if k in data))
         return JsonResponse({"status": "updated"})
     except (ValueError, TypeError, ValidationError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)

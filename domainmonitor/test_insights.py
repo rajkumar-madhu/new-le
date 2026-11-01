@@ -67,7 +67,12 @@ class PageRenderTests(InsightBase):
                     f"/domains/security/?selected={self.b.pk}", "/domains/export/?active=all&ssl=Valid",
                     "/domains/export/?site=DR%20Site&type=Production"):
             self.assertEqual(self.client.get(url).status_code, 200, url)
-        self.assertEqual(self.client.get(f"/domains/security/?selected={self.other.pk}").status_code, 404)
+        # another tenant's (or an unknown) domain is never shown; the stale/forged ?selected= is ignored
+        for pk in (self.other.pk, 999999):
+            r = self.client.get(f"/domains/security/?selected={pk}")
+            self.assertEqual(r.status_code, 200)
+            self.assertNotContains(r, "tenant.example.com")
+            self.assertNotContains(r, 'id="scan-detail"')
 
     def test_empty_database(self):
         Domain.objects.all().delete()

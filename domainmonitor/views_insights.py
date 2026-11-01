@@ -2,7 +2,6 @@
 
 All numbers come from stored DomainCheck / DomainSecurityScan rows; windows without data show "–".
 """
-import csv
 import json
 import math
 from collections import Counter
@@ -23,7 +22,7 @@ from core.audit import audit
 
 from . import analytics, security
 from .models import GRADES, DOMAIN_TYPES
-from .views import SSL_STATES, _filter, _per_page, _query, _render, _scope
+from .views import SSL_STATES, SafeCsvWriter, _filter, _per_page, _query, _render, _scope, can_operate_on, mark_operable
 
 UPTIME_DAYS = {"7": ("Last 7 days", 1), "14": ("Last 14 days", 2), "30": ("Last 30 days", 5)}
 # window key -> (label, span, bucket, label every n buckets, label format)
@@ -43,7 +42,7 @@ MAX_MANUAL_SCANS = 100
 def _csv_response(filename):
     resp = HttpResponse(content_type="text/csv")
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-    return resp, csv.writer(resp)
+    return resp, SafeCsvWriter(resp)
 
 
 def _fmt_pct(v):
@@ -312,7 +311,9 @@ def security_page(request):
     if sel and sel.isdigit():
         selected = next((d for d in domains if d.pk == int(sel)), None)
         if selected is None:
-            selected = _attach_scans([get_object_or_404(scope, pk=int(sel))])[0]
+            # outside the current filter: still show it when visible; an unknown or out-of-scope pk is ignored
+            found = scope.filter(pk=int(sel)).first()
+            selected = _attach_scans([found])[0] if found else None
     detail = {}
     if selected:
         history = list(selected.security_scans.all()[:10])
@@ -320,6 +321,7 @@ def security_page(request):
         detail = {"history": history, "failed_findings": [f for f in fs if not f.get("passed")],
                   "passed_findings": [f for f in fs if f.get("passed")]}
     page = Paginator(shown, _per_page(request)).get_page(request.GET.get("page"))
+    mark_operable(request.user, list(page) + ([selected] if selected else []))
     legend = [{"label": f"Grade {g}", "grade": g, "color": GRADE_COLORS[g], "n": counts.get(g, 0)} for g in GRADES]
     if unscanned:
         legend.append({"label": "Not scanned", "grade": "none", "color": "#cbd5e1", "n": unscanned})
@@ -353,6 +355,9 @@ def security_page(request):
 @require("operate")
 def security_scan(request, pk):
     d = get_object_or_404(_scope(request).filter(is_active=True), pk=pk)
+    if not can_operate_on(request.user, d.site_key):
+        messages.error(request, f"You do not have operator rights on {d.site_key}.")
+        return redirect(f"{reverse('domains:security')}?selected={d.pk}#scan-detail")
     scan = security.run_scans([d])[0]
     audit(request, "run", d, check="security_scan", grade=scan.grade, score=scan.score, error=scan.error)
     if scan.grade:
@@ -365,7 +370,8 @@ def security_scan(request, pk):
 @require_POST
 @require("operate")
 def security_scan_all(request):
-    domains = list(_scope(request).filter(is_active=True, monitor_enabled=True)[:MAX_MANUAL_SCANS])
+    domains = [d for d in _scope(request).filter(is_active=True, monitor_enabled=True)
+               if can_operate_on(request.user, d.site_key)][:MAX_MANUAL_SCANS]
     scans = security.run_scans(domains)
     graded = sum(1 for s in scans if s.grade)
     audit(request, "run", None, object_type="domainmonitor.domainsecurityscan", check="security_scan_all",

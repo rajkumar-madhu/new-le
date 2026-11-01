@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 from urllib.parse import urljoin, urlsplit
 
 from django.conf import settings
-from django.db.models import OuterRef, Subquery
+from django.db.models import F, OuterRef, Subquery
 from django.utils import timezone
 
 from probes import checks
@@ -358,7 +358,7 @@ def due_domains(now=None, limit=MAX_PER_RUN):
     now = now or timezone.now()
     last = DomainSecurityScan.objects.filter(domain=OuterRef("pk")).order_by("-scanned_at").values("scanned_at")[:1]
     qs = (Domain.objects.filter(tenant_key=settings.LINKEDEYE_TENANT, is_active=True, monitor_enabled=True)
-          .annotate(last_scan=Subquery(last)).order_by("last_scan", "hostname"))
+          .annotate(last_scan=Subquery(last)).order_by(F("last_scan").asc(nulls_first=True), "hostname"))
     due = [d for d in qs if d.last_scan is None or now - d.last_scan >= SCAN_EVERY]
     return due[:limit]
 

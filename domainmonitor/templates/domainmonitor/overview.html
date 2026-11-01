@@ -67,13 +67,13 @@
         <td>{% if d.last_checked_at %}{{ d.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</td>
         <td class="dm-act"><div class="row-actions">
           <a class="btn icon blue" href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=history" aria-label="Details and history for {{ d.hostname }}" title="Details and history">{% icon "analytics" 15 %}</a>
-          {% if can_operate %}<a class="btn icon" href="{% url 'domains:list' %}?edit={{ d.pk }}&selected={{ d.pk }}#domain-form" aria-label="Edit {{ d.hostname }}" title="Edit">{% icon "edit" 14 %}</a>{% endif %}
+          {% if d.can_op %}<a class="btn icon" href="{% url 'domains:list' %}?edit={{ d.pk }}&selected={{ d.pk }}#domain-form" aria-label="Edit {{ d.hostname }}" title="Edit">{% icon "edit" 14 %}</a>{% endif %}
           <details class="dm-dd dm-row-dd"><summary class="btn icon" aria-label="More actions for {{ d.hostname }}" title="More">{% icon "more" 16 %}</summary>
             <div class="dm-menu">
               <a href="{% url 'domains:list' %}?selected={{ d.pk }}">{% icon "eye" 15 %}View details</a>
               <a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=dns">{% icon "server" 15 %}DNS records</a>
               <a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=ssl">{% icon "lock" 15 %}SSL certificate</a>
-              {% if can_operate %}<button type="button" data-post="{% url 'domains:action' d.pk 'uptime' %}" data-busy="Checking…">{% icon "play" 15 %}Check now</button>{% endif %}
+              {% if d.can_op %}<button type="button" data-post="{% url 'domains:action' d.pk 'uptime' %}" data-busy="Checking…">{% icon "play" 15 %}Check now</button>{% endif %}
             </div></details>
         </div></td>
       </tr>

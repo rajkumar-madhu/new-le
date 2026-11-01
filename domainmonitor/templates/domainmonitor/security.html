@@ -28,7 +28,7 @@
     <div class="dm-scan-id"><b>{{ selected.hostname }}</b>
       <span class="t-mute">{% if selected.scan %}{% if selected.scan.score is not None %}Score {{ selected.scan.score }}/100 · {% endif %}scanned {{ selected.scan.scanned_at|date:"j M Y H:i" }} ({{ selected.scan.scanned_at|ago }}){% else %}Not scanned yet{% endif %}</span></div>
     <div class="dm-scan-act">
-      {% if can_operate %}<form method="post" action="{% url 'domains:security_scan' selected.pk %}">{% csrf_token %}<button class="btn primary sm" type="submit">{% icon "radar" 15 %}Scan now</button></form>{% endif %}
+      {% if selected.can_op %}<form method="post" action="{% url 'domains:security_scan' selected.pk %}">{% csrf_token %}<button class="btn primary sm" type="submit">{% icon "radar" 15 %}Scan now</button></form>{% endif %}
       <a class="btn sm" href="?{{ query.urlencode }}#domains" aria-label="Close details">{% icon "x" 15 %}Close</a>
     </div>
   </div>
@@ -119,7 +119,7 @@
         <td>{% if d.scan %}<span title="{{ d.scan.scanned_at|date:'j M Y H:i' }}">{{ d.scan.scanned_at|ago }}</span>{% else %}<span class="t-mute">Never</span>{% endif %}</td>
         <td class="dm-act"><div class="row-actions">
           <a class="btn icon blue" href="?{{ query.urlencode }}&selected={{ d.pk }}#scan-detail" aria-label="Findings for {{ d.hostname }}" title="Findings and recommendations">{% icon "eye" 15 %}</a>
-          {% if can_operate %}<form method="post" action="{% url 'domains:security_scan' d.pk %}">{% csrf_token %}<button class="btn icon" type="submit" aria-label="Scan {{ d.hostname }} now" title="Scan now">{% icon "radar" 15 %}</button></form>{% endif %}
+          {% if d.can_op %}<form method="post" action="{% url 'domains:security_scan' d.pk %}">{% csrf_token %}<button class="btn icon" type="submit" aria-label="Scan {{ d.hostname }} now" title="Scan now">{% icon "radar" 15 %}</button></form>{% endif %}
         </div></td>
       </tr>
     {% empty %}<tr><td colspan="14" class="empty">{% if request.GET.q or request.GET.site or request.GET.type or grade %}No domains match these filters.{% else %}No active domains yet.{% endif %}</td></tr>{% endfor %}
