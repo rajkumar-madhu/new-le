@@ -16,7 +16,7 @@
     {% empty %}<tr><td colspan="6" class="empty">Everything that is monitored is healthy.</td></tr>{% endfor %}</tbody></table></div></div>
   <div class="panel"><div class="panel-h"><h2>Recent events</h2>{% if events %}<div class="right"><a class="view-all" href="{% url 'observe:events' %}">All events</a></div>{% endif %}</div>
     <div class="table-wrap"><table><tbody>
-    {% for e in events %}<tr><td>{{ e.occurred_at|short_dt }}</td><td>{% badge e.severity %}</td><td><span class="t-mute small">{{ e.source }}</span><br>{{ e.title|truncatechars:70 }}</td></tr>
+    {% for e in events %}<tr><td class="ev-sev">{% badge e.severity %}</td><td class="wrap ev"><span class="t-mute small">{{ e.source }} · {{ e.occurred_at|short_dt }}</span><br>{{ e.title|truncatechars:70 }}</td></tr>
     {% empty %}<tr><td class="empty">No warnings or failures recorded yet.</td></tr>{% endfor %}</tbody></table></div></div>
 </section>
 {% endblock %}

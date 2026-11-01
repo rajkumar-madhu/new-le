@@ -127,6 +127,15 @@ class OverviewTests(TestCase):
         self.assertNotContains(resp, "dr-fw-01")
         self.assertContains(resp, "Devices up")
 
+    def test_recent_events_render_in_one_wrapping_cell(self):
+        # The events panel is a narrow column: the time sits on the source line and the title cell may wrap,
+        # instead of three nowrap cells that were clipped by the table's scroll box.
+        emit("bodeod", "BOD validation completed with warnings", severity="warning", site="Mumbai")
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("dashboard"))
+        self.assertContains(resp, '<td class="wrap ev"><span class="t-mute small">bodeod · ')
+        self.assertContains(resp, "BOD validation completed with warnings</td>")
+
     def test_search_covers_devices_and_respects_sites(self):
         self.client.force_login(self.viewer)
         resp = self.client.get(reverse("search"), {"q": "SN-777"})

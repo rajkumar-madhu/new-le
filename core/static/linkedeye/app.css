@@ -150,6 +150,9 @@ td { padding: 8px 10px; border-top: 1px solid var(--line-soft); white-space: now
 tr.sel td { background: var(--primary-soft); }
 td.num, th.num { text-align: right; }
 td.wrap { white-space: normal; min-width: 160px; }
+/* dashboard "Recent events": badge + one text cell, so the title gets the width of the narrow column */
+td.ev-sev { width: 1%; vertical-align: top; padding-right: 4px; }
+td.wrap.ev { min-width: 0; overflow-wrap: anywhere; }
 td a { font-weight: 500; }
 .row-actions { display: flex; gap: 4px; }
 .cell-link { max-width: 200px; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
