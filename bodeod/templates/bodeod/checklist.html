@@ -1,0 +1,104 @@
+{% extends "core/base.html" %}{% load le bodeod_tags static %}
+{% block title %}BOD / EOD Checklist{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'bodeod/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'bodeod:keys' as keys_url %}{% include "bodeod/_crumbs.html" with parent="Key Validation" parent_url=keys_url here="Checklist" %}{% endblock %}
+{% block content %}
+<div class="pg-bodeod">
+<div class="head">
+  <div class="glyph">{% icon "clipboard" 44 %}</div>
+  <div><h1>Checklist</h1><p>Modes, market windows and the ordered items each run validates</p></div>
+  <div class="actions">
+    {% if can_add_mode %}<a class="btn" href="?mode_new=1#mode-form">{% icon "plus" 17 %}Add mode</a>{% endif %}
+    {% if can_admin and sections %}<a class="btn primary" href="?new=1#item-form">{% icon "plus" 17 %}Add item</a>{% endif %}
+  </div>
+</div>
+{% include "bodeod/_tabs.html" with tab="checklist" %}
+{% if not can_admin %}<p class="bod-note">{% icon "lock" 15 %}Read-only: only administrators can change modes and checklist items.</p>{% endif %}
+
+<section class="grid g-main">
+  <div class="stack">
+  {% for s in sections %}
+    <div class="panel{% if not s.mode.enabled %} is-disabled{% endif %}" id="mode-{{ s.mode.code }}">
+      <div class="panel-h"><span class="bod-code">{{ s.mode.code }}</span><h2>{{ s.mode.name }}</h2>{% if not s.mode.enabled %}<span class="chip mute">Disabled</span>{% endif %}
+        <div class="right">{% if can_admin %}<a class="btn sm" href="?mode_edit={{ s.mode.pk }}#mode-form">{% icon "settings" 14 %}Mode settings</a>
+          <a class="btn sm ghost-primary" href="?mode={{ s.mode.code }}&amp;new=1#item-form">{% icon "plus" 14 %}Item</a>{% endif %}</div></div>
+      <dl class="bod-modeinfo">
+        <div><dt>Window</dt><dd>{{ s.mode.window_label }}</dd></div>
+        <div><dt>Auto-run</dt><dd>{% if s.mode.auto_run_time %}{{ s.mode.auto_run_time|time:"H:i" }} IST on trading days{% else %}Manual only{% endif %}</dd></div>
+        <div><dt>Re-run checks</dt><dd>{% if s.mode.refresh_checks %}Yes{% else %}No{% endif %}</dd></div>
+        <div><dt>Site</dt><dd>{{ s.mode.site }}</dd></div>
+      </dl>
+      {% if s.mode.description %}<p class="t-mute bod-desc">{{ s.mode.description }}</p>{% endif %}
+      <div class="table-wrap dense"><table>
+        <thead><tr><th>Order</th><th>Item</th><th>Reference</th><th>Live</th>{% if can_admin %}<th>Actions</th>{% endif %}</tr></thead>
+        <tbody>{% for r in s.rows %}
+          <tr class="{% if not r.item.enabled %}is-off{% endif %}{% if editing and editing.pk == r.item.pk %} sel{% endif %}">
+            <td>{{ r.item.order }}</td>
+            <td class="wrap"><b>{{ r.name }}</b>{% if r.critical %} <span class="chip crit" title="A critical result fails the run">critical</span>{% endif %}{% if not r.item.enabled %} <span class="chip mute">disabled</span>{% endif %}{% if r.item.instructions %}<div class="bod-instr" title="{{ r.item.instructions }}">{{ r.item.instructions|truncatechars:90 }}</div>{% endif %}</td>
+            <td class="bod-ref"><small>{{ r.get_kind_display }}</small>{% if r.kind == "manual" %}<span class="t-mute">operator sign-off</span>{% elif r.link %}<a href="{{ r.link }}" title="{{ r.ref_name }}">{{ r.ref_name }}</a>{% else %}<span title="{{ r.ref_name }}">{{ r.ref_name|default:"–" }}</span> <span class="chip warn" title="{{ r.detail }}">missing</span>{% endif %}</td>
+                        <td title="{{ r.detail }}">{% code r.status %}</td>
+            {% if can_admin %}<td><div class="row-actions">
+              <form method="post" action="{% url 'bodeod:item_move' r.item.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="up"><button class="btn icon" type="submit" title="Move up" aria-label="Move {{ r.name }} up"{% if forloop.first %} disabled{% endif %}>{% icon "arrow-up" 14 %}</button></form>
+              <form method="post" action="{% url 'bodeod:item_move' r.item.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="down"><button class="btn icon" type="submit" title="Move down" aria-label="Move {{ r.name }} down"{% if forloop.last %} disabled{% endif %}>{% icon "arrow-down" 14 %}</button></form>
+              <a class="btn icon blue" href="?edit={{ r.item.pk }}#item-form" title="Edit" aria-label="Edit {{ r.name }}">{% icon "edit" 14 %}</a>
+              <form method="post" action="{% url 'bodeod:item_delete' r.item.pk %}" data-confirm="Delete the checklist item “{{ r.name }}”? Past run results keep their copy.">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ r.name }}">{% icon "trash" 14 %}</button></form>
+            </div></td>{% endif %}
+          </tr>
+        {% empty %}<tr><td colspan="5" class="empty">No items yet.{% if can_admin %} <a href="?mode={{ s.mode.code }}&amp;new=1#item-form">Add the first item</a>.{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+    </div>
+  {% empty %}
+    <div class="panel"><div class="bod-empty big">{% icon "clipboard" 32 %}<p><b>No modes yet.</b></p><p>{% if can_admin %}<a href="?mode_new=1#mode-form">Add the BOD mode</a> to start building the checklist, or run <code>manage.py seed_bodeod</code> for examples.{% else %}Ask an administrator to configure the modes.{% endif %}</p></div></div>
+  {% endfor %}
+  </div>
+
+  <div class="stack">
+    {% if can_admin and mode_form %}
+    <div class="panel" id="mode-form">
+      <div class="panel-h"><h2>{% if mode_edit %}{{ mode_edit.code }} mode settings{% else %}Add mode{% endif %}</h2><div class="right"><a href="{% url 'bodeod:checklist' %}">Cancel</a></div></div>
+      <form method="post" action="{% url 'bodeod:mode_save' %}">{% csrf_token %}{% if mode_edit %}<input type="hidden" name="pk" value="{{ mode_edit.pk }}">{% endif %}
+        {% for e in mode_form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+        <div class="form-grid">
+          {% for f in mode_form %}{% if f.name != "refresh_checks" and f.name != "enabled" %}
+          <div class="field{% if f.name == 'description' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% if f.help_text and f.name == "auto_run_time" %}<span class="hint">{{ f.help_text }}</span>{% endif %}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+          {% endif %}{% endfor %}
+          <label class="inline-check field full"><span class="switch">{{ mode_form.refresh_checks }}<span></span></span>{{ mode_form.refresh_checks.label }}</label>
+          <label class="inline-check field full"><span class="switch">{{ mode_form.enabled }}<span></span></span>Enabled</label>
+          <div class="field full bod-form-foot"><button class="btn primary sm" type="submit">Save mode</button></div>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if can_admin and sections %}
+    <div class="panel" id="item-form">
+      <div class="panel-h"><h2>{% if editing %}Edit “{{ editing.name }}”{% else %}Add checklist item{% endif %}</h2>{% if editing %}<div class="right"><a href="{% url 'bodeod:checklist' %}">Cancel</a></div>{% endif %}</div>
+      <form method="post" action="{% url 'bodeod:checklist' %}">{% csrf_token %}{% if editing %}<input type="hidden" name="pk" value="{{ editing.pk }}">{% endif %}
+        {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+        <div class="form-grid">
+          {% for f in form %}{% if f.name != "critical" and f.name != "enabled" %}
+          <div class="field{% if f.name == 'instructions' or f.name == 'ref_name' or f.name == 'name' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}{% if f.name == "ref_name" %}<span class="hint">URL check or TCP check name, or the domain hostname. Leave empty for manual items.</span>{% endif %}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+          {% endif %}{% endfor %}
+          <label class="inline-check field full"><span class="switch">{{ form.critical }}<span></span></span>{{ form.critical.label }}</label>
+          <label class="inline-check field full"><span class="switch">{{ form.enabled }}<span></span></span>Enabled</label>
+          <div class="field full bod-form-foot"><button class="btn primary sm" type="submit">{% if editing %}Save changes{% else %}Add item{% endif %}</button></div>
+        </div>
+        <datalist id="bod-refs">{% for kind, names in refs.items %}{% for n in names %}<option value="{{ n }}">{% endfor %}{% endfor %}</datalist>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <div class="panel-h"><h2>How items are validated</h2></div>
+      <ul class="bod-help">
+        <li><b>URL check</b> – the URL Checker check with this name: Online → {% code "ok" %}, Degraded → {% code "warning" %}, Down → {% code "critical" %}.</li>
+        <li><b>TCP check</b> – the Telnet / TCP check with this name, mapped the same way.</li>
+        <li><b>Domain</b> – the Domain Monitor hostname: up → OK, SSL expiring → WARN, down / DNS failed / SSL expired → CRIT.</li>
+        <li><b>Manual</b> – starts {% code "pending" %} and needs an operator sign-off with a note.</li>
+        <li>A missing or never-checked reference is {% code "unknown" %}. The run <b>fails</b> when a critical item is critical and <b>warns</b> on any warning, unknown or pending item.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

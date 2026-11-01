@@ -1,0 +1,1 @@
+{% load le %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'bodeod:status' %}">BOD / EOD</a>{% icon "chevron-right" 14 %}{% if parent %}<a href="{{ parent_url }}">{{ parent }}</a>{% icon "chevron-right" 14 %}{% endif %}<span>{{ here }}</span></nav>

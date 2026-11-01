@@ -1,0 +1,14 @@
+{% load le bodeod_tags %}<section class="bod-banner {% if banner.trading %}is-open{% else %}is-closed{% endif %}" aria-label="Trading day">
+  <div class="bb-ic">{% if banner.trading %}{% icon "sun" 26 %}{% else %}{% icon "calendar" 26 %}{% endif %}</div>
+  <div class="bb-main">
+    <div class="bb-title">{{ banner.now|ist:"%A, %d %b %Y · %H:%M IST" }}
+      {% if banner.trading %}<span class="chip ok">Trading day</span>{% elif banner.weekend %}<span class="chip mute">Weekend</span>{% else %}<span class="chip warn">Market holiday</span>{% endif %}
+      {% if banner.trading %}<span class="chip {% if banner.phase.key == 'closed' %}mute{% elif banner.phase.key == 'trading' %}ok{% else %}teal{% endif %}">{{ banner.phase.label }}</span>{% endif %}
+    </div>
+    <div class="bb-sub">{% if banner.trading %}NSE is open today. BOD and EOD runs start automatically at their auto-run times.{% else %}No automatic runs today — {{ banner.reason }}.{% if banner.next_trading %} Next trading day: <b>{{ banner.next_trading|date:"D d M Y" }}</b>.{% endif %}{% endif %}
+      {% for h in banner.holidays %}{% if h.exchange != 'ALL' and h.exchange != 'NSE' %} {{ h.exchange }} closed: {{ h.description }}.{% endif %}{% endfor %}</div>
+  </div>
+  <ol class="bb-phases" aria-label="Market hours (IST)">
+    {% for key, label, start, end in phases %}<li class="{% if banner.trading and banner.phase.key == key %}on{% endif %} ph-{{ key }}"><b>{{ label }}</b><span>{{ start|time:"H:i" }}–{{ end|time:"H:i" }}</span></li>{% endfor %}
+  </ol>
+</section>

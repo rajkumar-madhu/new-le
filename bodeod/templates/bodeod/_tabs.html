@@ -1,0 +1,7 @@
+{% load le %}<nav class="tabs bod-tabs" aria-label="BOD / EOD sections">
+  <a href="{% url 'bodeod:status' %}" class="{% if tab == 'status' %}on{% endif %}">{% icon "gauge" 16 %}Status Dashboard</a>
+  <a href="{% url 'bodeod:keys' %}" class="{% if tab == 'keys' %}on{% endif %}">{% icon "key" 16 %}Key Validation</a>
+  <a href="{% url 'bodeod:history' %}" class="{% if tab == 'history' %}on{% endif %}">{% icon "clock" 16 %}Execution History</a>
+  <a href="{% url 'bodeod:checklist' %}" class="{% if tab == 'checklist' %}on{% endif %}">{% icon "clipboard" 16 %}Checklist</a>
+  <a href="{% url 'bodeod:holidays' %}" class="{% if tab == 'holidays' %}on{% endif %}">{% icon "calendar-range" 16 %}Holidays</a>
+</nav>

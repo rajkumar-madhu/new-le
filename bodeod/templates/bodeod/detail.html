@@ -1,0 +1,77 @@
+{% extends "core/base.html" %}{% load le bodeod_tags static %}
+{% block title %}{{ run.mode.code }} Run #{{ run.pk }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'bodeod/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'bodeod:history' as hist_url %}{% include "bodeod/_crumbs.html" with parent="Execution History" parent_url=hist_url here=crumb %}{% endblock %}
+{% block content %}
+<div class="pg-bodeod">
+<div class="head">
+  <div class="glyph bod-glyph tone-{{ run_tone }}"><span class="bod-code lg">{{ run.mode.code }}</span></div>
+  <div><h1>{{ run.mode.name }} · Run #{{ run.pk }} {% run_badge run.status %}</h1>
+    <p>Trading date {{ run.trading_date|date:"l, d M Y" }}{% if not trading.0 %} <span class="chip warn">{{ trading.1 }}</span>{% endif %} · {{ run.summary|default:"Running…" }}</p></div>
+  <div class="actions">
+    {% if is_open and can_run %}
+    <form method="post" action="{% url 'bodeod:revalidate' run.pk %}" data-busy-form>{% csrf_token %}<input type="hidden" name="refresh" value="1">
+      <button class="btn" type="submit" data-busy="Re-validating…" title="Re-run the referenced checks and update this run (sign-offs are kept)">{% icon "refresh" 17 %}Re-validate</button></form>
+    {% endif %}
+    {% if can_run and run.mode.enabled %}
+    <form method="post" action="{% url 'bodeod:run' run.mode.pk %}" data-busy-form>{% csrf_token %}
+      <button class="btn primary" type="submit" data-busy="Running…">{% icon "play" 17 %}New {{ run.mode.code }} run</button></form>
+    {% endif %}
+  </div>
+</div>
+{% include "bodeod/_tabs.html" with tab="history" %}
+
+<section class="panel">
+      <div class="panel-h"><h2>Item Results ({{ counts.total }})</h2>
+        <div class="right bod-counts">
+          <span class="bc bc-ok"><b>{{ counts.done }}</b>OK</span><span class="bc bc-warn"><b>{{ counts.warning }}</b>WARN</span>
+          <span class="bc bc-crit"><b>{{ counts.critical }}</b>CRIT</span><span class="bc bc-mute"><b>{{ counts.unknown }}</b>UNKNOWN</span>
+          <span class="bc bc-info"><b>{{ counts.pending }}</b>PENDING</span></div></div>
+      {% if not is_open and counts.pending %}<p class="bod-note">{% icon "info" 15 %}This run is closed for sign-offs (only the latest run for today's trading date accepts them).</p>{% endif %}
+      <div class="table-wrap dense"><table class="bod-results">
+        <thead><tr><th>#</th><th>Item</th><th>Status</th><th>Reference</th><th>Detail</th><th>Checked / signed off</th></tr></thead>
+        <tbody>{% for r in results %}
+          <tr class="row-{{ r.tone }}">
+            <td>{{ forloop.counter }}</td>
+            <td class="wrap"><b>{{ r.name }}</b>{% if r.critical %} <span class="chip crit">critical</span>{% endif %}
+              {% if r.instructions and r.kind == "manual" %}<div class="bod-instr">{{ r.instructions|linebreaksbr }}</div>{% endif %}</td>
+            <td>{% code r.status %}</td>
+            <td class="bod-ref"><small>{{ r.get_kind_display }}</small>{% if r.kind == "manual" %}<span class="t-mute">operator sign-off</span>{% elif r.link %}<a href="{{ r.link }}">{{ r.ref_name }}</a>{% else %}<span>{{ r.ref_name|default:"–" }}</span>{% endif %}</td>
+            <td class="wrap bod-detail">{{ r.detail|default:"–" }}{% if r.note %}<div class="bod-instr">Note: “{{ r.note }}”</div>{% endif %}</td>
+            <td class="wrap">{% if r.signed_off_at %}<span class="bod-signed">{% icon "check" 14 %}{{ r.signed_off_by_name }}</span><div class="t-mute">{{ r.signed_off_at|ist:"%d %b %H:%M:%S" }}</div>
+              {% elif r.kind == "manual" and r.status == "pending" and is_open and can_run %}
+              <form method="post" action="{% url 'bodeod:signoff' r.pk %}" class="bod-signoff">{% csrf_token %}
+                <input type="text" name="note" required maxlength="500" placeholder="What did you verify?" aria-label="Sign-off note for {{ r.name }}">
+                <button class="btn sm primary" type="submit">{% icon "check" 14 %}Sign off</button></form>
+              {% else %}{{ r.checked_at|ist:"%H:%M:%S" }}{% endif %}</td>
+          </tr>
+        {% empty %}<tr><td colspan="6" class="empty">This run has no items.</td></tr>{% endfor %}
+        </tbody></table></div>
+</section>
+
+<section class="grid g-2 bod-detail-grid">
+    <div class="panel">
+      <div class="panel-h"><h2>Run Details</h2></div>
+      <dl class="kv">
+        <dt>Mode</dt><dd>{{ run.mode.code }} – {{ run.mode.name }}</dd>
+        <dt>Window</dt><dd>{{ run.mode.window_label }}</dd>
+        <dt>Trading date</dt><dd>{{ run.trading_date|date:"D d M Y" }}</dd>
+        <dt>Started</dt><dd>{{ run.started_at|ist:"%d %b %Y %H:%M:%S IST" }}</dd>
+        <dt>Finished</dt><dd>{{ run.finished_at|ist:"%d %b %Y %H:%M:%S IST" }}</dd>
+        <dt>Duration</dt><dd>{{ duration }}</dd>
+        <dt>Triggered by</dt><dd>{% if run.trigger == "scheduler" %}<span class="chip purple">scheduler</span>{% else %}{{ run.by_label }}{% endif %}</dd>
+        <dt>Checks re-run</dt><dd>{% if run.refreshed %}Yes, before validating{% else %}No, stored results used{% endif %}</dd>
+        <dt>Status</dt><dd>{% run_badge run.status %}</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Timeline</h2></div>
+      <ol class="bod-timeline">
+        {% for t in timeline %}<li class="tl-{{ t.tone }}"><span class="tl-dot">{% icon t.icon 13 %}</span><div><time>{{ t.at|ist:"%H:%M:%S" }}</time><p>{{ t.text }}</p></div></li>
+        {% empty %}<li class="t-mute">Nothing recorded yet.</li>{% endfor %}
+      </ol>
+    </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'bodeod/bodeod.js' %}"></script>{% endblock %}

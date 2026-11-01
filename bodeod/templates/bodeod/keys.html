@@ -1,0 +1,73 @@
+{% extends "core/base.html" %}{% load le bodeod_tags static %}
+{% block title %}Key Validation{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'bodeod/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "bodeod/_crumbs.html" with here="Key Validation" %}{% endblock %}
+{% block content %}
+<div class="pg-bodeod">
+<div class="head">
+  <div class="glyph">{% icon "key" 44 %}</div>
+  <div><h1>Key Validation</h1><p>Current state of every checklist item, with operator sign-offs for manual checks</p></div>
+  <div class="actions">
+    {% if can_admin %}<a class="btn" href="{% url 'bodeod:checklist' %}">{% icon "edit" 17 %}Edit checklist</a>{% else %}<a class="btn" href="{% url 'bodeod:checklist' %}">{% icon "clipboard" 17 %}View checklist</a>{% endif %}
+    <a class="btn" href="{% url 'bodeod:status' %}">{% icon "gauge" 17 %}Status Dashboard</a>
+  </div>
+</div>
+{% include "bodeod/_tabs.html" with tab="keys" %}
+
+<section class="kpis" aria-label="Item states">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "list" 22 %}</div><div class="kpi-body"><div class="label">Enabled Items</div><div class="value">{{ totals.total }}</div></div></div><div class="sub">{% if code %}{{ code }} checklist{% else %}All modes{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">OK</div><div class="value">{{ totals.done }}</div></div></div><div class="sub">Code 0 (incl. signed off)</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warning</div><div class="value">{{ totals.warning }}</div></div></div><div class="sub">Code 1</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Critical</div><div class="value">{{ totals.critical }}</div></div></div><div class="sub">Code 2</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "help" 22 %}</div><div class="kpi-body"><div class="label">Unknown</div><div class="value">{{ totals.unknown }}</div></div></div><div class="sub">Code 3 · missing or not run</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "edit" 22 %}</div><div class="kpi-body"><div class="label">Pending</div><div class="value">{{ totals.pending }}</div></div></div><div class="sub">Code 5 · need a sign-off</div></div>
+</section>
+
+<section class="panel">
+  <form class="toolbar" method="get">
+    <nav class="seg" aria-label="Mode"><a href="?{% if kind %}kind={{ kind }}{% endif %}" class="{% if not code %}on{% endif %}">All modes</a>{% for m in modes %}<a href="?mode={{ m.code }}{% if kind %}&amp;kind={{ kind }}{% endif %}" class="{% if code == m.code %}on{% endif %}">{{ m.code }}</a>{% endfor %}</nav>
+    {% if code %}<input type="hidden" name="mode" value="{{ code }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ q }}" placeholder="Search items or references…" aria-label="Search items"></label>
+    <select name="kind" data-autosubmit aria-label="Type"><option value="">All types</option>{% for v, l in kinds %}<option value="{{ v }}"{% if kind == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <select name="state" data-autosubmit aria-label="State"><option value="">All states</option>{% for v, l in states %}<option value="{{ v }}"{% if state == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    {% if q or kind or state %}<a class="btn sm" href="?{% if code %}mode={{ code }}{% endif %}">{% icon "x" 14 %}Clear</a>{% endif %}
+  </form>
+</section>
+
+{% for s in sections %}
+<section class="panel" id="mode-{{ s.mode.code }}">
+  <div class="panel-h"><span class="bod-code">{{ s.mode.code }}</span><h2>{{ s.mode.name }}</h2><small>{{ s.mode.window_label }}</small>
+    <div class="right">
+      {% if s.run %}<span class="t-mute">Latest run <a href="{{ s.run.get_absolute_url }}">#{{ s.run.pk }}</a> · {{ s.run.trading_date|date:"d M" }} {{ s.run.started_at|ist:"%H:%M" }}</span> {% run_badge s.run.status %}{% else %}<span class="t-mute">Not run yet</span>{% endif %}
+      {% if s.can_operate and s.mode.enabled %}<form method="post" action="{% url 'bodeod:run' s.mode.pk %}" data-busy-form>{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}#mode-{{ s.mode.code }}"><button class="btn primary sm" type="submit" data-busy="Running…">{% icon "play" 14 %}Run now</button></form>{% endif %}
+    </div></div>
+  {% if s.run and not s.open_signoff and s.run.status != "running" %}<p class="bod-note">{% icon "info" 15 %}Sign-offs apply to today's run. {% if s.can_operate %}Start a new run to sign off manual items for {{ today|date:"d M Y" }}.{% endif %}</p>{% endif %}
+  <div class="table-wrap dense"><table class="bod-keys">
+    <thead><tr><th>#</th><th>Item</th><th>Current</th><th>Reference</th><th>Detail</th><th>Latest run</th><th>Sign-off</th></tr></thead>
+    <tbody>{% for r in s.rows %}
+      <tr class="{% if not r.item.enabled %}is-off{% endif %}">
+        <td>{{ forloop.counter }}</td>
+        <td class="wrap"><b>{{ r.name }}</b>{% if r.critical %} <span class="chip crit" title="A critical result fails the run">critical</span>{% endif %}{% if not r.item.enabled %} <span class="chip mute">disabled</span>{% endif %}
+          {% if r.item.instructions %}<div class="bod-instr" title="{{ r.item.instructions }}">{{ r.item.instructions|truncatechars:110 }}</div>{% endif %}</td>
+        <td>{% code r.current %}</td>
+        <td class="bod-ref"><small>{{ r.get_kind_display }}</small>{% if r.kind == "manual" %}<span class="t-mute">operator sign-off</span>{% elif r.link %}<a href="{{ r.link }}" title="{{ r.ref_name }}">{{ r.ref_name }}</a>{% else %}<span title="{{ r.ref_name }} – reference not found">{{ r.ref_name|default:"–" }}</span> <span class="chip warn">missing</span>{% endif %}</td>
+        <td class="wrap bod-detail">{% if r.kind == "manual" and r.result %}{{ r.result.detail }}{% else %}{{ r.detail }}{% endif %}</td>
+        <td>{% if r.result %}<a href="{{ s.run.get_absolute_url }}" title="{{ r.result.detail }}">{% code r.result.status False %}</a>{% else %}<span class="t-mute">–</span>{% endif %}</td>
+        <td class="wrap">{% if r.result.status == "signed_off" %}<span class="bod-signed">{% icon "check" 14 %}{{ r.result.signed_off_by_name }} · {{ r.result.signed_off_at|ist:"%d %b %H:%M" }}</span>{% if r.result.note %}<div class="bod-instr">“{{ r.result.note }}”</div>{% endif %}
+          {% elif r.kind == "manual" and r.result.status == "pending" and s.open_signoff and s.can_operate %}
+          <form method="post" action="{% url 'bodeod:signoff' r.result.pk %}" class="bod-signoff">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}#mode-{{ s.mode.code }}">
+            <input type="text" name="note" required maxlength="500" placeholder="What did you verify?" aria-label="Sign-off note for {{ r.name }}">
+            <button class="btn sm primary" type="submit">{% icon "check" 14 %}Sign off</button></form>
+          {% elif r.kind == "manual" and r.result.status == "pending" %}<span class="t-mute">{% if s.open_signoff %}Awaiting an operator{% else %}Not signed off{% endif %}</span>
+          {% else %}<span class="t-mute">–</span>{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="7" class="empty">{% if q or kind or state %}No items match the filters.{% else %}No checklist items for {{ s.mode.code }}.{% if can_admin %} <a href="{% url 'bodeod:checklist' %}?mode={{ s.mode.code }}&amp;new=1#item-form">Add one</a>.{% endif %}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+{% empty %}
+<section class="panel"><div class="bod-empty big">{% icon "key" 32 %}<p><b>No modes to validate.</b></p><p>{% if can_admin %}Configure modes in the <a href="{% url 'bodeod:checklist' %}?mode_new=1#mode-form">checklist editor</a>.{% else %}Ask an administrator to configure the BOD / EOD checklist.{% endif %}</p></div></section>
+{% endfor %}
+<p class="bod-legend"><b>Status codes</b>{% code "ok" %}{% code "warning" %}{% code "critical" %}{% code "unknown" %}{% code "pending" %}</p>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'bodeod/bodeod.js' %}"></script>{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "core/base.html" %}{% load le bodeod_tags static %}
+{% block title %}BOD / EOD Status{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'bodeod/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "bodeod/_crumbs.html" with here="Status Dashboard" %}{% endblock %}
+{% block content %}
+<div class="pg-bodeod" data-bod-refresh="{{ refresh }}">
+<div class="head">
+  <div class="glyph">{% icon "calendar" 44 %}</div>
+  <div><h1>BOD / EOD Status</h1><p>Beginning-of-day and end-of-day validation for Indian market hours (IST)</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'bodeod:history' %}">{% icon "clock" 17 %}Execution History</a>
+    <a class="btn" href="{% url 'bodeod:holidays' %}">{% icon "calendar-range" 17 %}Holidays</a>
+    <a class="btn primary" href="{% url 'bodeod:keys' %}">{% icon "key" 17 %}Key Validation</a>
+  </div>
+</div>
+{% include "bodeod/_tabs.html" with tab="status" %}
+{% include "bodeod/_banner.html" %}
+
+<section class="kpis" aria-label="Today">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Enabled Modes</div><div class="value">{{ kpi.modes }}<small class="t-mute">/ {{ kpi.modes_total }}</small></div></div></div><div class="sub">BOD · EOD · ADP</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "play" 22 %}</div><div class="kpi-body"><div class="label">Runs Today</div><div class="value">{{ kpi.today_runs }}</div></div></div><div class="sub">{{ today|date:"d M Y" }} (IST)</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Passed</div><div class="value">{{ kpi.passed }}</div></div></div><div class="sub">Latest run passed</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warnings</div><div class="value">{{ kpi.warned }}</div></div></div><div class="sub">Warn, unknown or pending</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Failed</div><div class="value">{{ kpi.failed }}</div></div></div><div class="sub">Critical item failed</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "edit" 22 %}</div><div class="kpi-body"><div class="label">Pending Sign-offs</div><div class="value {% if kpi.pending %}t-info{% endif %}">{{ kpi.pending }}</div></div></div><div class="sub">{% if kpi.next %}Next run {{ kpi.next|ist:"%a %H:%M" }} IST{% else %}No automatic run due{% endif %}</div></div>
+</section>
+
+{% if cards %}
+<section class="grid g-3 bod-cards" aria-label="Modes">
+  {% for c in cards %}
+  <article class="panel bod-card tone-{{ c.run_tone }}{% if not c.mode.enabled %} is-disabled{% endif %}" id="mode-{{ c.mode.code }}">
+    <div class="bod-card-h">
+      <span class="bod-code">{{ c.mode.code }}</span>
+      <div class="bod-card-t"><h2>{{ c.mode.name }}</h2>
+        <small>{% icon "clock" 13 %}{{ c.mode.window_label }}{% if c.mode.site != "All Sites" %} · {{ c.mode.site }}{% endif %}</small></div>
+      <div class="right">{% if not c.mode.enabled %}<span class="chip mute">Disabled</span>{% elif c.window == "no_trading" %}<span class="chip mute">No trading today</span>{% elif c.window == "open" %}<span class="chip ok">Window open</span>{% elif c.window == "upcoming" %}<span class="chip teal">Upcoming</span>{% else %}<span class="chip mute">Window closed</span>{% endif %}</div>
+    </div>
+    <div class="bod-state">
+      <div class="bod-state-main">{% if c.run %}{% run_badge c.run.status %}{% else %}{% run_badge "" %}{% endif %}
+        {% if c.run and not c.run_today %}<span class="chip warn" title="The latest run is from an earlier trading date">Not run today</span>{% endif %}</div>
+      <dl class="bod-meta">
+        <dt>Last run</dt><dd>{% if c.run %}<a href="{{ c.run.get_absolute_url }}">#{{ c.run.pk }}</a> · {{ c.run.started_at|ist:"%d %b %H:%M" }} · {{ c.run.by_label }}{% else %}<span class="t-mute">Never</span>{% endif %}</dd>
+        <dt>Duration</dt><dd>{{ c.duration }}</dd>
+        <dt>Auto-run</dt><dd>{% if c.mode.auto_run_time %}{{ c.mode.auto_run_time|time:"H:i" }} IST{% if c.next %} · next {{ c.next|ist:"%a %d %b" }}{% endif %}{% else %}<span class="t-mute">Manual only</span>{% endif %}</dd>
+      </dl>
+    </div>
+    <div class="bod-counts" aria-label="Item counts">
+      <span class="bc bc-ok"><b>{{ c.counts.done }}</b>OK</span><span class="bc bc-warn"><b>{{ c.counts.warning }}</b>WARN</span>
+      <span class="bc bc-crit"><b>{{ c.counts.critical }}</b>CRIT</span><span class="bc bc-mute"><b>{{ c.counts.unknown }}</b>UNKNOWN</span>
+      <span class="bc bc-info"><b>{{ c.counts.pending }}</b>PENDING</span>
+    </div>
+    {% if c.results %}
+    <div class="bod-grid-h">{% if c.live %}<span class="t-mute">No runs yet — live status of the referenced checks</span>{% else %}<span class="t-mute">Run #{{ c.run.pk }} · {{ c.run.trading_date|date:"d M Y" }}</span>{% endif %}<a href="{% url 'bodeod:keys' %}?mode={{ c.mode.code }}">Item details {% icon "chevron-right" 13 %}</a></div>
+    <ul class="bod-grid" aria-label="{{ c.mode.code }} items">
+      {% for r in c.results %}<li class="cell bc-{{ r.tone }}" title="{{ r.name }} — {{ r.code_label }}: {{ r.detail }}"><b>{{ r.code_num }}</b><span>{{ r.name }}</span>{% if r.critical %}<i class="crit-dot" title="Critical item"></i>{% endif %}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <div class="bod-empty">{% icon "clipboard" 24 %}<p>No checklist items.{% if can_admin %} <a href="{% url 'bodeod:checklist' %}?mode={{ c.mode.code }}&amp;new=1#item-form">Add items</a>{% endif %}</p></div>
+    {% endif %}
+    <div class="bod-card-f">
+      {% if c.can_run and c.mode.enabled %}
+      <form method="post" action="{% url 'bodeod:run' c.mode.pk %}" class="bod-run" data-busy-form>{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="refresh" value="0">
+        <label class="inline-check" title="Run the referenced URL, TCP and domain checks before validating"><input type="checkbox" name="refresh" value="1"{% if c.mode.refresh_checks %} checked{% endif %}>Re-run checks</label>
+        <button class="btn primary sm" type="submit" data-busy="Running…">{% icon "play" 14 %}Run now</button>
+      </form>
+      {% endif %}
+      <div class="right">
+        {% if c.run %}<a class="btn sm" href="{{ c.run.get_absolute_url }}">{% icon "eye" 14 %}View run</a>{% endif %}
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+<p class="bod-legend" aria-label="Status codes"><b>Status codes</b>{% code "ok" %}{% code "warning" %}{% code "critical" %}{% code "unknown" %}{% code "pending" %}<span class="t-mute"><i class="crit-dot"></i> critical item</span></p>
+{% else %}
+<section class="panel"><div class="bod-empty big">{% icon "calendar" 32 %}<p><b>No BOD / EOD modes configured.</b></p>
+  <p>{% if can_admin %}Add the BOD, EOD and ADP modes in the <a href="{% url 'bodeod:checklist' %}?mode_new=1#mode-form">checklist editor</a>.{% else %}Ask an administrator to configure the BOD, EOD and ADP modes.{% endif %}
+  For a demo, <code>manage.py seed_bodeod</code> creates clearly-marked example modes and checklists.</p></div></section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-h"><h2>Recent Runs</h2><div class="right"><a class="view-all" href="{% url 'bodeod:history' %}">View all {% icon "chevron-right" 14 %}</a></div></div>
+  <div class="table-wrap dense"><table>
+    <thead><tr><th>Run</th><th>Mode</th><th>Trading date</th><th>Started (IST)</th><th>Triggered by</th><th>Items</th><th>Status</th><th>Summary</th></tr></thead>
+    <tbody>{% for r in recent %}
+      <tr><td><a href="{{ r.get_absolute_url }}">#{{ r.pk }}</a></td><td><span class="bod-code sm">{{ r.mode.code }}</span></td>
+        <td>{{ r.trading_date|date:"d M Y" }}</td><td>{{ r.started_at|ist:"%d %b %H:%M:%S" }}</td>
+        <td>{% if r.trigger == "scheduler" %}<span class="chip purple">scheduler</span>{% else %}{{ r.by_label }}{% endif %}</td>
+        <td class="bod-mini">{% if r.n_crit %}<span class="t-crit">{{ r.n_crit }} crit</span>{% endif %}{% if r.n_warn %}<span class="t-warn">{{ r.n_warn }} warn</span>{% endif %}{% if r.n_pending %}<span class="t-info">{{ r.n_pending }} pending</span>{% endif %}<span>{{ r.n_ok }}/{{ r.n_total }} ok</span></td>
+        <td>{% run_badge r.status %}</td><td class="bod-sum" title="{{ r.summary }}">{{ r.summary|default:"–" }}</td></tr>
+    {% empty %}<tr><td colspan="8" class="empty">No runs yet.{% if can_operate and cards %} Use <b>Run now</b> on a mode card, or wait for the scheduler on the next trading day.{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'bodeod/bodeod.js' %}"></script>{% endblock %}

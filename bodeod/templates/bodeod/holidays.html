@@ -1,0 +1,96 @@
+{% extends "core/base.html" %}{% load le bodeod_tags static %}
+{% block title %}Market Holidays{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'bodeod/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "bodeod/_crumbs.html" with here="Holidays" %}{% endblock %}
+{% block content %}
+<div class="pg-bodeod">
+<div class="head">
+  <div class="glyph">{% icon "calendar-range" 44 %}</div>
+  <div><h1>Market Holidays</h1><p>Exchange trading holidays. On an NSE or all-exchange holiday no automatic BOD / EOD run starts.</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'bodeod:holidays_export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export CSV</a>
+    {% if can_configure %}<a class="btn primary" href="#holiday-form">{% icon "plus" 17 %}Add holiday</a>{% endif %}
+  </div>
+</div>
+{% include "bodeod/_tabs.html" with tab="holidays" %}
+{% include "bodeod/_banner.html" %}
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "calendar" 22 %}</div><div class="kpi-body"><div class="label">Holidays in {{ year }}</div><div class="value">{{ k.total }}</div></div></div><div class="sub">{% if exchange %}{{ exchange }} only{% else %}All exchanges{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Weekday Closures</div><div class="value">{{ k.trading_closed }}</div></div></div><div class="sub">NSE / all-exchange, Mon–Fri</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Next Holiday</div><div class="value bod-kpi-text">{% with upcoming|first as h %}{% if h %}{{ h.date|date:"d M Y" }}{% else %}–{% endif %}{% endwith %}</div></div></div><div class="sub">{% with upcoming|first as h %}{% if h %}{{ h.exchange }} · {{ h.description }}{% else %}None recorded{% endif %}{% endwith %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "tag" 22 %}</div><div class="kpi-body"><div class="label">Example Entries</div><div class="value">{{ k.examples }}</div></div></div><div class="sub">From seed_bodeod; verify them</div></div>
+</section>
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>{{ year }} Calendar</h2>
+        <div class="right">
+          <a class="btn sm icon" href="?year={{ year|add:'-1' }}{% if exchange %}&amp;exchange={{ exchange }}{% endif %}" aria-label="Previous year" title="{{ year|add:'-1' }}">{% icon "chevron-left" 15 %}</a>
+          <form method="get" class="bod-yearform"><input type="number" name="year" value="{{ year }}" min="2000" max="2100" aria-label="Year">{% if exchange %}<input type="hidden" name="exchange" value="{{ exchange }}">{% endif %}</form>
+          <a class="btn sm icon" href="?year={{ year|add:'1' }}{% if exchange %}&amp;exchange={{ exchange }}{% endif %}" aria-label="Next year" title="{{ year|add:'1' }}">{% icon "chevron-right" 15 %}</a>
+          <form method="get"><input type="hidden" name="year" value="{{ year }}"><select name="exchange" data-autosubmit aria-label="Exchange"><option value="">All exchanges</option>{% for v, l in exchanges %}<option value="{{ v }}"{% if exchange == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select></form>
+        </div></div>
+      <div class="bod-cal">
+        {% for m in months %}
+        <div class="bod-month"><h3>{{ m.name }}{% if m.count %} <span class="chip warn">{{ m.count }}</span>{% endif %}</h3>
+          <table><thead><tr>{% for w in weekday_names %}<th scope="col">{{ w }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for week in m.weeks %}<tr>{% for d in week %}<td class="{% if not d.in_month %}out{% elif d.holidays %}hol{% elif d.weekend %}we{% endif %}{% if d.today and d.in_month %} today{% endif %}"{% if d.holidays %} title="{{ d.title }}"{% endif %}>{% if d.in_month %}{{ d.date.day }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody></table>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="bod-legend"><span><i class="sw hol"></i>Holiday</span><span><i class="sw we"></i>Weekend</span><span><i class="sw today"></i>Today</span></p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h"><h2>Holidays ({{ holidays|length }})</h2></div>
+      <div class="table-wrap dense"><table>
+        <thead><tr><th>Date</th><th>Day</th><th>Exchange</th><th>Description</th><th>Source</th>{% if can_admin %}<th></th>{% endif %}</tr></thead>
+        <tbody>{% for h in holidays %}
+          <tr><td>{{ h.date|date:"d M Y" }}</td><td>{{ h.date|date:"l" }}{% if h.date.weekday >= 5 %} <span class="chip mute">weekend</span>{% endif %}</td>
+            <td><span class="chip {% if h.exchange == 'NSE' or h.exchange == 'ALL' %}crit{% else %}teal{% endif %}">{{ h.exchange }}</span></td>
+            <td class="wrap">{{ h.description }}</td>
+            <td>{% if h.source == "example" %}<span class="chip warn" title="Created by seed_bodeod – verify against the exchange circular">example</span>{% else %}{{ h.get_source_display }}{% endif %}</td>
+            {% if can_admin %}<td><form method="post" action="{% url 'bodeod:holiday_delete' h.pk %}" data-confirm="Delete the holiday {{ h.date|date:'d M Y' }} ({{ h.exchange }})?">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon red" type="submit" title="Delete" aria-label="Delete holiday {{ h.date|date:'d M Y' }} {{ h.exchange }}">{% icon "trash" 14 %}</button></form></td>{% endif %}</tr>
+        {% empty %}<tr><td colspan="6" class="empty">No holidays recorded for {{ year }}{% if exchange %} ({{ exchange }}){% endif %}.{% if can_configure %} Add them one by one or upload the exchange's CSV.{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+    </div>
+  </div>
+
+  <div class="stack">
+    {% if can_configure %}
+    <div class="panel" id="holiday-form">
+      <div class="panel-h"><h2>Add holiday</h2></div>
+      <form method="post" action="{% url 'bodeod:holidays' %}">{% csrf_token %}
+        {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+        <div class="form-grid">
+          {% for f in form %}<div class="field{% if f.name == 'description' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }} <span class="req">*</span></label>{{ f }}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>{% endfor %}
+          <div class="field full bod-form-foot"><button class="btn primary sm" type="submit">Add holiday</button></div>
+        </div>
+      </form>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Upload CSV</h2></div>
+      <form method="post" action="{% url 'bodeod:holiday_upload' %}" enctype="multipart/form-data" data-busy-form>{% csrf_token %}
+        <div class="form-grid">
+          <div class="field full"><label for="{{ upload_form.file.id_for_label }}">{{ upload_form.file.label }} <span class="req">*</span></label>{{ upload_form.file }}<span class="hint">Header row with <code>date</code>, <code>description</code> and optionally <code>exchange</code> (ALL, NSE, BSE, MCX). Dates as 2026-01-26 or 26-Jan-2026. Existing dates are updated.</span></div>
+          <div class="field full"><label for="{{ upload_form.default_exchange.id_for_label }}">{{ upload_form.default_exchange.label }}</label>{{ upload_form.default_exchange }}</div>
+          <div class="field full bod-form-foot"><button class="btn primary sm" type="submit" data-busy="Uploading…">{% icon "upload" 14 %}Upload</button></div>
+        </div>
+      </form>
+      <pre class="bod-sample">date,exchange,description
+2026-01-26,NSE,Republic Day
+26-Jan-2026,BSE,Republic Day</pre>
+    </div>
+    {% endif %}
+    <div class="panel">
+      <div class="panel-h"><h2>Upcoming</h2></div>
+      <ul class="bod-upcoming">{% for h in upcoming %}<li><span class="bod-day"><b>{{ h.date|date:"d" }}</b>{{ h.date|date:"M" }}</span><div><b>{{ h.description }}</b><small>{{ h.date|date:"l" }} · {{ h.exchange }}{% if h.source == "example" %} · example{% endif %}</small></div></li>
+        {% empty %}<li class="t-mute">No upcoming holidays recorded.</li>{% endfor %}</ul>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'bodeod/bodeod.js' %}"></script>{% endblock %}
