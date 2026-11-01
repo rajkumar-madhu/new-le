@@ -1,0 +1,23 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Apply {{ t.name }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'automation:templates' %}">Templates</a>{% icon "chevron-right" 14 %}<a class="clip-crumb" href="{% url 'automation:template_detail' t.pk %}">{{ t.name }}</a>{% icon "chevron-right" 14 %}<span>Apply</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph kc-ic k-{{ t.kind }}">{% icon kind_icon 28 %}</div>
+  <div class="head-text"><h1>Apply “{{ t.name }}”</h1><p>{{ kind_help }}</p></div>
+</div>
+<div class="am-alert info">{% icon "info" 16 %}<span>Review the values below. Nothing is created until you confirm.</span></div>
+<form method="post" class="panel am-form" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <div class="form-grid">
+    {% for f in form.spec_fields %}{% include "automation/_field.html" with f=f full=f.field.spec.full %}{% endfor %}
+  </div>
+  <div class="form-foot">
+    <a class="btn" href="{% url 'automation:template_detail' t.pk %}">Cancel</a>
+    <button class="btn primary" type="submit">{% icon "check" 15 %}{% if t.kind == "url_check" %}Create URL check{% elif t.kind == "tcp_check" %}Create TCP check{% elif t.kind == "incident" %}Open incident{% else %}Send notification event{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}

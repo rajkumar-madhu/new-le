@@ -1,0 +1,39 @@
+{% extends "core/base.html" %}{% load le static automation_tags %}
+{% block title %}{{ t.name }} · Template{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'automation:templates' %}">Templates</a>{% icon "chevron-right" 14 %}<span class="clip-crumb">{{ t.name }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation detail">
+<div class="head">
+  <div class="glyph kc-ic k-{{ t.kind }}">{% icon kind_icon 28 %}</div>
+  <div class="head-text"><h1>{{ t.name }}{% if t.is_example %} <span class="chip warn">example</span>{% endif %}</h1><p>{{ t.get_kind_display }} template{% if t.description %} · {{ t.description }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_operate %}
+    <a class="btn primary" href="{% url 'automation:template_apply' t.pk %}">{% icon "play" 15 %}Apply</a>
+    <a class="btn" href="{% url 'automation:template_edit' t.pk %}">{% icon "edit" 15 %}Edit</a>
+    {% endif %}
+    {% if can_admin %}<form method="post" action="{% url 'automation:template_delete' t.pk %}" data-confirm="Delete the template “{{ t.name }}”? Records already created from it are not affected.">{% csrf_token %}<button class="btn danger-outline" type="submit">{% icon "trash" 15 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+<section class="grid g-main">
+  <div class="panel">
+    <div class="panel-h"><h2>Default values</h2><small>{{ kind_help }}</small></div>
+    <dl class="kv">
+      {% for label, value, key in values %}<dt>{{ label }}</dt><dd>{% if value is None or value == "" %}<span class="t-mute">Asked when applied</span>{% else %}{{ value }}{% endif %}</dd>{% endfor %}
+    </dl>
+    {% if unknown %}<p class="hint t-warn">{% icon "alert" 13 %} Ignored keys (not used by {{ t.get_kind_display }} templates): {{ unknown|pretty_json }}</p>{% endif %}
+  </div>
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Usage</h2></div>
+      <dl class="kv">
+        <dt>Applied</dt><dd>{{ t.applied_count }} time{{ t.applied_count|pluralize }}</dd>
+        <dt>Last applied</dt><dd>{% if t.last_applied_at %}{{ t.last_applied_at|date:"d M Y H:i" }}{% else %}Never{% endif %}</dd>
+        <dt>Created</dt><dd>{{ t.created_at|date:"d M Y H:i" }}{% if t.created_by %} by {{ t.created_by }}{% endif %}</dd>
+        <dt>Updated</dt><dd>{{ t.updated_at|date:"d M Y H:i" }}</dd>
+      </dl></div>
+    <div class="panel"><div class="panel-h"><h2>Stored JSON</h2></div><pre class="log">{{ t.fields|pretty_json }}</pre></div>
+  </div>
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "core/base.html" %}{% load le static automation_tags %}
+{% block title %}{{ rule.name }} · Workflow{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}<a href="{% url 'automation:workflows' %}">Workflows</a>{% icon "chevron-right" 14 %}<span class="clip-crumb">{{ rule.name }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation detail">
+<div class="head">
+  <div class="glyph tint-teal">{% icon "share" 30 %}</div>
+  <div class="head-text"><h1>{{ rule.name }} {% if rule.enabled %}{% badge "active" "Enabled" %}{% else %}{% badge "paused" "Disabled" %}{% endif %}{% if rule.is_example %} <span class="chip warn">example</span>{% endif %}</h1>
+    <p>{{ rule.description|default:"No description" }}</p></div>
+  <div class="actions">
+    {% if can_edit %}
+    <form method="post" action="{% url 'automation:rule_toggle' rule.pk %}">{% csrf_token %}<button class="btn" type="submit">{% if rule.enabled %}{% icon "pause" 15 %}Disable{% else %}{% icon "play" 15 %}Enable{% endif %}</button></form>
+    <a class="btn primary" href="{% url 'automation:rule_edit' rule.pk %}">{% icon "edit" 15 %}Edit</a>
+    {% endif %}
+    {% if can_delete %}<form method="post" action="{% url 'automation:rule_delete' rule.pk %}" data-confirm="Delete the rule “{{ rule.name }}”? Its execution history is kept.">{% csrf_token %}<button class="btn danger-outline" type="submit">{% icon "trash" 15 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "zap" 22 %}</div><div class="kpi-body"><div class="label">Fired</div><div class="value">{{ rule.fire_count }}</div></div></div><div class="sub">Since the rule was created</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last fired</div><div class="value">{{ rule.last_fired_at|ago }}</div></div></div><div class="sub">{% if rule.last_fired_at %}{{ rule.last_fired_at|date:"d M Y H:i" }}{% else %}Not yet{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Succeeded (7 days)</div><div class="value">{{ stats.ok }}</div></div></div><div class="sub">{% if stats.rate is None %}No runs{% else %}{{ stats.rate|pct:1 }} of finished runs{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile {% if stats.failed %}s-crit{% else %}s-mute{% endif %}">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Failed (7 days)</div><div class="value {% if stats.failed %}t-crit{% endif %}">{{ stats.failed }}</div></div></div><div class="sub">Action errors</div></div>
+</section>
+
+<section class="grid g-2">
+  <div class="panel">
+    <div class="panel-h"><h2>When an event matches</h2></div>
+    <dl class="kv">
+      <dt>Source</dt><dd>{% for s in rule.sources %}<span class="chip">{{ s }}</span> {% empty %}Any source{% endfor %}</dd>
+      <dt>Severity</dt><dd>{{ rule.get_min_severity_display }}</dd>
+      <dt>Title contains</dt><dd>{% if rule.title_contains %}“{{ rule.title_contains }}”{% else %}Any title{% endif %}</dd>
+      <dt>Site</dt><dd>{{ rule.site|default:"Any site" }}</dd>
+      <dt>Cooldown</dt><dd>{% if rule.cooldown_minutes %}{{ rule.cooldown_minutes|minutes }} per event fingerprint{% else %}None – fires for every matching event{% endif %}</dd>
+    </dl>
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h2>Then</h2></div>
+    <dl class="kv">
+      <dt>Action</dt><dd><b>{{ rule.get_action_display }}</b></dd>
+      {% if rule.action == "open_incident" %}
+        <dt>Priority</dt><dd>{{ rule.params.priority|default:"P3" }}</dd>
+        <dt>Title</dt><dd>{{ rule.params.title|default:"The event title" }}</dd>
+        <dt>Dedupe</dt><dd>One open incident per event fingerprint (Service Desk)</dd>
+      {% elif rule.action == "stackstorm" %}
+        <dt>Trigger</dt><dd class="mono">{{ rule.params.trigger|default:"–" }}</dd>
+      {% elif rule.action == "webhook" %}
+        <dt>URL</dt><dd class="mono">{{ rule.params.url|default:"–" }}</dd>
+      {% endif %}
+      {% if rule.runbook or rule.action == "link_runbook" %}<dt>Runbook</dt><dd>{% if rule.runbook %}<a href="{% url 'automation:runbook_detail' rule.runbook_id %}">{{ rule.runbook.title }}</a>{% else %}<span class="t-crit">Missing</span>{% endif %}</dd>{% endif %}
+      {% if rule.params.payload %}<dt>Extra payload</dt><dd><pre class="log small">{{ rule.params.payload|pretty_json }}</pre></dd>{% endif %}
+      <dt>Created</dt><dd>{{ rule.created_at|date:"d M Y H:i" }}{% if rule.created_by %} by {{ rule.created_by }}{% endif %}</dd>
+    </dl>
+  </div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel" id="test">
+    <div class="panel-h"><h2>Test against a sample event</h2></div>
+    <form method="post" action="{% url 'automation:rule_test' rule.pk %}#test" class="am-form" novalidate>{% csrf_token %}
+      {% for e in test_form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+      <div class="form-grid three">
+        {% include "automation/_field.html" with f=test_form.source %}
+        {% include "automation/_field.html" with f=test_form.severity %}
+        {% include "automation/_field.html" with f=test_form.site %}
+        {% include "automation/_field.html" with f=test_form.title full=1 %}
+        {% include "automation/_field.html" with f=test_form.message full=1 %}
+        {% include "automation/_field.html" with f=test_form.fingerprint %}
+      </div>
+      <div class="form-foot">
+        {% if can_edit %}<label class="inline-check">{{ test_form.run }} Run the action for real</label>{% endif %}
+        <button class="btn primary" type="submit">{% icon "play" 14 %}Evaluate</button>
+      </div>
+    </form>
+    {% if result %}
+    <div class="test-result {% if result.matched %}ok{% else %}crit{% endif %}" role="status">
+      <h3>{% if result.matched %}{% ficon "check-circle" 18 %} The event matches this rule{% else %}{% ficon "x-circle" 18 %} The event does not match{% endif %}</h3>
+      <ul>{% for c, ok, d in result.checks %}<li class="{% if ok %}t-ok{% else %}t-crit{% endif %}">{% if ok %}{% icon "check" 14 %}{% else %}{% icon "x" 14 %}{% endif %}<b>{{ c }}</b> {{ d }}</li>{% endfor %}</ul>
+      {% if result.matched %}<p>{% if result.ignored %}But events from <b>automation</b> are always ignored by rules.{% elif not result.enabled %}The rule is <b>disabled</b>, so real events are not evaluated until you enable it.{% elif result.cooldown %}A real event with this fingerprint would be <b>skipped</b>: the rule already fired for it within the last {{ rule.cooldown_minutes|minutes }}.{% else %}A real event like this would run: <b>{{ rule.action_summary }}</b>.{% endif %}</p>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h2>Recent events</h2><small>{% if rule.sources %}from {{ rule.sources|join:", " }}{% endif %}</small></div>
+    {% for ev in recent_events %}
+      <a class="am-event" href="?event={{ ev.pk }}#test" title="Use as the sample event">{% badge ev.severity %}<span class="clip">{{ ev.title }}</span><small>{{ ev.source }} · {{ ev.occurred_at|ago }}</small></a>
+    {% empty %}<p class="t-mute small">No events recorded yet{% if rule.sources %} from these sources{% endif %}.</p>{% endfor %}
+    {% if recent_events %}<p class="hint">Pick an event to load it into the test form.</p>{% endif %}
+  </div>
+</section>
+
+<div class="panel" id="executions">
+  <div class="panel-h"><h2>Executions ({{ page.paginator.count }})</h2></div>
+  <div class="table-wrap dense"><table class="am-table exec-table">
+    <thead><tr><th>Started</th><th>Kind</th><th>Action / target</th><th>Status</th><th>HTTP</th><th>Duration</th><th>By</th><th>Result</th></tr></thead>
+    <tbody>{% include "automation/_exec_rows.html" with show_kind=1 cols=8 empty_text="This rule has not fired yet." %}</tbody>
+  </table></div>
+  {% include "core/_pager.html" with pager_noun="executions" %}
+</div>
+</div>
+{% endblock %}

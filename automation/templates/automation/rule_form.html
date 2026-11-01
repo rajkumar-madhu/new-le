@@ -1,0 +1,69 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if rule %}Edit {{ rule.name }}{% else %}New rule{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}<a href="{% url 'automation:workflows' %}">Workflows</a>{% icon "chevron-right" 14 %}{% if rule %}<a class="clip-crumb" href="{% url 'automation:rule_detail' rule.pk %}">{{ rule.name }}</a>{% icon "chevron-right" 14 %}<span>Edit</span>{% else %}<span>New rule</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph tint-teal">{% icon "share" 30 %}</div>
+  <div class="head-text"><h1>{% if rule %}Edit rule{% else %}New rule{% endif %}</h1><p>{% if rule %}{{ rule.name }}{% else %}Choose which events the rule reacts to and what it does{% endif %}</p></div>
+</div>
+<form method="post" class="am-form rule-form" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <section class="grid g-2">
+    <div class="panel">
+      <div class="panel-h"><h2>{% icon "info" 17 %} Rule</h2></div>
+      <div class="form-grid">
+        {% include "automation/_field.html" with f=form.name full=1 %}
+        {% include "automation/_field.html" with f=form.description full=1 %}
+        <label class="inline-check field full"><span class="switch">{{ form.enabled }}<span></span></span>Enabled – evaluate this rule for new events</label>
+      </div>
+      <div class="panel-h sub-h"><h2>{% icon "filter" 17 %} When an event matches</h2></div>
+      <div class="form-grid">
+        {% include "automation/_field.html" with f=form.match_source %}
+        {% include "automation/_field.html" with f=form.min_severity %}
+        {% include "automation/_field.html" with f=form.title_contains %}
+        {% include "automation/_field.html" with f=form.site %}
+        {% include "automation/_field.html" with f=form.cooldown_minutes %}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>{% icon "zap" 17 %} Then</h2></div>
+      <div class="form-grid">
+        {% include "automation/_field.html" with f=form.action full=1 %}
+        <div class="field full act-group" data-for="open_incident"><div class="form-grid">
+          {% include "automation/_field.html" with f=form.priority %}
+          {% include "automation/_field.html" with f=form.incident_title %}
+        </div></div>
+        <div class="field full act-group" data-for="stackstorm">
+          {% include "automation/_field.html" with f=form.trigger %}
+          {% if not st2_configured %}<p class="hint t-warn">{% icon "alert" 13 %} StackStorm is not connected (LINKEDEYE_STACKSTORM_URL); executions will be recorded as failed until it is.</p>{% endif %}
+        </div>
+        <div class="field full act-group" data-for="webhook">{% include "automation/_field.html" with f=form.webhook_url %}</div>
+        <div class="field full act-group" data-for="link_runbook open_incident">{% include "automation/_field.html" with f=form.runbook %}</div>
+        <div class="field full act-group" data-for="stackstorm webhook">{% include "automation/_field.html" with f=form.payload %}</div>
+      </div>
+      <div class="am-note hint">{% icon "info" 14 %}StackStorm and webhook calls send the event (source, severity, title, message, site, fingerprint, data) and the rule as JSON. Every run is recorded in the execution log.</div>
+    </div>
+  </section>
+  <div class="form-foot panel">
+    <a class="btn" href="{% if rule %}{% url 'automation:rule_detail' rule.pk %}{% else %}{% url 'automation:workflows' %}{% endif %}">Cancel</a>
+    <button class="btn primary" type="submit">{% icon "check" 15 %}{% if rule %}Save changes{% else %}Create rule{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+(function () {
+  var sel = document.getElementById('id_action');
+  if (!sel) return;
+  function sync() {
+    document.querySelectorAll('.act-group').forEach(function (g) {
+      var on = g.dataset.for.split(' ').indexOf(sel.value) !== -1;
+      g.hidden = !on && !g.querySelector('.err');
+    });
+  }
+  sel.addEventListener('change', sync);
+  sync();
+})();
+</script>{% endblock %}

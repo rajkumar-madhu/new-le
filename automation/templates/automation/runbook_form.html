@@ -1,0 +1,30 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if rb %}Edit {{ rb.title }}{% else %}New runbook{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}<a href="{% url 'automation:runbooks' %}">Runbooks</a>{% icon "chevron-right" 14 %}{% if rb %}<a class="clip-crumb" href="{% url 'automation:runbook_detail' rb.pk %}">{{ rb.title }}</a>{% icon "chevron-right" 14 %}<span>Edit</span>{% else %}<span>New</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph tint-info">{% icon "book" 30 %}</div>
+  <div class="head-text"><h1>{% if rb %}Edit runbook{% else %}New runbook{% endif %}</h1><p>{% if rb %}{{ rb.title }}{% else %}Describe when the runbook applies and the steps an operator follows{% endif %}</p></div>
+</div>
+<form method="post" class="panel am-form" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <div class="form-grid">
+    {% include "automation/_field.html" with f=form.title full=1 %}
+    {% include "automation/_field.html" with f=form.service %}
+    {% include "automation/_field.html" with f=form.ci_name %}
+    {% include "automation/_field.html" with f=form.site %}
+    {% include "automation/_field.html" with f=form.owner %}
+    {% include "automation/_field.html" with f=form.tags %}
+    {% include "automation/_field.html" with f=form.last_reviewed %}
+    {% include "automation/_field.html" with f=form.symptoms full=1 %}
+    {% include "automation/_field.html" with f=form.steps full=1 %}
+  </div>
+  <div class="form-foot">
+    <a class="btn" href="{% if rb %}{% url 'automation:runbook_detail' rb.pk %}{% else %}{% url 'automation:runbooks' %}{% endif %}">Cancel</a>
+    <button class="btn primary" type="submit">{% icon "check" 15 %}{% if rb %}Save changes{% else %}Create runbook{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}

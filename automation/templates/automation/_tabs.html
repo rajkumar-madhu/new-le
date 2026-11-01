@@ -1,0 +1,6 @@
+{% load le %}<nav class="tabs am-tabs" aria-label="Automation sections">
+  <a href="{% url 'automation:runbooks' %}"{% if tab == "runbooks" %} class="on" aria-current="page"{% endif %}>{% icon "book" 16 %}Runbooks</a>
+  <a href="{% url 'automation:stackstorm' %}"{% if tab == "stackstorm" %} class="on" aria-current="page"{% endif %}>{% icon "zap" 16 %}StackStorm</a>
+  <a href="{% url 'automation:workflows' %}"{% if tab == "workflows" %} class="on" aria-current="page"{% endif %}>{% icon "share" 16 %}Workflows</a>
+  <a href="{% url 'automation:templates' %}"{% if tab == "templates" %} class="on" aria-current="page"{% endif %}>{% icon "template" 16 %}Templates</a>
+</nav>

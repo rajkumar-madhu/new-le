@@ -1,0 +1,15 @@
+{% load le automation_tags %}{% for e in page %}
+<tr id="exec-{{ e.pk }}">
+  <td title="{{ e.started_at|date:'d M Y H:i:s' }}"><a href="{% url 'automation:execution_detail' e.pk %}">{{ e.started_at|date:"d M H:i:s" }}</a></td>
+  {% if show_rule %}<td class="clip w-rule">{% if e.rule %}<a href="{% url 'automation:rule_detail' e.rule_id %}" title="{{ e.rule.name }}">{{ e.rule.name }}</a>{% else %}<span class="t-mute">Manual</span>{% endif %}</td>{% endif %}
+  {% if show_kind %}<td>{{ e.get_kind_display }}</td>{% endif %}
+  <td class="clip mono w-trig" title="{{ e.trigger }}">{{ e.trigger }}</td>
+  <td>{% badge e.badge_key e.get_status_display %}</td>
+  <td>{{ e.http_status|default:"–" }}</td>
+  <td>{{ e.duration_ms|duration }}</td>
+  <td class="clip w-by" title="{{ e.triggered_by }}">{{ e.triggered_by|default:"–" }}</td>
+  <td class="clip msg {% if e.status == 'failed' %}t-crit{% endif %}" title="{% if e.error %}{{ e.error }}{% else %}{{ e.result_label }}{% endif %}">{% if e.error %}{{ e.error }}{% elif e.result_url %}<a href="{{ e.result_url }}">{{ e.result_label|default:"Open" }}</a>{% elif e.result_label %}{{ e.result_label }}{% elif e.response_excerpt %}{{ e.response_excerpt|truncatechars:80 }}{% else %}–{% endif %}</td>
+</tr>
+{% empty %}
+<tr><td colspan="{{ cols }}" class="empty">{{ empty_text }}</td></tr>
+{% endfor %}

@@ -1,0 +1,17 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}New template{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'automation:templates' %}">Templates</a>{% icon "chevron-right" 14 %}<span>New</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph tint-info">{% icon "template" 30 %}</div>
+  <div class="head-text"><h1>New template</h1><p>What should the template create when it is applied?</p></div>
+</div>
+<section class="kind-pick">
+  {% for k in kinds %}
+  <a class="panel kind-option" href="?kind={{ k.key }}"><span class="kc-ic k-{{ k.key }}">{% icon k.icon 26 %}</span><b>{{ k.label }}</b><p>{{ k.help }}</p><span class="view-all">Choose {% icon "arrow-right" 14 %}</span></a>
+  {% endfor %}
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Runbooks{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}<span>Runbooks</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph tint-info">{% icon "book" 30 %}</div>
+  <div class="head-text"><h1>Runbooks</h1><p>Step-by-step operating procedures for services and configuration items</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'automation:runbook_export' %}?{{ query.urlencode }}">{% icon "download" 16 %}Export</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'automation:runbook_create' %}">{% icon "plus" 16 %}New runbook</a>{% endif %}
+  </div>
+</div>
+{% include "automation/_tabs.html" with tab="runbooks" %}
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "book" 22 %}</div><div class="kpi-body"><div class="label">Runbooks</div><div class="value">{{ total }}</div></div></div><div class="sub">On the sites you can see</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile {% if review_due %}s-warn{% else %}s-ok{% endif %}">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Review due</div><div class="value">{{ review_due }}</div></div></div><div class="sub">Not reviewed in {{ review_days }} days</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "share" 22 %}</div><div class="kpi-body"><div class="label">Linked to rules</div><div class="value">{{ linked }}</div></div></div><div class="sub">Used by event workflows</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Services covered</div><div class="value">{{ services|length }}</div></div></div><div class="sub">Distinct services</div></div>
+</section>
+
+<div class="panel">
+  <div class="panel-h"><h2>All Runbooks ({{ page.paginator.count }})</h2></div>
+  <form class="toolbar compact" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search title, service, symptoms, steps…" aria-label="Search runbooks"></label>
+    <select name="service" data-autosubmit aria-label="Service"><option value="">All services</option>{% for s in services %}<option {% if request.GET.service == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="site" data-autosubmit aria-label="Site"><option value="">All sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="tag" data-autosubmit aria-label="Tag"><option value="">All tags</option>{% for t in tags %}<option {% if request.GET.tag == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+    <select name="review" data-autosubmit aria-label="Review state"><option value="">Any review state</option><option value="due" {% if request.GET.review == "due" %}selected{% endif %}>Review due</option><option value="ok" {% if request.GET.review == "ok" %}selected{% endif %}>Reviewed recently</option></select>
+    <button class="btn sm" type="submit">{% icon "filter" 14 %}Filter</button>
+    {% if query.urlencode %}<a class="btn sm ghost-primary" href="{% url 'automation:runbooks' %}">Clear</a>{% endif %}
+  </form>
+  <div class="table-wrap dense"><table class="am-table runbooks-table">
+    <thead><tr><th>Title</th><th>Service / CI</th><th>Site</th><th>Owner</th><th>Tags</th><th>Steps</th><th>Rules</th><th>Last reviewed</th><th><span class="sr">Actions</span></th></tr></thead>
+    <tbody>
+    {% for r in page %}
+      <tr>
+        <td class="clip strong"><a href="{% url 'automation:runbook_detail' r.pk %}" title="{{ r.title }}">{{ r.title }}</a></td>
+        <td class="clip" title="{{ r.service }}{% if r.ci_name %} · {{ r.ci_name }}{% endif %}">{{ r.service|default:"–" }}{% if r.ci_name %} <span class="t-mute">· {{ r.ci_name }}</span>{% endif %}</td>
+        <td>{{ r.site }}</td>
+        <td class="clip">{{ r.owner|default:"–" }}</td>
+        <td class="tags">{% for t in r.tag_list|slice:":3" %}<span class="chip {% if t|lower == 'example' %}warn{% endif %}">{{ t }}</span>{% empty %}<span class="t-mute">–</span>{% endfor %}</td>
+        <td>{{ r.step_list|length }}</td>
+        <td>{{ r.rule_count }}</td>
+        <td>{% if r.last_reviewed %}{{ r.last_reviewed|date:"d M Y" }}{% else %}<span class="t-mute">Never</span>{% endif %}{% if r.review_due %} <span class="chip warn">due</span>{% endif %}</td>
+        <td><div class="row-actions">
+          <a class="btn icon blue" href="{% url 'automation:runbook_detail' r.pk %}" title="Open" aria-label="Open {{ r.title }}">{% icon "eye" 15 %}</a>
+          {% if can_operate %}<a class="btn icon blue" href="{% url 'automation:runbook_edit' r.pk %}" title="Edit" aria-label="Edit {{ r.title }}">{% icon "edit" 15 %}</a>{% endif %}
+        </div></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="empty">{% if query.urlencode %}No runbooks match these filters.{% else %}No runbooks yet.{% if can_operate %} <a href="{% url 'automation:runbook_create' %}">Write the first one</a>, or load examples with <code>manage.py seed_automation</code>.{% endif %}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="runbooks" %}
+</div>
+</div>
+{% endblock %}

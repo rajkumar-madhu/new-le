@@ -1,0 +1,49 @@
+{% extends "core/base.html" %}{% load le static automation_tags %}
+{% block title %}Templates{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Templates</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph tint-info">{% icon "template" 30 %}</div>
+  <div class="head-text"><h1>Templates</h1><p>Reusable defaults for URL checks, TCP checks, incidents and notifications</p></div>
+  <div class="actions">{% if can_operate %}<a class="btn primary" href="{% url 'automation:template_create' %}">{% icon "plus" 16 %}New template</a>{% endif %}</div>
+</div>
+{% include "automation/_tabs.html" with tab="templates" %}
+
+<section class="kind-cards" aria-label="Template kinds">
+  <a class="kind-card {% if not request.GET.kind %}on{% endif %}" href="{% url 'automation:templates' %}"><span class="kc-ic">{% icon "template" 22 %}</span><span><b>All templates</b><small>{{ total }} template{{ total|pluralize }}</small></span></a>
+  {% for k in kinds %}
+  <a class="kind-card {% if request.GET.kind == k.key %}on{% endif %}" href="?kind={{ k.key }}"><span class="kc-ic k-{{ k.key }}">{% icon k.icon 22 %}</span><span><b>{{ k.label }}</b><small>{{ k.count }} template{{ k.count|pluralize }}</small></span></a>
+  {% endfor %}
+</section>
+
+<div class="panel">
+  <div class="panel-h"><h2>{% if request.GET.kind %}{% for k in kinds %}{% if k.key == request.GET.kind %}{{ k.label }} templates{% endif %}{% endfor %}{% else %}All templates{% endif %} ({{ page.paginator.count }})</h2>
+    <div class="right"><form method="get" class="toolbar compact inline">{% if request.GET.kind %}<input type="hidden" name="kind" value="{{ request.GET.kind }}">{% endif %}
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search templates…" aria-label="Search templates"></label></form></div></div>
+  <div class="table-wrap dense"><table class="am-table templates-table">
+    <thead><tr><th>Name</th><th>Kind</th><th>Description</th><th>Defaults</th><th>Applied</th><th>Last applied</th><th><span class="sr">Actions</span></th></tr></thead>
+    <tbody>
+    {% for t in page %}
+      <tr>
+        <td class="clip strong"><a href="{% url 'automation:template_detail' t.pk %}" title="{{ t.name }}">{{ t.name }}</a></td>
+        <td><span class="kind-chip k-{{ t.kind }}">{% icon kind_icons|get_item:t.kind 13 %}{{ t.get_kind_display }}</span></td>
+        <td class="clip" title="{{ t.description }}">{{ t.description|default:"–" }}</td>
+        <td>{{ t.values|length }} field{{ t.values|length|pluralize }}</td>
+        <td>{{ t.applied_count }}</td>
+        <td>{{ t.last_applied_at|ago }}</td>
+        <td><div class="row-actions">
+          {% if can_operate %}<a class="btn sm primary" href="{% url 'automation:template_apply' t.pk %}" aria-label="Apply {{ t.name }}">{% icon "play" 13 %}Apply</a>
+          <a class="btn icon blue" href="{% url 'automation:template_edit' t.pk %}" title="Edit" aria-label="Edit {{ t.name }}">{% icon "edit" 15 %}</a>{% else %}
+          <a class="btn icon blue" href="{% url 'automation:template_detail' t.pk %}" title="View" aria-label="View {{ t.name }}">{% icon "eye" 15 %}</a>{% endif %}
+        </div></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty">{% if request.GET.q or request.GET.kind %}No templates match.{% else %}No templates yet.{% if can_operate %} <a href="{% url 'automation:template_create' %}">Create one</a> or load examples with <code>manage.py seed_automation</code>.{% endif %}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="templates" %}
+</div>
+</div>
+{% endblock %}

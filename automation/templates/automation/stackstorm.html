@@ -1,0 +1,79 @@
+{% extends "core/base.html" %}{% load le static automation_tags %}
+{% block title %}StackStorm{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}<span>StackStorm</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph tint-purple">{% icon "zap" 30 %}</div>
+  <div class="head-text"><h1>StackStorm {% if configured %}{% badge "active" "Configured" %}{% else %}{% badge "inactive" "Not connected" %}{% endif %}</h1><p>Trigger StackStorm webhooks from LinkedEye and review every call</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'automation:execution_export' %}?kind=stackstorm&amp;{{ query.urlencode }}">{% icon "download" 16 %}Export</a>
+    {% if can_operate and configured %}<form method="post" action="{% url 'automation:stackstorm_test' %}">{% csrf_token %}<button class="btn" type="submit">{% icon "plug" 16 %}Test connection</button></form>{% endif %}
+  </div>
+</div>
+{% include "automation/_tabs.html" with tab="stackstorm" %}
+
+{% if not configured %}
+<div class="am-notconnected">
+  <div class="glyph-sm">{% icon "plug" 26 %}</div>
+  <div><h2>StackStorm is not connected</h2>
+    <p>Set <code>LINKEDEYE_STACKSTORM_URL</code> to the StackStorm webhook endpoint (for example <code>https://st2.example.net/api/v1/webhooks/</code>) and <code>LINKEDEYE_STACKSTORM_API_KEY</code> to an API key, then restart LinkedEye. Until then manual triggers are disabled and rules that trigger StackStorm record a failed “not configured” execution.</p></div>
+</div>
+{% endif %}
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "zap" 22 %}</div><div class="kpi-body"><div class="label">Executions (24h)</div><div class="value">{{ stats.total }}</div></div></div><div class="sub">{{ stats.pending }} pending</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Success rate (24h)</div><div class="value">{% if stats.rate is None %}–{% else %}{{ stats.rate|pct:1 }}{% endif %}</div></div></div><div class="sub">{{ stats.ok }} succeeded</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile {% if stats.failed %}s-crit{% else %}s-mute{% endif %}">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Failed (24h)</div><div class="value {% if stats.failed %}t-crit{% endif %}">{{ stats.failed }}</div></div></div><div class="sub">Including “not configured”</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last execution</div><div class="value">{% if stats.last %}{{ stats.last.started_at|ago }}{% else %}–{% endif %}</div></div></div><div class="sub">{% if stats.last %}{{ stats.last.trigger|truncatechars:34 }}{% else %}Nothing triggered yet{% endif %}</div></div>
+</section>
+
+<section class="grid g-main">
+  <div class="panel">
+    <div class="panel-h"><h2>Executions ({{ page.paginator.count }})</h2></div>
+    <form class="toolbar compact" method="get">
+      {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+      <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search trigger, user, error…" aria-label="Search executions"></label>
+      <select name="status" data-autosubmit aria-label="Status"><option value="">All status</option>{% for v, l in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <select name="origin" data-autosubmit aria-label="Origin"><option value="">Manual and rules</option><option value="manual" {% if request.GET.origin == "manual" %}selected{% endif %}>Manual only</option><option value="rule" {% if request.GET.origin == "rule" %}selected{% endif %}>From rules</option></select>
+      {% if query.urlencode %}<a class="btn sm ghost-primary" href="{% url 'automation:stackstorm' %}">Clear</a>{% endif %}
+    </form>
+    <div class="table-wrap dense"><table class="am-table exec-table">
+      <thead><tr><th>Started</th><th>Rule</th><th>Trigger</th><th>Status</th><th>HTTP</th><th>Duration</th><th>By</th><th>Result</th></tr></thead>
+      <tbody>{% include "automation/_exec_rows.html" with show_rule=1 cols=8 empty_text="No StackStorm executions yet." %}</tbody>
+    </table></div>
+    {% include "core/_pager.html" with pager_noun="executions" %}
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Connection</h2></div>
+      <dl class="kv">
+        <dt>Status</dt><dd>{% if configured %}{% badge "active" "Configured" %}{% else %}{% badge "inactive" "Not connected" %}{% endif %}</dd>
+        <dt>Webhook URL</dt><dd>{% if st2_url %}<span class="mono">{{ st2_url }}</span>{% else %}<span class="t-mute">LINKEDEYE_STACKSTORM_URL not set</span>{% endif %}</dd>
+        <dt>API key</dt><dd>{% if api_key_set %}Set (sent as <span class="mono">St2-Api-Key</span>){% else %}<span class="t-mute">Not set</span>{% endif %}</dd>
+        <dt>Timeout</dt><dd>10 s per call</dd>
+        <dt>Rules using it</dt><dd>{% for r in rule_triggers %}<a href="{% url 'automation:rule_detail' r.pk %}">{{ r.name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}<span class="t-mute">None</span>{% endfor %}</dd>
+      </dl>
+    </div>
+    <div class="panel" id="trigger">
+      <div class="panel-h"><h2>Manual trigger</h2></div>
+      {% if can_operate %}
+      <form method="post" action="{% url 'automation:stackstorm_trigger' %}" class="am-form" novalidate>{% csrf_token %}
+        {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+        <div class="form-grid one">
+          {% include "automation/_field.html" with f=form.trigger full=1 %}
+          {% include "automation/_field.html" with f=form.payload full=1 %}
+        </div>
+        <div class="form-foot">
+          {% if configured %}<span class="hint">POST {{ st2_url }}&lt;trigger&gt;</span>{% else %}<span class="hint t-warn">Connect StackStorm to enable manual triggers.</span>{% endif %}
+          <button class="btn primary" type="submit"{% if not configured %} disabled title="StackStorm is not connected"{% endif %}>{% icon "play" 14 %}Trigger</button>
+        </div>
+      </form>
+      {% else %}<p class="t-mute small">Only operators can trigger StackStorm.</p>{% endif %}
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

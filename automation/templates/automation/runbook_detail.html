@@ -1,0 +1,62 @@
+{% extends "core/base.html" %}{% load le static automation_tags %}
+{% block title %}{{ rb.title }} · Runbook{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}<a href="{% url 'automation:runbooks' %}">Runbooks</a>{% icon "chevron-right" 14 %}<span class="clip-crumb">{{ rb.title }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation detail">
+<div class="head">
+  <div class="glyph tint-info">{% icon "book" 30 %}</div>
+  <div class="head-text"><h1>{{ rb.title }}{% if rb.is_example %} <span class="chip warn">example</span>{% endif %}</h1>
+    <p>{% if rb.service %}{{ rb.service }}{% else %}No service{% endif %}{% if rb.ci_name %} · CI <span class="mono">{{ rb.ci_name }}</span>{% endif %} · {{ rb.site }}{% if rb.owner %} · Owner {{ rb.owner }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_edit %}
+    <form method="post" action="{% url 'automation:runbook_reviewed' rb.pk %}">{% csrf_token %}<button class="btn" type="submit">{% icon "check" 15 %}Mark reviewed</button></form>
+    <a class="btn primary" href="{% url 'automation:runbook_edit' rb.pk %}">{% icon "edit" 15 %}Edit</a>
+    {% endif %}
+    {% if can_delete %}<form method="post" action="{% url 'automation:runbook_delete' rb.pk %}" data-confirm="Delete the runbook “{{ rb.title }}”? Rules that link it keep working without it.">{% csrf_token %}<button class="btn danger-outline" type="submit">{% icon "trash" 15 %}Delete</button></form>{% endif %}
+  </div>
+</div>
+
+{% if rb.review_due %}<div class="am-alert warn">{% icon "clock" 16 %}<span>{% if rb.last_reviewed %}Last reviewed {{ rb.last_reviewed|date:"d M Y" }}, more than {{ review_days }} days ago.{% else %}This runbook has never been reviewed.{% endif %} Check the steps still match the environment, then mark it reviewed.</span></div>{% endif %}
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Symptoms</h2></div>
+      {% if rb.symptoms %}<div class="prose">{{ rb.symptoms|linebreaks_escaped }}</div>{% else %}<p class="t-mute">No symptoms described.</p>{% endif %}
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Steps ({{ rb.step_list|length }})</h2></div>
+      {{ rb.steps|runbook_steps }}
+    </div>
+  </div>
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Details</h2>{% if can_edit %}<div class="right"><a class="view-all" href="{% url 'automation:runbook_edit' rb.pk %}">{% icon "edit" 14 %}Edit</a></div>{% endif %}</div>
+      <dl class="kv">
+        <dt>Service</dt><dd>{{ rb.service|default:"–" }}</dd>
+        <dt>CI name</dt><dd>{% if rb.ci_name %}<span class="mono">{{ rb.ci_name }}</span>{% else %}–{% endif %}</dd>
+        <dt>Site</dt><dd>{{ rb.site }}</dd>
+        <dt>Owner</dt><dd>{{ rb.owner|default:"–" }}</dd>
+        <dt>Tags</dt><dd>{% for t in rb.tag_list %}<span class="chip {% if t|lower == 'example' %}warn{% endif %}">{{ t }}</span> {% empty %}–{% endfor %}</dd>
+        <dt>Last reviewed</dt><dd>{% if rb.last_reviewed %}{{ rb.last_reviewed|date:"d M Y" }}{% else %}Never{% endif %}</dd>
+        <dt>Created</dt><dd>{{ rb.created_at|date:"d M Y H:i" }}{% if rb.created_by %} by {{ rb.created_by }}{% endif %}</dd>
+        <dt>Updated</dt><dd>{{ rb.updated_at|date:"d M Y H:i" }}</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Rules using this runbook</h2>{% if can_operate %}<div class="right"><a class="view-all" href="{% url 'automation:rule_create' %}">{% icon "plus" 14 %}New rule</a></div>{% endif %}</div>
+      {% for r in rules %}
+        <div class="am-row"><a href="{% url 'automation:rule_detail' r.pk %}">{{ r.name }}</a>{% if r.enabled %}{% badge "active" "Enabled" %}{% else %}{% badge "paused" "Disabled" %}{% endif %}<small>{{ r.match_summary }} → {{ r.get_action_display }}</small></div>
+      {% empty %}<p class="t-mute small">No event rule links this runbook. A rule with the action “Link runbook” or “Open incident” can reference it.</p>{% endfor %}
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Recent rule runs</h2></div>
+      {% for e in runs %}
+        <div class="am-row"><a href="{% url 'automation:execution_detail' e.pk %}">{{ e.started_at|date:"d M H:i" }}</a>{% badge e.badge_key e.get_status_display %}<small>{{ e.rule.name }} · {{ e.result_label|default:e.trigger }}</small></div>
+      {% empty %}<p class="t-mute small">No rule that links this runbook has fired yet.</p>{% endfor %}
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

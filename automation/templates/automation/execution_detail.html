@@ -1,0 +1,52 @@
+{% extends "core/base.html" %}{% load le static automation_tags %}
+{% block title %}Execution #{{ ex.pk }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<span>Automation</span>{% icon "chevron-right" 14 %}{% if ex.rule_id %}<a href="{% url 'automation:workflows' %}">Workflows</a>{% else %}<a href="{% url 'automation:stackstorm' %}">StackStorm</a>{% endif %}{% icon "chevron-right" 14 %}<span>Execution #{{ ex.pk }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-automation detail">
+<div class="head">
+  <div class="glyph tint-{{ ex.status_tone }}">{% if ex.kind == "stackstorm" %}{% icon "zap" 30 %}{% elif ex.kind == "webhook" %}{% icon "link" 30 %}{% else %}{% icon "share" 30 %}{% endif %}</div>
+  <div class="head-text"><h1>Execution #{{ ex.pk }} {% badge ex.badge_key ex.get_status_display %}</h1>
+    <p>{{ ex.get_kind_display }} · <span class="mono">{{ ex.trigger }}</span></p></div>
+  <div class="actions">
+    {% if can_rerun %}<form method="post" action="{% url 'automation:execution_rerun' ex.pk %}" data-confirm="Send the same payload again?">{% csrf_token %}<button class="btn primary" type="submit">{% icon "refresh" 15 %}Re-run</button></form>{% endif %}
+    {% if ex.kind == "stackstorm" and can_operate and st2_configured %}<a class="btn" href="{% url 'automation:stackstorm' %}?from={{ ex.pk }}#trigger">{% icon "edit" 15 %}Edit &amp; trigger</a>{% endif %}
+  </div>
+</div>
+
+{% if ex.error %}<div class="am-alert crit">{% icon "alert" 16 %}<span><b>Error:</b> {{ ex.error }}</span></div>{% endif %}
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Payload sent</h2></div><pre class="log">{{ ex.payload|pretty_json }}</pre></div>
+    <div class="panel"><div class="panel-h"><h2>Response</h2>{% if ex.http_status %}<div class="right"><span class="chip {% if ex.http_status < 300 %}ok{% else %}crit{% endif %}">HTTP {{ ex.http_status }}</span></div>{% endif %}</div>
+      {% if ex.response_excerpt %}<pre class="log">{{ ex.response_excerpt }}</pre>{% else %}<p class="t-mute">No response body recorded.</p>{% endif %}</div>
+  </div>
+  <div class="stack">
+    <div class="panel"><div class="panel-h"><h2>Details</h2></div>
+      <dl class="kv">
+        <dt>Kind</dt><dd>{{ ex.get_kind_display }}</dd>
+        <dt>Status</dt><dd>{% badge ex.badge_key ex.get_status_display %}</dd>
+        <dt>HTTP status</dt><dd>{{ ex.http_status|default:"–" }}</dd>
+        <dt>Started</dt><dd>{{ ex.started_at|date:"d M Y H:i:s" }}</dd>
+        <dt>Finished</dt><dd>{% if ex.finished_at %}{{ ex.finished_at|date:"d M Y H:i:s" }}{% else %}–{% endif %}</dd>
+        <dt>Duration</dt><dd>{{ ex.duration_ms|duration }}</dd>
+        <dt>Triggered by</dt><dd>{{ ex.triggered_by|default:"–" }}</dd>
+        <dt>Rule</dt><dd>{% if ex.rule %}<a href="{% url 'automation:rule_detail' ex.rule_id %}">{{ ex.rule.name }}</a>{% else %}Manual{% endif %}</dd>
+        <dt>Site</dt><dd>{{ ex.site|default:"–" }}</dd>
+        <dt>Result</dt><dd>{% if ex.result_url %}<a href="{{ ex.result_url }}">{{ ex.result_label|default:"Open" }}</a>{% else %}{{ ex.result_label|default:"–" }}{% endif %}</dd>
+        <dt>Fingerprint</dt><dd>{% if ex.fingerprint %}<span class="mono">{{ ex.fingerprint }}</span>{% else %}–{% endif %}</dd>
+      </dl>
+    </div>
+    {% if event %}<div class="panel"><div class="panel-h"><h2>Source event</h2></div>
+      <dl class="kv">
+        <dt>Event</dt><dd>#{{ event.pk }} · {{ event.occurred_at|date:"d M Y H:i:s" }}</dd>
+        <dt>Source</dt><dd>{{ event.source }}</dd>
+        <dt>Severity</dt><dd>{% badge event.severity %}</dd>
+        <dt>Title</dt><dd>{{ event.title }}</dd>
+        {% if event.message %}<dt>Message</dt><dd>{{ event.message|truncatechars:300 }}</dd>{% endif %}
+      </dl></div>{% elif ex.event_id %}<div class="panel"><p class="t-mute small">Source event #{{ ex.event_id }} has been pruned.</p></div>{% endif %}
+  </div>
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if t %}Edit {{ t.name }}{% else %}New {{ kind_label }} template{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'automation/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'automation:templates' %}">Templates</a>{% icon "chevron-right" 14 %}{% if t %}<a class="clip-crumb" href="{% url 'automation:template_detail' t.pk %}">{{ t.name }}</a>{% icon "chevron-right" 14 %}<span>Edit</span>{% else %}<span>New</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-automation">
+<div class="head">
+  <div class="glyph kc-ic k-{{ kind }}">{% icon kind_icon 28 %}</div>
+  <div class="head-text"><h1>{% if t %}Edit template{% else %}New {{ kind_label }} template{% endif %}</h1><p>{{ kind_help }}</p></div>
+</div>
+<form method="post" class="panel am-form" novalidate>{% csrf_token %}
+  <input type="hidden" name="kind" value="{{ kind }}">
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  <div class="form-grid">
+    {% include "automation/_field.html" with f=form.name %}
+    {% include "automation/_field.html" with f=form.description %}
+  </div>
+  <div class="panel-h sub-h"><h2>Default values</h2><small>All optional – whatever is left blank is asked for when the template is applied.</small></div>
+  <div class="form-grid">
+    {% for f in form.spec_fields %}{% include "automation/_field.html" with f=f full=f.field.spec.full %}{% endfor %}
+  </div>
+  <div class="form-foot">
+    <a class="btn" href="{% if t %}{% url 'automation:template_detail' t.pk %}{% else %}{% url 'automation:templates' %}{% endif %}">Cancel</a>
+    <button class="btn primary" type="submit">{% icon "check" 15 %}{% if t %}Save changes{% else %}Create template{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}
