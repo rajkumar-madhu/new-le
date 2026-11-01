@@ -15,7 +15,7 @@ from django.db import DatabaseError
 from django.db.models import Avg, Count, Max, Q
 from django.utils import timezone
 
-from core.access import can, scope_by_site
+from core.access import can, scope_by_site, visible_sites
 
 MAX_ROWS = 50_000
 
@@ -46,6 +46,7 @@ class Report:
     rows: Callable
     uses_period: bool = True
     perm: str = "view"
+    all_sites: bool = False      # rows cannot be site-scoped: only users who see every site may run it
     icon: str = "file"
     model: str = ""              # model the report reads; missing → "not connected"
     extra: dict = field(default_factory=dict)
@@ -63,7 +64,9 @@ class Report:
             return False
 
     def allowed(self, user):
-        return can(user, self.perm)
+        if not can(user, self.perm):
+            return False
+        return not self.all_sites or visible_sites(user) is None
 
 
 class Unavailable(Exception):
@@ -275,9 +278,9 @@ REPORTS = {r.key: r for r in [
            "core", ["Time", "Severity", "Source", "Kind", "Title", "Site", "Object type", "Object id",
                     "Fingerprint", "Message"], event_rows, icon="list"),
     Report("audit", "Audit trail", "Platform",
-           "Who changed what and when (administrators only).",
+           "Who changed what and when (administrators with access to every site).",
            "core", ["Time", "User", "Action", "Object type", "Object id", "Object", "Result", "Source IP"],
-           audit_rows, perm="admin", icon="shield"),
+           audit_rows, perm="admin", all_sites=True, icon="shield"),
 ]}
 
 for _key, _model_name in {"incidents": "Ticket", "tickets": "Ticket", "sla": "Ticket",

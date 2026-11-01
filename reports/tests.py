@@ -288,3 +288,39 @@ class ScheduleTests(Base):
         self.assertEqual(self.client.post(reverse("reports:schedule_delete", args=[other.pk])).status_code, 403)
         self.client.force_login(self.viewer)
         self.assertEqual(self.client.get(reverse("reports:schedule_new")).status_code, 403)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class AuditScopeTests(Base):
+    """The audit trail has no site field, so only admins who see every site may export it."""
+
+    def setUp(self):
+        super().setUp()
+        self.site_admin = User.objects.create_user("mumadmin", "mumadmin@example.com", PW)
+        Membership.objects.create(user=self.site_admin, site=self.mum, role="admin")
+        self.global_admin = User.objects.create_user("gadmin", "gadmin@example.com", PW)
+        Membership.objects.create(user=self.global_admin, site=None, role="admin")
+
+    def test_site_scoped_admin_cannot_export_audit(self):
+        self.assertFalse(registry.REPORTS["audit"].allowed(self.site_admin))
+        self.client.force_login(self.site_admin)
+        self.assertEqual(self.client.get(reverse("reports:preview", args=["audit"])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("reports:download", args=["audit"])).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("reports:index")), "Audit trail")
+        resp = self.client.post(reverse("reports:schedule_new"), {
+            "name": "Audit", "report_key": "audit", "window_days": 1, "frequency": "daily", "send_hour": 8,
+            "recipients": "x@example.com"})
+        self.assertContains(resp, "Choose a report you are allowed to run")
+
+    def test_scheduled_audit_owned_by_site_admin_is_not_sent(self):
+        s = ScheduledReport.objects.create(name="Audit", report_key="audit", window_days=1, frequency="daily",
+                                           recipients="x@example.com", owner=self.site_admin)
+        run = scheduler.deliver(s)
+        self.assertEqual(run.status, "failed")
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_all_site_admins_can_export_audit(self):
+        self.assertTrue(registry.REPORTS["audit"].allowed(self.global_admin))
+        self.assertTrue(registry.REPORTS["audit"].allowed(self.admin))   # superuser
+        self.client.force_login(self.global_admin)
+        self.assertEqual(self.client.get(reverse("reports:download", args=["audit"])).status_code, 200)
