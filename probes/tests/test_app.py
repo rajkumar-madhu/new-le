@@ -71,6 +71,23 @@ class RunnerTests(TestCase):
         self.assertEqual((d.status, d.dns_status, d.ssl_status, d.ip_address), ("up", "Resolved", "Valid", "93.184.216.34"))
         self.assertEqual(DomainCheck.objects.count(), 1)
 
+    def test_domain_up_down_transitions_emit_events(self):
+        from core.models import Event
+        d = Domain.objects.create(tenant_key="default", site_key="s", hostname="shop.example.com", status="up")
+        down = checks.DnsResult(False, [], "DNS resolution failed")
+        with mock.patch.object(checks, "dns_check", return_value=down):
+            runner.run_domain_checks([d])
+        ev = Event.objects.get(fingerprint=f"domain:{d.pk}")
+        self.assertEqual((ev.severity, ev.data["previous"], ev.data["status"]), ("critical", "up", "down"))
+        with mock.patch.object(checks, "dns_check", return_value=down):
+            runner.run_domain_checks([d])
+        self.assertEqual(Event.objects.filter(fingerprint=f"domain:{d.pk}").count(), 1)  # no repeat while down
+        with mock.patch.object(checks, "dns_check", return_value=checks.DnsResult(True, ["93.184.216.34"])), \
+             mock.patch.object(checks, "http_check", return_value=fake_http()), \
+             mock.patch.object(checks, "tls_check", return_value=None):
+            runner.run_domain_checks([d])
+        self.assertEqual(Event.objects.filter(fingerprint=f"domain:{d.pk}").latest("occurred_at").severity, "ok")
+
     def test_domain_dns_failure(self):
         d = Domain.objects.create(tenant_key="default", site_key="s", hostname="nx.example.com")
         with mock.patch.object(checks, "dns_check", return_value=checks.DnsResult(False, [], "DNS resolution failed")):

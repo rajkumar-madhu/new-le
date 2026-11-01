@@ -93,6 +93,7 @@ def save_domain_result(domain, probe, now):
                                response_ms=http.response_ms if up else None, ip_address=ip,
                                dns_status="Resolved" if dns.ok else "Failed", ssl_status=ssl_status,
                                ssl_expires_at=tls.expires_at if tls else None, message=message[:500])
+    previous = domain.status  # before it is overwritten, so up/down transitions are detected
     domain.status = "up" if up else "down"
     domain.dns_status = "Resolved" if dns.ok else "Failed"
     domain.ssl_status = ssl_status
@@ -101,7 +102,6 @@ def save_domain_result(domain, probe, now):
     domain.response_ms = http.response_ms if up else None
     if tls and tls.expires_at:
         domain.ssl_expires_at = tls.expires_at
-    previous = domain.status
     domain.last_checked_at = now
     domain.last_error = message[:500]
     domain.save(update_fields=["status", "dns_status", "ssl_status", "ip_address", "http_status", "response_ms",

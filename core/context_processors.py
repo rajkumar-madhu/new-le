@@ -31,13 +31,12 @@ def shell(request):
         max(matches, key=lambda e: len(e["href"]))["active"] = True
     for entry in nav:
         entry["open"] = entry["active"] or any(c["active"] for c in entry["children"])
-    from domainmonitor.models import Domain
-    from urlchecker.models import UrlCheck
-    tenant = settings.LINKEDEYE_TENANT
-    problems = (UrlCheck.objects.filter(tenant_key=tenant, enabled=True, last_status__in=["down", "degraded"]).count()
-                + Domain.objects.filter(tenant_key=tenant, is_active=True, status="down").count())
-    sites = sorted({s for s in UrlCheck.objects.filter(tenant_key=tenant).values_list("site", flat=True)}
-                   | {s for s in Domain.objects.filter(tenant_key=tenant).values_list("site_key", flat=True)}
-                   - {"", "All Sites"})
-    return {"nav": nav, "le_version": settings.LINKEDEYE_VERSION, "le_problem_count": problems,
-            "le_sites": sites, "le_site": request.GET.get("site", "")}
+    from . import overview
+    from .access import role_for
+    role = role_for(request.user)
+    admin_url = overview._url("administration:index") or overview._url("admin:index")
+    return {"nav": nav, "le_version": settings.LINKEDEYE_VERSION,
+            "le_problem_count": overview.problem_count(request.user),
+            "le_sites": overview.site_names(request.user), "le_site": request.GET.get("site", ""),
+            "le_role": "Super Admin" if request.user.is_superuser else (role or "viewer").capitalize(),
+            "le_admin_url": admin_url, "le_profile_url": overview._url("administration:profile")}

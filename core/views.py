@@ -4,38 +4,73 @@ from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils.text import capfirst
 
-from domainmonitor.models import Domain
-from urlchecker.models import UrlCheck, UrlResult
+from urlchecker.models import UrlCheck
 from urlchecker.stats import overall_uptime
 
+from .access import scope_by_site
 from .samples import exporters as s_exporters, firewall as s_firewall, heatmap as s_heatmap, incidents as s_incidents
 from .nav import NAV
 
 
 def dashboard(request):
+    from . import overview
+    user = request.user
     t = settings.LINKEDEYE_TENANT
-    urls = list(UrlCheck.objects.filter(tenant_key=t, enabled=True))
-    domains = list(Domain.objects.filter(tenant_key=t, is_active=True))
-    problems = ([{"kind": "URL", "name": c.name, "status": c.last_status, "detail": c.last_error, "when": c.last_checked_at,
-                  "href": f"/monitoring/url-checker/{c.pk}/"} for c in urls if c.last_status in ("down", "degraded")]
-                + [{"kind": "Domain", "name": d.hostname, "status": d.status if d.status == "down" else d.ssl_status,
-                    "detail": d.last_error or f"SSL {d.ssl_status}", "when": d.last_checked_at, "href": f"/domains/list/?selected={d.pk}"}
-                   for d in domains if d.status == "down" or d.ssl_status in ("Expiring", "Expired", "Invalid")])
+    urls = scope_by_site(UrlCheck.objects.filter(tenant_key=t, enabled=True), user)
     return render(request, "core/dashboard.html", {
-        "urls_total": len(urls), "urls_online": sum(c.last_status == "online" for c in urls),
-        "domains_total": len(domains), "domains_up": sum(d.status == "up" for d in domains),
-        "ssl_soon": sum(d.ssl_status in ("Expiring", "Expired") for d in domains),
-        "uptime7": overall_uptime(urls, 24 * 7), "problems": problems,
-        "events": UrlResult.objects.filter(url_check__tenant_key=t).exclude(status="online").select_related("url_check")[:8],
+        "kpis": overview.kpis(user),
+        "problems": overview.problems(user, limit=50),
+        "events": overview.recent_events(user, limit=10),
+        "uptime7": overall_uptime(list(urls), 24 * 7),
+        "heatmap_url": overview._url("cmdb:heatmap") or overview._url("heatmap"),
     })
 
 
-def search(request):
-    q = request.GET.get("q", "").strip()
+SEARCH_LIMIT = 25
+
+
+def _search_groups(user, q):
+    """[(title, [(label, detail, href)])] across every installed module, limited to the user's sites."""
+    from . import overview
     t = settings.LINKEDEYE_TENANT
-    urls = UrlCheck.objects.filter(tenant_key=t).filter(Q(name__icontains=q) | Q(url__icontains=q) | Q(tags__icontains=q))[:25] if q else []
-    domains = Domain.objects.filter(tenant_key=t).filter(Q(hostname__icontains=q) | Q(description__icontains=q))[:25] if q else []
-    return render(request, "core/search.html", {"q": q, "urls": urls, "domains": domains})
+    groups = []
+
+    def add(title, app_label, name, cond, row, site_field="site"):
+        m = overview.model(app_label, name)
+        if not m:
+            return
+        qs = m.objects.filter(cond)
+        if hasattr(m, "tenant_key"):
+            qs = qs.filter(tenant_key=t)
+        if site_field:
+            qs = scope_by_site(qs, user, field=site_field)
+        rows = overview._safe(lambda: [row(o) for o in qs[:SEARCH_LIMIT]], [])
+        groups.append((title, rows))
+
+    add("URL checks", "urlchecker", "UrlCheck", Q(name__icontains=q) | Q(url__icontains=q) | Q(tags__icontains=q),
+        lambda c: (c.name, c.url, overview._url("urlchecker:detail", c.pk)))
+    add("Domains", "domainmonitor", "Domain", Q(hostname__icontains=q) | Q(description__icontains=q),
+        lambda d: (d.hostname, d.site_key, f"{overview._url('domains:list')}?selected={d.pk}"), site_field="site_key")
+    add("Network devices", "network", "Device",
+        Q(name__icontains=q) | Q(mgmt_ip__icontains=q) | Q(serial__icontains=q) | Q(tags__icontains=q),
+        lambda d: (d.name, f"{d.get_device_type_display()} · {d.mgmt_ip}", d.get_absolute_url()))
+    add("Tickets", "servicedesk", "Ticket", Q(number__iexact=q) | Q(title__icontains=q) | Q(ci_name__icontains=q),
+        lambda k: (f"{k.number} {k.title}", k.get_status_display(), k.get_absolute_url()))
+    add("Configuration items", "cmdb", "ConfigurationItem",
+        Q(name__icontains=q) | Q(ip_address__icontains=q) | Q(serial__icontains=q) | Q(asset_tag__icontains=q),
+        lambda c: (c.name, c.get_ci_type_display(), c.get_absolute_url()))
+    add("TCP checks", "tcpcheck", "TcpCheck", Q(name__icontains=q) | Q(host__icontains=q),
+        lambda c: (c.name, f"{c.host}:{c.port}", overview._url("tcpcheck:detail", c.pk)))
+    add("Runbooks", "automation", "Runbook",
+        Q(title__icontains=q) | Q(service__icontains=q) | Q(ci_name__icontains=q) | Q(symptoms__icontains=q) | Q(tags__icontains=q),
+        lambda r: (r.title, r.service or r.ci_name, r.get_absolute_url()))
+    return groups
+
+
+def search(request):
+    q = request.GET.get("q", "").strip()[:200]
+    groups = _search_groups(request.user, q) if q else []
+    return render(request, "core/search.html", {"q": q, "groups": groups, "total": sum(len(r) for _, r in groups)})
 
 
 def heatmap(request):

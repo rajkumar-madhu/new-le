@@ -1,12 +1,13 @@
 {% extends "core/base.html" %}{% load le %}
 {% block title %}Search{% endblock %}
 {% block content %}
-<div class="head"><div><h1>Search</h1><p>{% if q %}Results for “{{ q }}”{% else %}Type in the search box above.{% endif %}</p></div></div>
+<div class="head"><div><h1>Search</h1><p>{% if q %}{{ total }} result{{ total|pluralize }} for “{{ q }}” across every module you can see{% else %}Type in the search box above to search devices, domains, tickets, IPs, configuration items and runbooks.{% endif %}</p></div></div>
 {% if q %}<section class="grid g-2">
-<div class="panel"><div class="panel-h"><h2>URL checks ({{ urls|length }})</h2></div><div class="table-wrap"><table><tbody>
-{% for c in urls %}<tr><td><a href="{% url 'urlchecker:detail' c.pk %}">{{ c.name }}</a></td><td><span class="cell-link">{{ c.url }}</span></td><td>{% badge c.last_status %}</td></tr>{% empty %}<tr><td class="empty">No URL checks match.</td></tr>{% endfor %}
+{% for title, rows in groups %}
+<div class="panel"><div class="panel-h"><h2>{{ title }} ({{ rows|length }})</h2></div><div class="table-wrap"><table><tbody>
+{% for label, detail, href in rows %}<tr><td><a href="{{ href }}">{{ label }}</a></td><td><span class="cell-link">{{ detail }}</span></td></tr>
+{% empty %}<tr><td class="empty">No matches.</td></tr>{% endfor %}
 </tbody></table></div></div>
-<div class="panel"><div class="panel-h"><h2>Domains ({{ domains|length }})</h2></div><div class="table-wrap"><table><tbody>
-{% for d in domains %}<tr><td><a href="{% url 'domains:list' %}?selected={{ d.pk }}">{{ d.hostname }}</a></td><td>{{ d.site_key }}</td><td>{% badge d.status %}</td></tr>{% empty %}<tr><td class="empty">No domains match.</td></tr>{% endfor %}
-</tbody></table></div></div></section>{% endif %}
+{% endfor %}
+</section>{% endif %}
 {% endblock %}

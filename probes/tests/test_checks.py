@@ -2,6 +2,7 @@ import http.server
 import socket
 import threading
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 from django.test import SimpleTestCase, override_settings
 
@@ -112,3 +113,41 @@ class HttpCheckTests(ServerMixin, SimpleTestCase):
         r = checks.http_check(self.url("/ok"))
         self.assertFalse(r.ok)
         self.assertIn("Blocked", r.error)
+
+
+class TlsExpiryCaptureTests(SimpleTestCase):
+    """http_check must read the certificate before getresponse() closes the socket ("Connection: close")."""
+
+    def test_certificate_read_before_socket_closes(self):
+        class Sock:
+            def getpeercert(self):
+                return {"notAfter": "Jan  1 00:00:00 2031 GMT"}
+
+        class Resp:
+            status = 200
+
+            def read(self, n):
+                return b"ok"
+
+            def getheader(self, name):
+                return None
+
+        class Conn:
+            def __init__(self, host, ip, port, timeout, context):
+                self.sock = Sock()
+
+            def request(self, *a, **k):
+                pass
+
+            def getresponse(self):
+                self.sock = None   # what http.client does for a Connection: close response
+                return Resp()
+
+            def close(self):
+                pass
+
+        with mock.patch.object(checks, "resolve_allowed", return_value="93.184.216.34"), \
+             mock.patch.object(checks, "_PinnedHTTPSConnection", Conn):
+            res = checks.http_check("https://example.com/")
+        self.assertTrue(res.ok)
+        self.assertEqual(res.tls_expires_at.year, 2031)

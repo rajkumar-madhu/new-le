@@ -2,6 +2,7 @@ from unittest import mock
 
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
+from django.urls import reverse
 
 from core import access, jobs
 from core.audit import audit
@@ -87,3 +88,56 @@ class JobTests(TestCase):
         finally:
             jobs.JOBS.pop("t.job")
         self.assertEqual(len(calls), 2)
+
+
+class OverviewTests(TestCase):
+    """Dashboard, global search and the shell context draw on every installed module, limited to the user's sites."""
+
+    def setUp(self):
+        from network.models import Device
+        from tcpcheck.models import TcpCheck
+        from urlchecker.models import UrlCheck
+        self.mum = Site.objects.create(name="Mumbai", code="mum")
+        self.dr = Site.objects.create(name="DR Site", code="dr")
+        self.admin = User.objects.create_superuser("root", "root@example.com", "Corr3ct-horse-battery")
+        self.viewer = User.objects.create_user("viewer", "v@example.com", "Corr3ct-horse-battery")
+        Membership.objects.create(user=self.viewer, site=self.mum, role="viewer")
+        self.op = User.objects.create_user("op", "op@example.com", "Corr3ct-horse-battery")
+        Membership.objects.create(user=self.op, site=None, role="operator")
+        UrlCheck.objects.create(name="Portal", url="https://portal.example.com/", site="Mumbai", last_status="down")
+        Device.objects.create(name="core-sw-01", device_type="switch", mgmt_ip="10.0.0.1", site="Mumbai", status="down",
+                              serial="SN-777")
+        Device.objects.create(name="dr-fw-01", device_type="firewall", mgmt_ip="10.9.0.1", site="DR Site", status="down")
+        TcpCheck.objects.create(name="Oracle", host="db.example.com", port=1521, site="Mumbai", last_status="degraded")
+
+    def test_problem_count_and_sites_are_scoped(self):
+        from . import overview
+        self.assertEqual(overview.problem_count(self.admin), 4)
+        self.assertEqual(overview.problem_count(self.viewer), 3)   # the DR firewall is outside Mumbai
+        self.assertEqual(overview.site_names(self.admin), ["DR Site", "Mumbai"])
+        self.assertEqual(overview.site_names(self.viewer), ["Mumbai"])
+        kinds = {p["kind"] for p in overview.problems(self.viewer)}
+        self.assertEqual(kinds, {"URL", "Device", "TCP"})
+
+    def test_dashboard_lists_cross_module_problems(self):
+        self.client.force_login(self.viewer)
+        resp = self.client.get(reverse("dashboard"))
+        self.assertContains(resp, "core-sw-01")
+        self.assertContains(resp, "Oracle (db.example.com:1521)")
+        self.assertNotContains(resp, "dr-fw-01")
+        self.assertContains(resp, "Devices up")
+
+    def test_search_covers_devices_and_respects_sites(self):
+        self.client.force_login(self.viewer)
+        resp = self.client.get(reverse("search"), {"q": "SN-777"})
+        self.assertContains(resp, "core-sw-01")
+        resp = self.client.get(reverse("search"), {"q": "fw-01"})
+        self.assertNotContains(resp, "dr-fw-01")
+        self.assertContains(resp, "Network devices (0)")
+
+    def test_shell_shows_membership_role_and_badge(self):
+        self.client.force_login(self.op)
+        resp = self.client.get(reverse("dashboard"))
+        self.assertEqual(resp.context["le_role"], "Operator")
+        self.assertEqual(resp.context["le_problem_count"], 4)
+        self.assertTrue(resp.context["le_admin_url"])

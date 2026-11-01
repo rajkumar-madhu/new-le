@@ -135,9 +135,10 @@ def http_check(url, method="GET", timeout=None, follow_redirects=True, expected_
                 path += "?" + parts.query
             try:
                 conn.request(method, path, headers={"User-Agent": USER_AGENT, "Accept": "*/*", "Connection": "close"})
-                resp = conn.getresponse()
+                # read the certificate now: getresponse() closes the socket on "Connection: close"
                 if parts.scheme == "https" and conn.sock is not None:
                     res.tls_expires_at = _cert_expiry(conn.sock.getpeercert())
+                resp = conn.getresponse()
                 body = resp.read(MAX_BODY) if method != "HEAD" else b""
             finally:
                 conn.close()

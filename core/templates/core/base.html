@@ -38,15 +38,16 @@
       <form class="site-pick" method="get" action="{{ request.path }}"><select name="site" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in le_sites %}<option value="{{ s }}"{% if s == le_site %} selected{% endif %}>{{ s }}</option>{% endfor %}</select></form>
       <a class="icon-btn" href="{% url 'urlchecker:index' %}?status=down" title="{{ le_problem_count }} check(s) need attention" aria-label="Problems">{% icon "bell" 21 %}{% if le_problem_count %}<span class="count">{{ le_problem_count }}</span>{% endif %}</a>
       <a class="icon-btn solid hide-sm" href="{% url 'coming_soon' 'help' %}" aria-label="Help">{% ficon "help" 24 %}</a>
-      <a class="icon-btn hide-sm" href="{% url 'admin:index' %}" aria-label="Administration">{% icon "settings" 22 %}</a>
+      <a class="icon-btn hide-sm" href="{{ le_admin_url }}" aria-label="Administration">{% icon "settings" 22 %}</a>
       <details class="user-menu">
         <summary class="user">
           <span class="avatar">{% icon "user" 20 %}</span>
-          <div><b>{{ user.get_full_name|default:user.get_username|capfirst }}</b><small>{% if user.is_superuser %}Super Admin{% elif user.is_staff %}Operator{% else %}Viewer{% endif %}</small></div>
+          <div><b>{{ user.get_full_name|default:user.get_username|capfirst }}</b><small>{{ le_role }}</small></div>
           {% icon "chevron-down" 18 "t-mute" %}
         </summary>
         <div class="menu">
-          <a href="{% url 'admin:index' %}">{% icon "settings" 16 %}Administration</a>
+          {% if le_profile_url %}<a href="{{ le_profile_url }}">{% icon "user" 16 %}My profile</a>{% endif %}
+          <a href="{{ le_admin_url }}">{% icon "settings" 16 %}Administration</a>
           <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">{% icon "logout" 16 %}Sign out</button></form>
         </div>
       </details>

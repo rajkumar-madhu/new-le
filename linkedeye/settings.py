@@ -147,3 +147,11 @@ LOG_INGEST_TOKEN = env("LOG_INGEST_TOKEN", "")               # required bearer t
 STACKSTORM_URL = env("STACKSTORM_URL", "")                    # e.g. https://st2.fs-linkedeye/api/v1/webhooks/
 STACKSTORM_API_KEY = env("STACKSTORM_API_KEY", "")
 INCIDENT_AUTO_CREATE = env("INCIDENT_AUTO_CREATE", "true").lower() in ("1", "true", "yes")
+NAGIOS_URL = env("NAGIOS_URL", "")                            # Nagios Core base URL (statusjson.cgi is appended)
+NAGIOS_USER = env("NAGIOS_USER", "")
+NAGIOS_PASSWORD = env("NAGIOS_PASSWORD", "")
+NAGIOS_TIMEOUT = float(env("NAGIOS_TIMEOUT", "10"))
+# Retention (days) for high-volume module data
+LOG_RETENTION_DAYS = int(env("LOG_RETENTION_DAYS", "14"))
+TELEMETRY_ALERT_RETENTION_DAYS = int(env("TELEMETRY_ALERT_RETENTION_DAYS", "90"))
+AUTOMATION_RETENTION_DAYS = int(env("AUTOMATION_RETENTION_DAYS", "90"))

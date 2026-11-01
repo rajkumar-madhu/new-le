@@ -1,7 +1,7 @@
 {% extends "core/base.html" %}{% load static le %}
 {% block title %}FG-01{% endblock %}
 {% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/firewall.css' %}">{% endblock %}
-{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'coming_soon' 'all-devices' %}">Network Devices</a>{% icon "chevron-right" 14 %}<a href="{% url 'firewall' %}">Firewalls</a>{% icon "chevron-right" 14 %}<a href="{% url 'firewall' %}">FortiGate</a>{% icon "chevron-right" 14 %}<span>FG-01</span></nav>{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:all' %}">Network Devices</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:firewalls' %}">Firewalls</a>{% icon "chevron-right" 14 %}<a href="{% url 'firewall' %}">FortiGate</a>{% icon "chevron-right" 14 %}<span>FG-01</span></nav>{% endblock %}
 {% block content %}
 <div class="pg-firewall">
 <div class="head fw-head">
@@ -15,7 +15,7 @@
     <div class="fw-btns">
       <button type="button" class="btn">{% icon "edit" 16 %}Edit Device</button>
       <button type="button" class="btn ghost-primary">{% icon "refresh" 16 %}Run Discovery</button>
-      <a class="btn" href="{% url 'coming_soon' 'topology' %}">{% icon "share" 16 %}Open in Topology</a>
+      <a class="btn" href="{% url 'cmdb:topology' %}">{% icon "share" 16 %}Open in Topology</a>
       <button type="button" class="btn">{% icon "more" 16 %}More</button>
     </div>
     <div class="fw-tags">{% for i, label, tone in d.tags %}<span class="fw-tag tone-{{ tone }}">{% icon i 13 %}{{ label }}</span>{% endfor %}</div>
@@ -25,8 +25,8 @@
 <nav class="tabs fw-tabs" aria-label="Device sections">
   <a class="on" href="#overview">Overview</a><a href="#interfaces">Interfaces</a><a href="#traffic">Traffic</a><a href="#security">Security Events</a>
   <a href="#vpn">VPN</a><a href="#system">System</a><a href="#policies">Policies</a><a href="#apps">Applications</a><a href="#security">Threats</a>
-  <a href="{% url 'coming_soon' 'logs-events' %}">Logs</a><a href="#device-info">Configuration</a><a href="{% url 'coming_soon' 'all-devices' %}">Inventory</a>
-  <a href="{% url 'coming_soon' 'topology' %}">Topology</a>
+  <a href="{% url 'observe:logs' %}">Logs</a><a href="#device-info">Configuration</a><a href="{% url 'network:all' %}">Inventory</a>
+  <a href="{% url 'cmdb:topology' %}">Topology</a>
 </nav>
 
 <section class="kpis fw-kpis" id="overview">
@@ -60,7 +60,7 @@
 </section>
 
 <section class="grid fw-row3">
-  <div class="panel" id="security"><div class="panel-h"><h2>Security Events (Top 10)</h2><a class="right view-all" href="{% url 'coming_soon' 'logs-events' %}">View All {% icon "arrow-right" 14 %}</a></div>
+  <div class="panel" id="security"><div class="panel-h"><h2>Security Events (Top 10)</h2><a class="right view-all" href="{% url 'observe:logs' %}">View All {% icon "arrow-right" 14 %}</a></div>
     <div class="table-wrap dense"><table class="fw-sec"><thead><tr><th>Time</th><th>Severity</th><th>Event Type</th><th>Source</th><th>Destination</th><th>Message</th></tr></thead><tbody>
     {% for t, s, e, src, dst, m in d.security %}<tr><td>{{ t }}</td><td class="sev-{{ s|lower }}">{% badge s %}</td><td>{{ e }}</td><td>{{ src }}</td><td>{{ dst }}</td><td>{{ m }}</td></tr>{% endfor %}</tbody></table></div></div>
   <div class="panel" id="apps"><div class="panel-h nowrap"><h2>Top Applications <small>(by Bandwidth)</small></h2><select class="right fw-sel" aria-label="Applications range"><option>Last 24 hours</option><option>Last 7 days</option></select></div>

@@ -78,7 +78,8 @@ h1, h2, h3 { margin: 0; letter-spacing: -.01em; text-wrap: balance; }
 .user small { color: var(--muted); font-size: 12px; }
 
 .page { padding: 16px 24px 32px; display: flex; flex-direction: column; gap: 16px; }
-.crumbs { color: var(--muted); font-size: 13.5px; display: flex; gap: 8px; align-items: center; }
+.crumbs { color: var(--muted); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; min-width: 0; }
+.crumbs > * { min-width: 0; overflow-wrap: anywhere; }
 .crumbs a { color: var(--primary); }
 .head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 .head .glyph { width: 52px; height: 52px; border-radius: 12px; display: grid; place-items: center; color: var(--ink); }

@@ -9,6 +9,7 @@ NAV = [
         {"label": "Problems", "url": "servicedesk:problems"},
         {"label": "Changes", "url": "servicedesk:changes"},
         {"label": "Service Catalog", "url": "servicedesk:catalog"},
+        {"label": "SLA Policies", "url": "servicedesk:sla"},
     ]},
     {"label": "Assets", "icon": "box", "children": [
         {"label": "IT Assets", "url": "cmdb:assets"}, {"label": "Software", "url": "cmdb:software"},
@@ -33,6 +34,7 @@ NAV = [
         {"label": "Firewalls", "url": "network:firewalls"}, {"label": "Load Balancers", "url": "network:load_balancers"},
         {"label": "Wireless", "url": "network:wireless"}, {"label": "Physical Servers", "url": "network:physical_servers"},
         {"label": "Virtual Machines", "url": "network:virtual_machines"}, {"label": "All Devices", "url": "network:all"},
+        {"label": "Discovery", "url": "network:discovery"},
     ]},
     {"label": "Domains", "icon": "browser", "children": [
         {"label": "Overview", "url": "domains:overview"},
@@ -51,6 +53,7 @@ NAV = [
     {"label": "BOD / EOD", "icon": "calendar", "children": [
         {"label": "Status Dashboard", "url": "bodeod:status"}, {"label": "Key Validation", "url": "bodeod:keys"},
         {"label": "Execution History", "url": "bodeod:history"},
+        {"label": "Checklist", "url": "bodeod:checklist"}, {"label": "Holidays", "url": "bodeod:holidays"},
     ]},
     {"label": "Automation", "icon": "bot", "children": [
         {"label": "Runbooks", "url": "automation:runbooks"}, {"label": "StackStorm", "url": "automation:stackstorm"},
