@@ -1,0 +1,94 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Reports{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'reports/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'reports:index' %}">Reports</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-reports">
+<div class="head">
+  <div class="glyph">{% icon "clipboard" 44 %}</div>
+  <div><h1>Reports</h1><p>Export operational data as CSV, preview it in the browser or have it e-mailed on a schedule</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'reports:analytics' %}">{% icon "analytics" 17 %}Analytics</a>
+    {% if can_operate %}<a class="btn primary" href="{% url 'reports:schedule_new' %}">{% icon "calendar" 17 %}Schedule a report</a>{% endif %}
+  </div>
+</div>
+
+{% for g in groups %}
+<section class="panel rp-group" aria-labelledby="cat-{{ forloop.counter }}">
+  <div class="panel-h"><h2 id="cat-{{ forloop.counter }}">{{ g.name }}</h2></div>
+  <div class="rp-cards">
+  {% for r in g.reports %}
+    <article class="rp-card{% if not r.available %} off{% endif %}">
+      <div class="rp-card-h"><div class="tile s-info">{% icon r.icon 20 %}</div>
+        <div><h3><a href="{% url 'reports:preview' r.key %}">{{ r.title }}</a></h3><p>{{ r.description }}</p></div></div>
+      {% if r.available %}
+      <form class="rp-run" method="get" action="{% url 'reports:preview' r.key %}">
+        {% if r.uses_period %}
+        <select name="days" aria-label="Period for {{ r.title }}">{% for d, l in presets %}<option value="{{ d }}"{% if d == 7 %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+        {% elif r.extra.horizon_label %}
+        <label class="rp-days">{{ r.extra.horizon_label }} <input type="number" name="days" value="60" min="1" max="366" aria-label="{{ r.extra.horizon_label }}"></label>
+        {% else %}<span class="chip mute">Current snapshot</span>{% endif %}
+        {% if sites %}<select name="site" aria-label="Site for {{ r.title }}"><option value="">All sites</option>{% for s in sites %}<option>{{ s }}</option>{% endfor %}</select>{% endif %}
+        <div class="rp-btns">
+          <button class="btn sm" type="submit">{% icon "eye" 15 %}Preview</button>
+          <button class="btn sm primary" type="submit" formaction="{% url 'reports:download' r.key %}">{% icon "download" 15 %}CSV</button>
+          {% if can_operate %}<a class="btn sm ghost-primary" href="{% url 'reports:schedule_new' %}?report={{ r.key }}" title="E-mail this report on a schedule" aria-label="Schedule {{ r.title }}">{% icon "calendar" 15 %}</a>{% endif %}
+        </div>
+      </form>
+      {% else %}<p class="t-mute rp-na">Not connected – the <code>{{ r.app_label }}</code> module is not installed.</p>{% endif %}
+    </article>
+  {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<section class="grid g-2">
+  <div class="panel">
+    <div class="panel-h"><h2>Scheduled reports ({{ schedules|length }})</h2>
+      <div class="right t-mute small">E-mail backend: {{ email_backend }}</div></div>
+    <div class="table-wrap dense"><table>
+      <thead><tr><th>Name</th><th>Report</th><th>When</th><th>Recipients</th><th>Next</th><th>Last</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for s in schedules %}
+        <tr>
+          <td>{{ s.name }}{% if not s.enabled %} <span class="chip mute">disabled</span>{% endif %}<div class="t-mute small">{% if s.site %}{{ s.site }}{% else %}All sites{% endif %} · owner {{ s.owner.get_username|default:"none" }}</div></td>
+          <td>{{ s.report_title }}<div class="t-mute small">{{ s.window_days }} day{{ s.window_days|pluralize }}</div></td>
+          <td>{{ s.get_frequency_display }} at {{ s.send_hour|stringformat:"02d" }}:00</td>
+          <td class="rp-recip" title="{{ s.recipients }}">{{ s.recipient_list|length }} address{{ s.recipient_list|length|pluralize:"es" }}</td>
+          <td>{{ s.next_run_at|short_dt|default:"–" }}</td>
+          <td>{% if s.last_status == "failed" %}<span class="chip crit" title="{{ s.last_error }}">Failed</span>{% elif s.last_status == "empty" %}<span class="chip mute">No rows</span>{% elif s.last_status %}<span class="chip ok">Sent</span>{% else %}<span class="t-mute">Never</span>{% endif %}
+            {% if s.last_run_at %}<div class="t-mute small">{{ s.last_run_at|ago }}</div>{% endif %}</td>
+          <td><div class="row-actions">{% if s.manageable %}
+            <form method="post" action="{% url 'reports:schedule_send' s.pk %}">{% csrf_token %}<button class="btn icon blue" type="submit" title="Send now" aria-label="Send {{ s.name }} now">{% icon "mail" 15 %}</button></form>
+            <a class="btn icon blue" href="{% url 'reports:schedule_edit' s.pk %}" title="Edit" aria-label="Edit {{ s.name }}">{% icon "edit" 15 %}</a>
+            <form method="post" action="{% url 'reports:schedule_delete' s.pk %}" data-confirm="Delete the schedule “{{ s.name }}”?">{% csrf_token %}<button class="btn icon" type="submit" title="Delete" aria-label="Delete {{ s.name }}">{% icon "trash" 15 %}</button></form>
+          {% endif %}</div></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty">No scheduled reports yet.{% if can_operate %} Use “Schedule a report” to e-mail one daily, weekly or monthly.{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Recent report runs</h2></div>
+    <div class="table-wrap dense"><table>
+      <thead><tr><th>When</th><th>Report</th><th>Channel</th><th>By</th><th>Rows</th><th>Result</th></tr></thead>
+      <tbody>
+      {% for r in runs %}
+        <tr>
+          <td>{{ r.created_at|short_dt }}</td>
+          <td>{{ r.report_title }}{% if r.site %}<div class="t-mute small">{{ r.site }}</div>{% endif %}</td>
+          <td>{{ r.get_channel_display }}{% if r.schedule %}<div class="t-mute small">{{ r.schedule.name }}</div>{% endif %}</td>
+          <td>{{ r.requested_by_name }}</td>
+          <td>{{ r.rows }}</td>
+          <td>{% if r.status == "failed" %}<span class="chip crit" title="{{ r.error }}">Failed</span>{% elif r.status == "empty" %}<span class="chip mute">No rows</span>{% else %}<span class="chip ok">{{ r.get_status_display }}</span>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="empty">No reports have been generated yet.</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+  </div>
+</section>
+</div>
+{% endblock %}

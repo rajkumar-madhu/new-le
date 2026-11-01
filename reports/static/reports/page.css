@@ -1,0 +1,30 @@
+/* Reports & Analytics – scoped under .pg-reports */
+.pg-reports { display: flex; flex-direction: column; gap: 16px; }
+.pg-reports .small { font-size: 12.5px; }
+.pg-reports .rp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.pg-reports .rp-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fff; }
+.pg-reports .rp-card.off { background: var(--line-soft); }
+.pg-reports .rp-card-h { display: flex; gap: 12px; align-items: flex-start; }
+.pg-reports .rp-card-h .tile { flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; }
+.pg-reports .rp-card h3 { font-size: 15px; font-weight: 650; margin: 0 0 3px; }
+.pg-reports .rp-card h3 a { color: var(--ink); }
+.pg-reports .rp-card p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+.pg-reports .rp-run { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: auto; }
+.pg-reports .rp-run select { height: 32px; min-width: 0; flex: 1 1 120px; }
+.pg-reports .rp-btns { display: flex; gap: 6px; margin-left: auto; }
+.pg-reports .rp-days { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.pg-reports .rp-days input { height: 32px; width: auto; max-width: 150px; }
+.pg-reports .rp-na { margin: 0; font-size: 13px; }
+.pg-reports .rp-recip { white-space: nowrap; }
+.pg-reports .toolbar .right { margin-left: auto; }
+.pg-reports .rp-preview { max-height: 70vh; overflow: auto; }
+.pg-reports .rp-preview th { position: sticky; top: 0; background: #fff; z-index: 1; white-space: nowrap; }
+.pg-reports .rp-preview td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+.pg-reports .rp-sub { font-size: 13px; font-weight: 650; color: var(--ink-2); margin: 14px 0 8px; }
+.pg-reports .rp-estate { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
+.pg-reports .rp-estate .label { color: var(--ink-2); font-size: 13px; }
+.pg-reports .rp-estate .value { font-size: 26px; font-weight: 700; margin: 2px 0; }
+.pg-reports .rp-form { max-width: 900px; }
+.pg-reports .rp-form .form-foot { display: flex; justify-content: space-between; align-items: center; }
+.pg-reports .head .actions form { display: flex; }
+@media (max-width: 720px) { .pg-reports .rp-btns { margin-left: 0; } }

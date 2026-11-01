@@ -1,0 +1,32 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if schedule %}Edit schedule{% else %}Schedule a report{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'reports/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'reports:index' %}">Reports</a>{% icon "chevron-right" 14 %}<span>{% if schedule %}{{ schedule.name }}{% else %}New schedule{% endif %}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-reports">
+<div class="head">
+  <div class="glyph">{% icon "calendar" 44 %}</div>
+  <div><h1>{% if schedule %}Edit “{{ schedule.name }}”{% else %}Schedule a report{% endif %}</h1>
+    <p>The report is generated as CSV and e-mailed to the recipients. Rows are limited to the sites {% if schedule %}the owner{% else %}you{% endif %} can see.</p></div>
+</div>
+<div class="panel rp-form">
+  <form method="post">{% csrf_token %}
+    {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+    <div class="form-grid">
+      {% for f in form %}{% if f.name != "enabled" %}
+      <div class="field{% if f.name == 'recipients' %} full{% endif %}"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}
+        {% if f.help_text %}<span class="t-mute small">{{ f.help_text }}</span>{% endif %}
+        {% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+      {% endif %}{% endfor %}
+      <div class="field full form-foot">
+        <label class="inline-check"><span class="switch">{{ form.enabled }}<span></span></span>Enabled</label>
+        <span>
+          <a class="btn sm" href="{% url 'reports:index' %}">Cancel</a>
+          <button class="btn primary sm" type="submit">Save schedule</button>
+        </span>
+      </div>
+    </div>
+  </form>
+</div>
+</div>
+{% endblock %}

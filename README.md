@@ -87,11 +87,23 @@ status evaluation, the domain runner, page rendering, permissions, and the integ
 
 ## Layout
 
+Full map, module layout and data flow: [docs/STRUCTURE.md](docs/STRUCTURE.md).
+
 ```
-linkedeye/      settings (env-driven), urls
-core/           shell (sidebar, header, login), dashboard, search, sample-data pages, icons, CSS, SVG charts
-probes/         DNS / HTTP(S) / TLS checks with SSRF guard, runner, run_probes command, tests
-urlchecker/     URL Checker models, views, templates
-domainmonitor/  Domains (from LinkedEye_Domains_Integration_Patch, extended), patch JSON API
-docs/           integration and deployment notes
+linkedeye/       settings (env-driven), urls
+core/            platform: sites & roles, audit, events, notifications, jobs, Prometheus client, shell UI, charts
+probes/          DNS / HTTP(S) / TLS checks with SSRF guard, runner, run_probes worker
+urlchecker/      Monitoring › URL Checker
+domainmonitor/   Domains (from LinkedEye_Domains_Integration_Patch, extended), patch JSON API
+servicedesk/     incidents, problems, changes, requests, SLA, service catalog
+cmdb/            assets, software, licenses, lifecycle, CIs, relationships, topology, heatmap
+network/         switches, routers, firewalls, load balancers, wireless, servers, VMs, discovery
+telemetry/       infrastructure, Nagios, Prometheus, alerts (Alertmanager webhook), metrics explorer
+observe/         exporters, logs & events, log ingest API
+tcpcheck/        Telnet/TCP checks, unified uptime
+bodeod/          BOD / EOD market-day validation
+automation/      runbooks, StackStorm, event workflows, templates
+administration/  users & roles, sites, audit log, integrations, system health
+reports/         report library (CSV, preview, scheduled e-mail) and cross-module analytics
+docs/            structure, module contract, integration, deployment
 ```

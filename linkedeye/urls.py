@@ -31,6 +31,7 @@ urlpatterns = [
     path("", include("bodeod.urls")),
     path("", include("automation.urls")),
     path("", include("administration.urls")),
+    path("", include("reports.urls")),
     path("soon/<slug:slug>/", core.coming_soon, name="coming_soon"),
     path("admin/", admin.site.urls),
 ]

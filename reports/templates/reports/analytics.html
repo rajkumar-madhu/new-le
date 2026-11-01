@@ -1,0 +1,108 @@
+{% extends "core/base.html" %}{% load le static reports_tags %}
+{% block title %}Analytics{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'reports/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'reports:analytics' %}">Analytics</a></nav>{% endblock %}
+{% block content %}
+<div class="pg-reports">
+<div class="head">
+  <div class="glyph">{% icon "analytics" 44 %}</div>
+  <div><h1>Analytics</h1><p>Service reliability, incident handling and event volume across every module</p></div>
+  <div class="actions">
+    <nav class="seg" aria-label="Time range">{% for d, l in ranges %}<a href="?range={{ d }}{% if site %}&site={{ site|urlencode }}{% endif %}" class="{% if d == days %}on{% endif %}">{{ l }}</a>{% endfor %}</nav>
+    {% if sites %}<form method="get"><input type="hidden" name="range" value="{{ days }}">
+      <select name="site" data-autosubmit aria-label="Site"><option value="">All sites</option>{% for s in sites %}<option{% if s == site %} selected{% endif %}>{{ s }}</option>{% endfor %}</select></form>{% endif %}
+    <a class="btn" href="{% url 'reports:index' %}">{% icon "clipboard" 17 %}Reports</a>
+  </div>
+</div>
+
+<section class="kpis" aria-label="Summary">
+  {% if sd.error %}
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "headset" 22 %}</div><div class="kpi-body"><div class="label">Incidents</div><div class="value t-mute">–</div></div></div><div class="sub">{{ sd.error }}</div></div>
+  {% else %}
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Incidents</div><div class="value split">{{ sd.kpi.opened }} {% delta sd.change.opened good="down" %}</div></div></div><div class="sub">{{ sd.resolved }} resolved · {{ sd.open_now }} open now</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label" title="Mean time to acknowledge">MTTA</div><div class="value split">{{ sd.kpi.mtta|dur }} {% delta sd.change.mtta good="down" %}</div></div></div><div class="sub">Mean time to acknowledge</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "zap" 22 %}</div><div class="kpi-body"><div class="label" title="Mean time to resolve">MTTR</div><div class="value split">{{ sd.kpi.mttr|dur }} {% delta sd.change.mttr good="down" %}</div></div></div><div class="sub">Mean time to resolve</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">SLA met</div><div class="value">{% if sd.kpi.sla is None %}–{% else %}{{ sd.kpi.sla }}%{% endif %}</div></div></div><div class="sub">Resolution within SLA</div></div>
+  {% endif %}
+  {% if not av.error %}
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "globe" 22 %}</div><div class="kpi-body"><div class="label">URL uptime</div><div class="value split">{% if av.url is None %}–{% else %}{{ av.url|pct }}{% endif %} {% delta av.url_change suffix=" pts" %}</div></div></div><div class="sub">{{ av.url_checks|default:0 }} checks</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "browser" 22 %}</div><div class="kpi-body"><div class="label">Domain uptime</div><div class="value split">{% if av.domain is None %}–{% else %}{{ av.domain|pct }}{% endif %} {% delta av.domain_change suffix=" pts" %}</div></div></div><div class="sub">{{ av.domains|default:0 }} domains</div></div>
+  {% endif %}
+</section>
+
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>Incidents opened vs resolved</h2>
+      <div class="right legend square"><span><i style="background:#1565f0"></i>Opened</span><span><i style="background:#16a34a"></i>Resolved</span></div></div>
+    {% if sd.error %}<p class="empty">{{ sd.error }}</p>
+    {% elif not sd.has_data %}<p class="empty">No incidents in this period.</p>
+    {% else %}{{ sd.trend|json_script:"d-sd-trend" }}<div class="chart" data-chart="bars" data-src="d-sd-trend" style="height:220px"></div>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Daily availability</h2>
+      <div class="right legend"><span><i style="background:#1565f0"></i>URL checks</span><span><i style="background:#7c3aed"></i>Domains</span></div></div>
+    {% if av.error %}<p class="empty">{{ av.error }}</p>
+    {% elif not av.has_data %}<p class="empty">No check results in this period. Checks run with <code>manage.py run_probes</code>.</p>
+    {% else %}{{ av.chart|json_script:"d-av" }}<div class="chart" data-chart="line" data-src="d-av" style="height:220px"></div>{% endif %}
+  </div>
+</section>
+
+<section class="grid g-3">
+  <div class="panel"><div class="panel-h"><h2>Incidents by priority</h2></div>
+    {% if sd.error %}<p class="empty">{{ sd.error }}</p>
+    {% elif not sd.kpi.opened %}<p class="empty">No incidents in this period.</p>
+    {% else %}
+    <div class="donut-wrap">{{ sd.donut|json_script:"d-sd-donut" }}<div class="chart" data-chart="donut" data-src="d-sd-donut"></div>
+      <div class="donut-legend">{% for s in sd.donut.segments %}<span><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</span><b>{{ s.value }}</b>{% endfor %}</div></div>
+    <div class="table-wrap dense"><table><thead><tr><th>Priority</th><th>Incidents</th><th>MTTA</th><th>MTTR</th></tr></thead><tbody>
+      {% for r in sd.mttr_by_priority %}<tr><td>{{ r.priority }}</td><td>{{ r.count }}</td><td>{{ r.mtta|dur }}</td><td>{{ r.mttr|dur }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+  </div>
+
+  <div class="panel"><div class="panel-h"><h2>Events ({{ ev.total|default:0 }})</h2>
+      <div class="right legend square"><span><i style="background:#ef4444"></i>Critical</span><span><i style="background:#f5b400"></i>Warning</span></div></div>
+    {% if ev.error %}<p class="empty">{{ ev.error }}</p>
+    {% elif not ev.has_data %}<p class="empty">No events in this period.</p>
+    {% else %}
+    {{ ev.chart|json_script:"d-ev" }}<div class="chart" data-chart="bars" data-src="d-ev" style="height:130px"></div>
+    <h3 class="rp-sub">By severity</h3>
+    <div class="hbar">{% for s in ev.by_severity %}<span>{{ s.severity|title }}</span><span class="track"><i style="width:{{ s.n|share:ev.total }}%;background:{{ s.color }}"></i></span><b>{{ s.n }}</b>{% endfor %}</div>
+    <h3 class="rp-sub">Top sources</h3>
+    <div class="hbar">{% for s in ev.by_source %}<span>{{ s.source }}</span><span class="track"><i style="width:{{ s.n|share:ev.total }}%;background:#1d7cf2"></i></span><b>{{ s.n }}</b>{% endfor %}</div>
+    {% endif %}
+  </div>
+
+  <div class="panel"><div class="panel-h"><h2>Least available</h2><div class="right"><a class="view-all" href="{% url 'reports:preview' 'url_availability' %}?days={{ days }}">Full report</a></div></div>
+    {% if av.error %}<p class="empty">{{ av.error }}</p>
+    {% elif not av.least %}<p class="empty">No check results in this period.</p>
+    {% else %}
+    <div class="table-wrap dense"><table><thead><tr><th>Name</th><th>Type</th><th>Site</th><th>Uptime</th></tr></thead><tbody>
+      {% for r in av.least %}<tr><td>{% if r.kind == "URL" %}<a href="{% url 'urlchecker:detail' r.pk %}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td><td>{{ r.kind }}</td><td>{{ r.site }}</td>
+        <td class="{% if r.pct < 99 %}t-crit{% else %}t-ok{% endif %}" title="{{ r.samples }} samples">{{ r.pct|pct }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>CIs with the most incidents</h2></div>
+    {% if sd.error %}<p class="empty">{{ sd.error }}</p>
+    {% elif not sd.top_cis %}<p class="empty">No incidents linked to a configuration item in this period.</p>
+    {% else %}<div class="hbar">{% for c in sd.top_cis %}<span title="{{ c.ci_name }}">{{ c.ci_name|truncatechars:22 }}</span><span class="track"><i style="width:{{ c.n|share:sd.top_cis.0.n }}%;background:#7c3aed"></i></span><b>{{ c.n }}</b>{% endfor %}</div>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Estate snapshot</h2></div>
+    {% if inv.error %}<p class="empty">{{ inv.error }}</p>
+    {% elif not inv %}<p class="empty">CMDB, Network and TCP checks are not installed.</p>
+    {% else %}
+    <div class="rp-estate">
+      {% if inv.cis is not None %}<div><div class="label">Configuration items</div><div class="value">{{ inv.cis }}</div>
+        <div class="t-mute small">{% for s in inv.ci_status %}{{ s.status|title }} {{ s.n }}{% if not forloop.last %} · {% endif %}{% endfor %}</div></div>{% endif %}
+      {% if inv.devices is not None %}<div><div class="label">Network devices</div><div class="value">{{ inv.devices }}</div>
+        <div class="small"><span class="t-ok">Up {{ inv.device_status|get:"up" }}</span> · <span class="t-crit">Down {{ inv.device_status|get:"down" }}</span> · <span class="t-mute">Unknown {{ inv.device_status|get:"unknown" }}</span></div></div>{% endif %}
+      {% if inv.tcp is not None %}<div><div class="label">TCP checks</div><div class="value">{{ inv.tcp }}</div>
+        <div class="small"><span class="t-ok">Online {{ inv.tcp_status|get:"online" }}</span> · <span class="t-crit">Down {{ inv.tcp_status|get:"down" }}</span></div></div>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+</div>
+{% endblock %}

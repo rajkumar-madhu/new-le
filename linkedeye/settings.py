@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "bodeod",
     "automation",
     "administration",
+    "reports",
 ]
 
 MIDDLEWARE = [

@@ -1,0 +1,46 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{{ report.title }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'reports/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'reports:index' %}">Reports</a>{% icon "chevron-right" 14 %}<span>{{ report.title }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-reports">
+<div class="head">
+  <div class="glyph">{% icon report.icon 44 %}</div>
+  <div><h1>{{ report.title }}</h1><p>{{ report.description }}</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'reports:index' %}">{% icon "chevron-left" 17 %}All reports</a>
+    {% if not error %}<a class="btn primary" href="{% url 'reports:download' report.key %}?{{ query.urlencode }}">{% icon "download" 17 %}Download CSV</a>{% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <form class="toolbar" method="get">
+    {% if report.uses_period %}
+      <select name="days" data-autosubmit aria-label="Period">{% for d, l in presets %}<option value="{{ d }}"{% if params.days == d %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <span class="t-mute">or</span>
+      <label class="rp-days">From <input type="date" name="from" value="{{ params.from|default:'' }}"></label>
+      <label class="rp-days">To <input type="date" name="to" value="{{ params.to|default:'' }}"></label>
+    {% elif report.extra.horizon_label %}
+      <label class="rp-days">{{ report.extra.horizon_label }} <input type="number" name="days" min="1" max="366" value="{{ params.days }}"></label>
+    {% endif %}
+    {% if sites %}<select name="site" data-autosubmit aria-label="Site"><option value="">All sites</option>{% for s in sites %}<option{% if s == site %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>{% endif %}
+    <button class="btn sm" type="submit">{% icon "filter" 15 %}Apply</button>
+    <span class="right t-mute small">{% if report.uses_period %}{{ period_label }} · {{ start|short_dt }} – {{ end|short_dt }}{% elif report.extra.horizon_label %}Expiring within {{ period_label }}{% else %}Current snapshot{% endif %}</span>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="panel-h"><h2>{% if error %}Not available{% else %}{{ rows|length }}{% if more %}+{% endif %} row{{ rows|length|pluralize }}{% endif %}</h2>
+    {% if more %}<div class="right t-mute small">Showing the first {{ rows|length }} rows; the CSV contains all of them (up to 50,000).</div>{% endif %}</div>
+  {% if error %}<p class="empty">{{ error }}</p>
+  {% else %}
+  <div class="table-wrap dense rp-preview"><table>
+    <thead><tr>{% for c in report.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in rows %}<tr>{% for v in r %}<td>{{ v }}</td>{% endfor %}</tr>
+    {% empty %}<tr><td colspan="{{ report.columns|length }}" class="empty">No rows for this period and site.</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}
