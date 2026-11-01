@@ -1,0 +1,198 @@
+# LinkedEye on one Docker host.
+#
+#   cp deploy/compose.env.example .env        # fill in the REQUIRED values
+#   docker compose build
+#   docker compose up -d                      # db -> migrate (one-shot) -> web + probes
+#   docker compose exec web python manage.py createsuperuser
+#   docker compose --profile observability up -d   # + Prometheus, Alertmanager, node-exporter
+#
+# Rules
+# * probes (manage.py run_probes) runs EXACTLY ONE replica per database. Never `--scale probes=2` and never run
+#   a second stack against the same database: two schedulers double-check every target, duplicate events and
+#   race on incident creation.
+# * web may be scaled (`--scale web=N` after removing the published port, behind your own proxy).
+# * Database schema changes run once, in the `migrate` service, before web and probes start.
+# Full guide: docs/DEPLOYMENT.md
+
+name: linkedeye
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
+  image: ${LINKEDEYE_IMAGE:-linkedeye:9.0}
+  build:
+    context: .
+    args:
+      DB_EXTRAS: ${LINKEDEYE_DB_EXTRAS:-postgres}
+  env_file: .env
+  environment: &app-env
+    LINKEDEYE_SECRET_KEY: ${LINKEDEYE_SECRET_KEY:?set LINKEDEYE_SECRET_KEY in .env (see deploy/compose.env.example)}
+    LINKEDEYE_DB_ENGINE: ${LINKEDEYE_DB_ENGINE:-django.db.backends.postgresql}
+    LINKEDEYE_DB_HOST: ${LINKEDEYE_DB_HOST:-db}
+    LINKEDEYE_DB_PORT: ${LINKEDEYE_DB_PORT:-5432}
+    LINKEDEYE_DB_NAME: ${LINKEDEYE_DB_NAME:-linkedeye}
+    LINKEDEYE_DB_USER: ${LINKEDEYE_DB_USER:-linkedeye}
+    LINKEDEYE_DB_PASSWORD: ${LINKEDEYE_DB_PASSWORD:?set LINKEDEYE_DB_PASSWORD in .env}
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  logging: *logging
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${LINKEDEYE_DB_NAME:-linkedeye}
+      POSTGRES_USER: ${LINKEDEYE_DB_USER:-linkedeye}
+      POSTGRES_PASSWORD: ${LINKEDEYE_DB_PASSWORD:?set LINKEDEYE_DB_PASSWORD in .env}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    shm_size: 256m
+    stop_grace_period: 60s
+    logging: *logging
+
+  migrate:
+    <<: *app
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    <<: *app
+    command: ["gunicorn", "--config", "/app/gunicorn.conf.py"]
+    environment:
+      <<: *app-env
+      GUNICORN_FORWARDED_ALLOW_IPS: ${GUNICORN_FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
+    ports:
+      - "${WEB_PUBLISH:-127.0.0.1:8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "/app/deploy/docker/healthcheck.py", "web"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 40s
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  probes:
+    <<: *app
+    command: ["python", "manage.py", "run_probes"]
+    deploy:
+      replicas: 1          # the probe scheduler must never run more than once per database
+    healthcheck:
+      test: ["CMD", "python", "/app/deploy/docker/healthcheck.py", "probes"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    stop_grace_period: 60s  # SIGTERM: the loop finishes the current pass, then exits
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------- optional: --profile observability
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: [observability]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PUBLISH:-127.0.0.1:9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      - alertmanager
+    logging: *logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    profiles: [observability]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./deploy/alertmanager:/etc/alertmanager:ro
+      - alertmanager-data:/alertmanager
+    secrets:
+      - alertmanager_webhook_token
+    ports:
+      - "${ALERTMANAGER_PUBLISH:-127.0.0.1:9093}:9093"
+    healthcheck:
+      # Unhealthy while LINKEDEYE_ALERTMANAGER_WEBHOOK_TOKEN is empty: compose then mounts no token file and
+      # every notification to the console would fail. Compose cannot refuse to start here because variable
+      # checks apply to every profile.
+      test: ["CMD-SHELL", "test -s /run/secrets/alertmanager_webhook_token && wget -q -O /dev/null http://127.0.0.1:9093/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      web:
+        condition: service_started
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    profiles: [observability]
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($|/)
+    pid: host
+    volumes:
+      # read-only view of the host filesystem; add ",rslave" on hosts with shared mount propagation to also see
+      # filesystems mounted after the container started
+      - /:/host:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *logging
+
+secrets:
+  alertmanager_webhook_token:
+    # same value the web service checks; set it in .env
+    environment: LINKEDEYE_ALERTMANAGER_WEBHOOK_TOKEN
+
+volumes:
+  pgdata:
+  prometheus-data:
+  alertmanager-data:

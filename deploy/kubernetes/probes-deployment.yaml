@@ -1,0 +1,131 @@
+# Probe scheduler: `manage.py run_probes` runs every URL / domain / TCP check and every periodic job
+# (SLA timers, BOD/EOD auto-runs, scheduled reports, retention, heartbeat ...).
+#
+#   EXACTLY ONE REPLICA PER DATABASE.  Do not scale this Deployment, do not add an HPA, do not run a second
+#   copy elsewhere (another cluster, a VM, docker compose) against the same database: two schedulers
+#   double-check every target, duplicate events and notifications and race on incident creation.
+#   strategy: Recreate stops the old pod before the new one starts, so a rollout never overlaps.
+#
+# No PodDisruptionBudget on purpose: with one replica it would block node drains. A drain simply restarts it.
+# The pod needs network reach to everything you monitor; list private ranges in
+# LINKEDEYE_PROBE_ALLOWED_PRIVATE_CIDRS (configmap.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linkedeye-probes
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: probes
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: linkedeye
+      app.kubernetes.io/component: probes
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: linkedeye
+        app.kubernetes.io/component: probes
+        app.kubernetes.io/part-of: linkedeye
+      annotations:
+        kubectl.kubernetes.io/default-container: probes
+    spec:
+      serviceAccountName: linkedeye
+      automountServiceAccountToken: false
+      # run_probes finishes the current pass on SIGTERM, then exits
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-migrations
+          image: registry.example.com/linkedeye:9.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              # refuse to start with unedited secret.template.yaml placeholders
+              python /app/deploy/docker/healthcheck.py preflight || exit 1
+              until python manage.py migrate --check > /dev/null 2>&1; do
+                echo "waiting for the linkedeye-migrate Job (unapplied migrations or database unreachable)"
+                sleep 5
+              done
+          envFrom:
+            - configMapRef:
+                name: linkedeye-config
+            - secretRef:
+                name: linkedeye-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: probes
+          image: registry.example.com/linkedeye:9.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "manage.py", "run_probes"]
+          envFrom:
+            - configMapRef:
+                name: linkedeye-config
+            - secretRef:
+                name: linkedeye-secrets
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          # Healthy while the scheduler's heartbeat (written every 60 s by the administration.heartbeat job,
+          # tagged with this pod's hostname) is younger than HEALTHCHECK_MAX_HEARTBEAT_AGE seconds.
+          startupProbe:
+            exec:
+              command: ["python", "/app/deploy/docker/healthcheck.py", "probes"]
+            periodSeconds: 15
+            timeoutSeconds: 30
+            failureThreshold: 20
+          livenessProbe:
+            exec:
+              command: ["python", "/app/deploy/docker/healthcheck.py", "probes"]
+            periodSeconds: 60
+            timeoutSeconds: 30
+            failureThreshold: 3
+          env:
+            - name: HEALTHCHECK_MAX_HEARTBEAT_AGE
+              value: "300"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

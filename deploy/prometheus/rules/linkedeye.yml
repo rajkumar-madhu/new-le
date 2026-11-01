@@ -1,0 +1,42 @@
+# Starter alert rules. Alertmanager forwards them to LinkedEye (POST /api/v1/alertmanager/), which shows them
+# under Monitoring > Alerts and, for critical ones, can open incidents (LINKEDEYE_INCIDENT_AUTO_CREATE).
+groups:
+  - name: linkedeye-starter
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} target {{ $labels.instance }} is down"
+          description: "Prometheus has not been able to scrape {{ $labels.instance }} (job {{ $labels.job }}) for 2 minutes."
+
+      - alert: HostFilesystemAlmostFull
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} has less than 10% free"
+          description: "{{ $value | humanizePercentage }} space left on {{ $labels.mountpoint }} ({{ $labels.device }})."
+
+      - alert: HostMemoryPressure
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Less than 10% memory available on {{ $labels.instance }}"
+          description: "Available memory is {{ $value | humanizePercentage }} of total."
+
+      - alert: HostHighCpu
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU above 90% on {{ $labels.instance }} for 15 minutes"
+          description: "Average CPU utilisation is {{ $value | humanizePercentage }}."

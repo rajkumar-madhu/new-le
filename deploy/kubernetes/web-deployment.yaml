@@ -1,0 +1,179 @@
+# Web tier: gunicorn (image CMD, see gunicorn.conf.py). Stateless; scale freely (keep >= 2 for rolling
+# updates without downtime). Pods wait in their init container until the migration Job has applied every
+# migration of this image, so new code never runs against an old schema.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linkedeye-web
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: linkedeye
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: linkedeye
+        app.kubernetes.io/component: web
+        app.kubernetes.io/part-of: linkedeye
+      annotations:
+        kubectl.kubernetes.io/default-container: web
+    spec:
+      serviceAccountName: linkedeye
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: linkedeye
+              app.kubernetes.io/component: web
+      initContainers:
+        - name: wait-for-migrations
+          image: registry.example.com/linkedeye:9.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              # refuse to start with unedited secret.template.yaml placeholders
+              python /app/deploy/docker/healthcheck.py preflight || exit 1
+              until python manage.py migrate --check > /dev/null 2>&1; do
+                echo "waiting for the linkedeye-migrate Job (unapplied migrations or database unreachable)"
+                sleep 5
+              done
+          envFrom:
+            - configMapRef:
+                name: linkedeye-config
+            - secretRef:
+                name: linkedeye-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: web
+          image: registry.example.com/linkedeye:9.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: linkedeye-config
+            - secretRef:
+                name: linkedeye-secrets
+          env:
+            # match the CPU limit below (2 x CPUs + 1); each worker runs GUNICORN_THREADS threads
+            - name: GUNICORN_WORKERS
+              value: "3"
+            - name: GUNICORN_THREADS
+              value: "4"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          # /healthz is public and checks the database. The Host header must be in LINKEDEYE_ALLOWED_HOSTS.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: linkedeye-web
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: linkedeye-web
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            # tolerant on purpose: a short database outage should take pods out of the Service (readiness),
+            # not restart them all
+            httpGet:
+              path: /healthz
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: linkedeye-web
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              # let the endpoints controller and ingress drop this pod before gunicorn stops accepting
+              exec:
+                command: ["sleep", "5"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: linkedeye-web
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: linkedeye
+      app.kubernetes.io/component: web

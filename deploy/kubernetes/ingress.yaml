@@ -1,0 +1,40 @@
+# Public entry point. Replace linkedeye.example.com (also in configmap.yaml: ALLOWED_HOSTS and
+# CSRF_TRUSTED_ORIGINS) and provide the TLS certificate as Secret "linkedeye-tls" in fs-linkedeye
+# (kubectl -n fs-linkedeye create secret tls linkedeye-tls --cert=fullchain.pem --key=privkey.pem),
+# or let cert-manager issue it by uncommenting the annotation.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: linkedeye
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: linkedeye
+  # Controller-specific tuning goes here. What the console needs from any controller:
+  #   * redirect HTTP to HTTPS and send X-Forwarded-Proto (gunicorn trusts it, see configmap.yaml)
+  #   * an upstream read timeout of at least 90 s ("Run check now" probes the target inside the request)
+  #   * request bodies up to ~2 MB (Alertmanager webhook payloads are capped at 1 MB by the app)
+  #   * optionally HSTS (the application does not set it)
+  annotations:
+    # cert-manager.io/cluster-issuer: "<REPLACE: issuer name>"
+    # ingress-nginx style examples:
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "90"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+spec:
+  ingressClassName: nginx   # REPLACE with your IngressClass (kubectl get ingressclass)
+  tls:
+    - hosts:
+        - linkedeye.example.com
+      secretName: linkedeye-tls
+  rules:
+    - host: linkedeye.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: linkedeye-web
+                port:
+                  name: http

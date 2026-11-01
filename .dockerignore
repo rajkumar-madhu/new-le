@@ -1,0 +1,40 @@
+# Keep the build context small and free of secrets / local state.
+.git
+.github
+.gitignore
+.dockerignore
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+.coverage
+htmlcov
+**/*.log
+
+# local databases and environment files (never bake secrets or data into the image), at any depth
+**/*.sqlite3
+**/*.sqlite3-journal
+**/*.sqlite3-wal
+**/*.sqlite3-shm
+**/.env
+**/.env.*
+!.env.example
+**/*.pem
+**/*.key
+
+# generated at build time
+staticfiles
+media
+
+# deployment manifests are not needed inside the image (only the container helpers are)
+deploy/*
+!deploy/docker
+docker-compose*.yml
+Dockerfile
+
+# editor / OS noise
+.idea
+.vscode
+*.swp
+.DS_Store

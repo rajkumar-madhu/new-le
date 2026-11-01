@@ -1,0 +1,90 @@
+# Network policies for fs-linkedeye (needs a CNI that enforces NetworkPolicy: Calico, Cilium, ...).
+#
+#   1. default deny: no pod in the namespace accepts connections unless a policy below allows it
+#   2. ingress controller (and, optionally, Alertmanager) -> web :8000
+#   3. web, probes, the migrate Job and the optional backup CronJob -> database :5432 (only applies when
+#      the database runs in this namespace; label its pods as below. For a managed / external database,
+#      restrict access at its firewall to the cluster's egress addresses instead.)
+#
+# Egress is deliberately not restricted: the probe scheduler and "Run check now" in the web tier connect to
+# whatever you monitor. The application's SSRF guard refuses link-local / metadata / unlisted private
+# addresses (LINKEDEYE_PROBE_ALLOWED_PRIVATE_CIDRS). Kubelet health checks come from the node and are not
+# affected by these policies on common CNIs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: linkedeye-default-deny-ingress
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: linkedeye-web-ingress
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: linkedeye
+      app.kubernetes.io/component: web
+  policyTypes: ["Ingress"]
+  ingress:
+    # the ingress controller's pods; REPLACE namespace / labels with your controller's
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - port: http
+          protocol: TCP
+    # in-cluster Alertmanager posting to /api/v1/alertmanager/ (bearer-token protected);
+    # REPLACE namespace / labels with your monitoring stack's, or delete this rule
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - port: http
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: linkedeye-db-ingress
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  # REPLACE with the labels of your PostgreSQL pods in this namespace (e.g. CloudNativePG:
+  # cnpg.io/cluster: linkedeye-db)
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: linkedeye-postgres
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["linkedeye"]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: ["web", "probes", "migrate", "backup"]
+      ports:
+        - port: 5432
+          protocol: TCP

@@ -1,0 +1,6 @@
+# Optional extra: MySQL / MariaDB driver (LINKEDEYE_DB_ENGINE=django.db.backends.mysql).
+# Install on top of requirements.txt:  pip install -r requirements.txt -r requirements-mysql.txt
+# Building needs a compiler, pkg-config and the client headers
+# (Debian/Ubuntu: build-essential pkg-config default-libmysqlclient-dev; runtime: libmariadb3).
+# The Dockerfile does this when built with --build-arg DB_EXTRAS="mysql".
+mysqlclient>=2.2,<3

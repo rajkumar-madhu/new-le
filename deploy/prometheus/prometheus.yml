@@ -1,0 +1,38 @@
+# Minimal Prometheus configuration for the docker-compose "observability" profile.
+# LinkedEye reads this Prometheus over its HTTP API when LINKEDEYE_PROMETHEUS_URL=http://prometheus:9090
+# (Monitoring > Prometheus targets, alerts, metrics explorer) and receives its alerts through Alertmanager.
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    deployment: linkedeye-compose
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          site: "All Sites"
+
+  # Add your own exporters here, e.g.
+  # - job_name: node-dc1
+  #   static_configs:
+  #     - targets: ["10.10.0.11:9100", "10.10.0.12:9100"]
+  #       labels: {site: "DC1"}

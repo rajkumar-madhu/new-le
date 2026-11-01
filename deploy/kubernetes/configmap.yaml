@@ -1,0 +1,62 @@
+# Non-secret settings shared by the web, probes and migrate pods (envFrom). Secrets live in the
+# "linkedeye-secrets" Secret (secret.template.yaml). Reference: docs/DEPLOYMENT.md, "Environment variables".
+#
+# A variable that is present but empty replaces the setting's default with "" (for numeric settings that is
+# a start-up error), so leave optional settings out instead of setting them to "".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: linkedeye-config
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/part-of: linkedeye
+data:
+  LINKEDEYE_DEBUG: "false"
+  # Public host name (Ingress) + the in-cluster Service names. The Service names are needed because the
+  # kubelet health checks send "Host: linkedeye-web" and Alertmanager posts to
+  # http://linkedeye-web.fs-linkedeye.svc:8000/api/v1/alertmanager/.
+  LINKEDEYE_ALLOWED_HOSTS: "linkedeye.example.com,linkedeye-web,linkedeye-web.fs-linkedeye.svc,linkedeye-web.fs-linkedeye.svc.cluster.local"
+  LINKEDEYE_CSRF_TRUSTED_ORIGINS: "https://linkedeye.example.com"
+
+  # Database: PostgreSQL (the image is built with the psycopg driver). For MySQL build the image with
+  # --build-arg DB_EXTRAS=mysql and use django.db.backends.mysql.
+  LINKEDEYE_DB_ENGINE: "django.db.backends.postgresql"
+  LINKEDEYE_DB_HOST: "postgres.fs-linkedeye.svc.cluster.local"
+  LINKEDEYE_DB_PORT: "5432"
+  LINKEDEYE_DB_NAME: "linkedeye"
+  LINKEDEYE_DB_USER: "linkedeye"
+
+  LINKEDEYE_TENANT: "default"
+  LINKEDEYE_TIME_ZONE: "Asia/Kolkata"
+  LINKEDEYE_LOG_LEVEL: "INFO"
+
+  # Probes. Private / loopback targets are refused unless their range is listed (SSRF guard), e.g.
+  # "10.10.0.0/16,10.20.0.0/16" for internal NSE/BSE services.
+  LINKEDEYE_PROBE_ALLOWED_PRIVATE_CIDRS: ""
+  LINKEDEYE_PROBE_TIMEOUT: "10"
+  LINKEDEYE_PROBE_WORKERS: "8"
+  LINKEDEYE_PROBE_RETENTION_DAYS: "30"
+
+  # Retention (days) of other high-volume data.
+  LINKEDEYE_LOG_RETENTION_DAYS: "14"
+  LINKEDEYE_TELEMETRY_ALERT_RETENTION_DAYS: "90"
+  LINKEDEYE_AUTOMATION_RETENTION_DAYS: "90"
+
+  # Notifications for critical / warning events.
+  LINKEDEYE_NOTIFY_EMAILS: ""
+  LINKEDEYE_DEFAULT_FROM_EMAIL: "linkedeye@example.com"
+  # LINKEDEYE_EMAIL_HOST: "smtp.example.com"
+  # LINKEDEYE_EMAIL_PORT: "587"
+  # LINKEDEYE_EMAIL_HOST_USER: "linkedeye"
+  # LINKEDEYE_EMAIL_USE_TLS: "true"
+
+  # Integrations (pages show "not connected" while unset).
+  # LINKEDEYE_PROMETHEUS_URL: "http://prometheus-operated.monitoring.svc:9090"
+  # LINKEDEYE_STACKSTORM_URL: "https://st2.fs-linkedeye.svc/api/v1/webhooks/"
+  # LINKEDEYE_NAGIOS_URL: "https://nagios.example.com/nagios/cgi-bin"
+  LINKEDEYE_INCIDENT_AUTO_CREATE: "true"
+
+  # gunicorn: only the ingress controller can reach the web pods (networkpolicy.yaml), so its
+  # X-Forwarded-Proto header is trusted from any peer address.
+  GUNICORN_FORWARDED_ALLOW_IPS: "*"

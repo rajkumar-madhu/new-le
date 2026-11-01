@@ -1,2 +1,7 @@
+# Runtime dependencies (pure Python wheels; no compiler needed).
+# Database drivers are optional extras installed on top of this file:
+#   requirements-postgres.txt  PostgreSQL (docker-compose / Kubernetes default)
+#   requirements-mysql.txt     MySQL / MariaDB (LinkedEyeWebProject); needs libmysqlclient headers to build
 Django>=4.2,<5.0
 gunicorn>=22,<24
+whitenoise>=6.6,<7

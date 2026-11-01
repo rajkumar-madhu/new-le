@@ -1,0 +1,12 @@
+# Namespace for the LinkedEye console. Pod Security Admission "restricted" is enforced: every LinkedEye pod
+# runs as the image's non-root user with no privileges, a read-only root filesystem and RuntimeDefault seccomp.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fs-linkedeye
+  labels:
+    app.kubernetes.io/part-of: linkedeye
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

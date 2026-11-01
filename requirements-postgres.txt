@@ -1,0 +1,4 @@
+# Optional extra: PostgreSQL driver (LINKEDEYE_DB_ENGINE=django.db.backends.postgresql).
+# Install on top of requirements.txt:  pip install -r requirements.txt -r requirements-postgres.txt
+# The binary wheel bundles libpq, so no system packages are needed.
+psycopg[binary]>=3.1.12,<4

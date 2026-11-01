@@ -7,7 +7,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def env(name, default=None):
-    return os.environ.get(f"LINKEDEYE_{name}", default)
+    """LINKEDEYE_<name>; an empty value counts as unset, so `LINKEDEYE_PROBE_TIMEOUT=` in an env file keeps the default."""
+    value = os.environ.get(f"LINKEDEYE_{name}")
+    return default if value in (None, "") else value
 
 
 def env_list(name, default=""):
@@ -47,6 +49,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # serves collected static files (hashed, compressed)
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -83,6 +86,8 @@ DATABASES = {
         "PASSWORD": env("DB_PASSWORD", ""),
         "HOST": env("DB_HOST", ""),
         "PORT": env("DB_PORT", ""),
+        "CONN_MAX_AGE": int(env("DB_CONN_MAX_AGE", "60")),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 
@@ -100,6 +105,13 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    # DEBUG (tests, runserver) needs no collectstatic; production serves hashed, compressed files
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage" if DEBUG
+                    else "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
+WHITENOISE_MANIFEST_STRICT = False  # a template naming a missing static file gets a 404 asset, not a 500 page
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "login"
@@ -124,7 +136,12 @@ LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "loggers": {"linkedeye": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")}},
+    "loggers": {
+        "linkedeye": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
+        # with DEBUG off, 500 tracebacks and DisallowedHost would otherwise only be mailed to (empty) ADMINS
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+        "django.security": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
 }
 
 # ---- Notifications (critical/warning events) ----

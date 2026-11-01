@@ -1,0 +1,71 @@
+# Applies database migrations for the image it runs. The web and probes pods of the same image wait (init
+# container) until this has finished.
+#
+# Jobs are immutable: before applying a new image tag, delete the previous run
+#   kubectl -n fs-linkedeye delete job linkedeye-migrate --ignore-not-found
+# (finished runs are removed automatically after ttlSecondsAfterFinished). With Argo CD / Helm, turn this into
+# a PreSync / pre-upgrade hook instead.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: linkedeye-migrate
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: migrate
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 1800
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: linkedeye
+        app.kubernetes.io/component: migrate
+        app.kubernetes.io/part-of: linkedeye
+    spec:
+      restartPolicy: Never
+      serviceAccountName: linkedeye
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: registry.example.com/linkedeye:9.0
+          imagePullPolicy: IfNotPresent
+          # preflight: refuse to run with unedited secret.template.yaml placeholders
+          command:
+            - sh
+            - -c
+            - python /app/deploy/docker/healthcheck.py preflight && exec python manage.py migrate --noinput
+          envFrom:
+            - configMapRef:
+                name: linkedeye-config
+            - secretRef:
+                name: linkedeye-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

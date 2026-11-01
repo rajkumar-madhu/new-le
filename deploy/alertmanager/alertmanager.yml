@@ -1,0 +1,30 @@
+# Minimal Alertmanager configuration for the docker-compose "observability" profile.
+# Every alert goes to the LinkedEye console webhook. The bearer token is read from a file that compose mounts
+# from LINKEDEYE_ALERTMANAGER_WEBHOOK_TOKEN (.env), so the same value authenticates both sides and is never
+# written into this file.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: linkedeye
+  group_by: ["alertname", "instance"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: linkedeye
+    webhook_configs:
+      - url: http://web:8000/api/v1/alertmanager/
+        send_resolved: true
+        max_alerts: 0
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/alertmanager_webhook_token
+
+inhibit_rules:
+  # a down target makes its other alerts noise
+  - source_matchers: ['alertname = "TargetDown"']
+    target_matchers: ['severity = "warning"']
+    equal: ["instance"]

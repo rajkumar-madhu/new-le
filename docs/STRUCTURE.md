@@ -7,14 +7,18 @@ Shared code lives in `core/` and `probes/`. Apps talk to each other only through
 ```
 moniotor-/
 ├── manage.py
-├── requirements.txt            Django 4.2 LTS (+ whitenoise / gunicorn once deploy lands)
+├── requirements.txt            Django 4.2 LTS, gunicorn, whitenoise (+ requirements-postgres.txt / -mysql.txt)
+├── Dockerfile, docker-compose.yml, gunicorn.conf.py   production image and stack (see docs/DEPLOYMENT.md)
+├── deploy/                     docker/ (WSGI entry, healthcheck), kubernetes/, prometheus/, alertmanager/,
+│                               compose.env.example, validate.py (checks the bundle and settings docs),
+│                               tests/ (bundle regression tests: python -m unittest discover -s deploy/tests)
 ├── .env.example                every LINKEDEYE_* setting, documented
-├── .github/workflows/ci.yml    check · makemigrations --check · test
+├── .github/workflows/ci.yml    check · makemigrations --check · test · deploy bundle checks
 ├── docs/
 │   ├── STRUCTURE.md            this file
 │   ├── MODULES.md              module contract: shared APIs, UI kit, data rules, cross-module interfaces
 │   ├── INTEGRATION.md          Prometheus, Alertmanager, log ingest, StackStorm, e-mail/webhook
-│   └── DEPLOYMENT.md           production settings, worker process, backups
+│   └── DEPLOYMENT.md           Docker Compose, Kubernetes, settings reference, worker, backups
 │
 ├── linkedeye/                  project package
 │   ├── settings.py             env-driven settings (LINKEDEYE_*), INSTALLED_APPS, security headers

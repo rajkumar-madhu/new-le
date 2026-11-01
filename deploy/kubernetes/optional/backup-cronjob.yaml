@@ -1,0 +1,114 @@
+# OPTIONAL (not in kustomization.yaml): nightly pg_dump of the LinkedEye database into a PersistentVolumeClaim.
+#   kubectl apply -f deploy/kubernetes/optional/backup-cronjob.yaml
+# Reads host / port / name / user from ConfigMap linkedeye-config and the password from Secret
+# linkedeye-secrets. A PVC in the same cluster is not an off-site copy: ship the files elsewhere (object
+# storage sync, Velero, your backup agent). Prefer your database service's point-in-time recovery where it
+# exists and keep this as the portable copy. Test restores regularly (docs/DEPLOYMENT.md, "Backups").
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: linkedeye-backups
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  accessModes: ["ReadWriteOnce"]
+  # storageClassName: "<REPLACE: storage class>"
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: linkedeye-db-backup
+  namespace: fs-linkedeye
+  labels:
+    app.kubernetes.io/name: linkedeye
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/part-of: linkedeye
+spec:
+  schedule: "17 1 * * *"
+  timeZone: "Asia/Kolkata"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: linkedeye
+            app.kubernetes.io/component: backup
+            app.kubernetes.io/part-of: linkedeye
+        spec:
+          restartPolicy: Never
+          serviceAccountName: linkedeye
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70          # "postgres" in the alpine image
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  file="/backups/linkedeye-$(date +%Y%m%d-%H%M%S).dump"
+                  # a failed or interrupted dump must not leave a half-written file behind
+                  trap 'rm -f "$file.partial"' EXIT
+                  pg_dump --format=custom --file="$file.partial"
+                  mv "$file.partial" "$file"
+                  find /backups -name 'linkedeye-*.dump' -mtime +"$RETENTION_DAYS" -print -delete
+                  # leftovers of runs killed outright (OOM, node loss), where the trap could not run
+                  find /backups -name 'linkedeye-*.dump.partial' -mmin +360 -print -delete
+                  ls -lh /backups
+              env:
+                - name: PGHOST
+                  valueFrom: {configMapKeyRef: {name: linkedeye-config, key: LINKEDEYE_DB_HOST}}
+                - name: PGPORT
+                  valueFrom: {configMapKeyRef: {name: linkedeye-config, key: LINKEDEYE_DB_PORT}}
+                - name: PGDATABASE
+                  valueFrom: {configMapKeyRef: {name: linkedeye-config, key: LINKEDEYE_DB_NAME}}
+                - name: PGUSER
+                  valueFrom: {configMapKeyRef: {name: linkedeye-config, key: LINKEDEYE_DB_USER}}
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: linkedeye-secrets, key: LINKEDEYE_DB_PASSWORD}}
+                - name: RETENTION_DAYS
+                  value: "14"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: linkedeye-backups
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

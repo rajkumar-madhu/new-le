@@ -1,0 +1,24 @@
+# kubectl apply -k deploy/kubernetes
+#
+# Before the first apply: create Secret "linkedeye-secrets" (secret.template.yaml; deliberately not listed
+# here so placeholders are never applied), edit configmap.yaml / ingress.yaml / networkpolicy.yaml where they
+# say REPLACE, and set the image below. Full procedure: docs/DEPLOYMENT.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: fs-linkedeye
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - migrate-job.yaml
+  - web-deployment.yaml
+  - probes-deployment.yaml
+  - service.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: registry.example.com/linkedeye
+    newName: registry.example.com/linkedeye   # REPLACE with your registry path
+    newTag: "9.0"                              # REPLACE with the release tag (or use digest: sha256:...)
