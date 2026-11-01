@@ -72,3 +72,56 @@ class DomainCheck(models.Model):
     class Meta:
         ordering = ["-checked_at"]
         indexes = [models.Index(fields=["domain", "checked_at"])]
+
+
+GRADES = ["A", "B", "C", "D", "E", "F"]
+
+
+class DomainSecurityScan(models.Model):
+    """One HTTPS security scan of a domain: negotiated TLS parameters, certificate and response headers.
+
+    `grade` is empty when the scan could not reach the site (see `error`); `findings` holds one entry per
+    check: {"key", "label", "passed", "severity", "detail", "recommendation"}.
+    """
+    domain = models.ForeignKey(Domain, on_delete=models.CASCADE, related_name="security_scans")
+    scanned_at = models.DateTimeField(db_index=True)
+    final_url = models.CharField(max_length=500, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    http_status = models.PositiveSmallIntegerField(null=True, blank=True)
+    tls_version = models.CharField(max_length=16, blank=True)
+    cipher = models.CharField(max_length=120, blank=True)
+    cert_issuer = models.CharField(max_length=255, blank=True)
+    cert_subject = models.CharField(max_length=255, blank=True)
+    cert_expires_at = models.DateTimeField(null=True, blank=True)
+    cert_days_left = models.IntegerField(null=True, blank=True)
+    cert_valid = models.BooleanField(null=True)
+    https_redirect = models.BooleanField(null=True)   # http:// answers with a redirect to https://
+    hsts = models.CharField(max_length=500, blank=True)
+    csp = models.TextField(blank=True)
+    x_frame_options = models.CharField(max_length=200, blank=True)
+    x_content_type_options = models.CharField(max_length=200, blank=True)
+    referrer_policy = models.CharField(max_length=200, blank=True)
+    permissions_policy = models.TextField(blank=True)
+    server = models.CharField(max_length=200, blank=True)
+    grade = models.CharField(max_length=1, blank=True, choices=[(g, g) for g in GRADES])
+    score = models.PositiveSmallIntegerField(null=True, blank=True)
+    findings = models.JSONField(default=list, blank=True)
+    error = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-scanned_at"]
+        indexes = [models.Index(fields=["domain", "scanned_at"])]
+
+    def __str__(self):
+        return f"{self.domain.hostname} {self.grade or 'not graded'} @ {self.scanned_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def failed(self):
+        return [f for f in self.findings if not f.get("passed")]
+
+    @property
+    def passed_count(self):
+        return sum(1 for f in self.findings if f.get("passed"))
+
+    def finding(self, key):
+        return next((f for f in self.findings if f.get("key") == key), None)

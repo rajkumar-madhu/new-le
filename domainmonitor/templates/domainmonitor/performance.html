@@ -1,0 +1,75 @@
+{% extends "core/base.html" %}{% load le dm static %}
+{% block title %}Domain Performance{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}"><link rel="stylesheet" href="{% static 'domainmonitor/page.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains dm-x dm-perf">
+{% include "domainmonitor/_head.html" %}
+
+<div class="dm-window">
+  <nav class="seg" aria-label="Time window">{% for key, label, qs in windows %}<a href="?{{ qs }}" class="{% if key == window %}on{% endif %}"{% if key == window %} aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+  <span class="t-mute dm-window-cap">Current {{ start|date:"j M H:i" }} – {{ end|date:"j M H:i" }} · compared with {{ prev_start|date:"j M H:i" }} – {{ start|date:"j M H:i" }}</span>
+</div>
+
+<section class="kpis dm-kpis dm-kpis-6" aria-label="Response time summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "clock" 26 %}</div><div class="kpi-body"><div class="label">Median (p50)</div><div class="value">{{ k.cur.p50|ms }}</div>
+    <div class="sub dm-trend" title="vs previous window ({{ k.prev.p50|ms }})">{% if k.p50_change is None %}<span class="t-mute">no previous data</span>{% else %}{% delta k.p50_change good="down" %}{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "gauge" 26 %}</div><div class="kpi-body"><div class="label">95th Percentile</div><div class="value">{{ k.cur.p95|ms }}</div>
+    <div class="sub dm-trend" title="vs previous window ({{ k.prev.p95|ms }})">{% if k.p95_change is None %}<span class="t-mute">no previous data</span>{% else %}{% delta k.p95_change good="down" %}{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-warn">{% icon "flame" 26 %}</div><div class="kpi-body"><div class="label">Slowest Response</div><div class="value">{{ k.cur.max|ms }}</div>
+    <div class="sub dm-trend" title="vs previous window ({{ k.prev.max|ms }})">{% if k.max_change is None %}<span class="t-mute">no previous data</span>{% else %}{% delta k.max_change good="down" %}{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% icon "bar" 26 %}</div><div class="kpi-body"><div class="label">Samples</div><div class="value">{{ k.cur.n }}</div>
+    <div class="sub" title="Successful checks with a response time">Previous: {{ k.prev.n }}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-crit">{% icon "arrow-up" 26 %}</div><div class="kpi-body"><div class="label">Regressed</div><div class="value">{{ k.regressed }}</div>
+    <div class="sub" title="p95 up {{ regression_pct }}% or more vs the previous window">p95 up ≥ {{ regression_pct }}%</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% icon "arrow-down" 26 %}</div><div class="kpi-body"><div class="label">Improved</div><div class="value">{{ k.improved }}</div>
+    <div class="sub"{% if k.no_data %} title="{{ k.no_data }} domain(s) without data in this window"{% endif %}>p95 down ≥ {{ regression_pct }}%</div></div></div></div>
+</section>
+
+<section class="grid dm-two">
+  <div class="panel"><div class="panel-h nowrap"><h2>Response Time Trend</h2>
+      <div class="right legend"><span><i style="background:#1565f0"></i>p50</span><span><i style="background:#7c3aed"></i>p95</span><span><i class="dm-dash"></i>p95 previous</span></div></div>
+    <div class="chart" data-chart="line" data-src="d-perf" style="height:210px"></div></div>
+  <div class="panel"><div class="panel-h"><h2>Slowest Domains (p95)</h2><a class="right view-all" href="?{{ sort_query.urlencode }}&sort=-p95#domains">View all</a></div>
+    {% if slowest %}<div class="dm-rank">{% for d in slowest %}
+      <div class="dm-rank-row"><a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=history" title="{{ d.hostname }}">{{ d.hostname }}</a>
+        <div class="dm-rank-track"><i style="width:{{ d.bar }}%"></i></div><b>{{ d.cur.p95|ms }}</b>
+        <small class="{{ d.trend.2|default:'t-mute' }}" title="p95 change vs the previous window">{{ d.change|signed }}</small></div>{% endfor %}</div>
+    {% else %}<div class="empty">No response times recorded in this window.</div>{% endif %}</div>
+</section>
+
+<section class="panel" id="domains">
+  <div class="panel-h dm-tbar"><h2>Comparison vs Previous Window ({{ page.paginator.count }})</h2>
+    <form class="dm-filters" method="get">
+      <input type="hidden" name="window" value="{{ window }}">{% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+      <select name="site" class="dm-sel" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="type" class="dm-sel" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for t in types %}<option {% if request.GET.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+      <a class="btn icon blue dm-btn-sq" href="{% url 'domains:performance' %}?window={{ window }}" aria-label="Clear filters" title="Clear filters">{% icon "refresh" 16 %}</a>
+      <a class="btn ghost-primary dm-export" href="?{{ query.urlencode }}&format=csv">{% icon "download" 16 %}Export</a>
+    </form></div>
+  <div class="table-wrap dense"><table class="dm-table">
+    <thead><tr><th><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=hostname#domains">Domain {% icon "sort" 12 %}</a></th><th>Site</th><th class="num">Samples</th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=-p50#domains">p50 {% icon "sort" 12 %}</a></th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=-p95#domains">p95 {% icon "sort" 12 %}</a></th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=-max#domains">Max {% icon "sort" 12 %}</a></th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=-avg#domains">Avg {% icon "sort" 12 %}</a></th>
+      <th class="num dm-prev">Prev p50</th><th class="num dm-prev">Prev p95</th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=-change#domains" title="Change of p95 vs the previous window">Δ p95 {% icon "sort" 12 %}</a></th><th>Trend</th></tr></thead>
+    <tbody>{% for d in page %}
+      <tr>
+        <td><a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=history">{{ d.hostname }}</a></td><td>{{ d.site_key|default:"–" }}</td>
+        <td class="num">{{ d.cur.n }}</td><td class="num">{{ d.cur.p50|ms }}</td><td class="num"><b>{{ d.cur.p95|ms }}</b></td>
+        <td class="num">{{ d.cur.max|ms }}</td><td class="num">{{ d.cur.avg|ms }}</td>
+        <td class="num dm-prev">{{ d.prev.p50|ms }}</td><td class="num dm-prev">{{ d.prev.p95|ms }}</td>
+        <td class="num {{ d.trend.2 }}">{{ d.change|signed }}</td>
+        <td><span class="chip {{ d.trend.1 }}">{{ d.trend.0 }}</span></td>
+      </tr>
+    {% empty %}<tr><td colspan="11" class="empty">{% if request.GET.q or request.GET.site or request.GET.type %}No domains match these filters.{% else %}No active domains yet.{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  <p class="dm-note t-mute">Response times of successful HTTPS checks (DNS + connect + TLS + first response). Percentiles use linear interpolation.</p>
+  {% include "core/_pager.html" with pager_noun="domains" %}
+</section>
+</div>
+{{ chart|json_script:"d-perf" }}
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}{% endblock %}

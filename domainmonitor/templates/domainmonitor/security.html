@@ -1,0 +1,133 @@
+{% extends "core/base.html" %}{% load le dm static %}
+{% block title %}Domain Security{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}"><link rel="stylesheet" href="{% static 'domainmonitor/page.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains dm-x dm-sec">
+{% include "domainmonitor/_head.html" %}
+
+<section class="kpis dm-kpis dm-kpis-6" aria-label="Security summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "shield" 26 %}</div><div class="kpi-body"><div class="label">Graded Domains</div><div class="value">{{ k.graded }}<small class="t-mute dm-of"> / {{ k.total }}</small></div>
+    <div class="sub">{% if k.unscanned %}{{ k.unscanned }} not scanned{% elif k.failed %}{{ k.failed }} unreachable{% else %}All active{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "award" 26 %}</div><div class="kpi-body"><div class="label">Average Score</div><div class="value">{% if k.avg_score is None %}–{% else %}{{ k.avg_score|floatformat:0 }}<small class="t-mute dm-of"> / 100</small>{% endif %}</div><div class="sub">Latest scans</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% ficon "check-circle" 30 %}</div><div class="kpi-body"><div class="label">Grade A or B</div><div class="value">{{ k.good }}</div><div class="sub">{% if k.good_pct is None %}–{% else %}{{ k.good_pct }}% of graded{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-crit">{% icon "shield-alert" 26 %}</div><div class="kpi-body"><div class="label" title="Strict-Transport-Security missing or max-age under 180 days">HSTS Issues</div><div class="value">{{ k.hsts_missing }}</div><div class="sub">Missing or weak</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-warn">{% ficon "alert" 30 %}</div><div class="kpi-body"><div class="label" title="Certificates expiring within 30 days, from the latest scans">Certs &lt; 30 Days</div><div class="value">{{ k.cert_soon }}</div><div class="sub">Renew soon</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "radar" 26 %}</div><div class="kpi-body"><div class="label">Last Scan</div><div class="value dm-val-sm">{% if k.last %}{{ k.last|ago }}{% else %}Never{% endif %}</div><div class="sub">Auto every {{ scan_every_h }} h</div></div></div></div>
+</section>
+
+<nav class="dm-grades" aria-label="Filter by grade">
+  <a href="?{{ grade_query.urlencode }}" class="dm-gchip{% if not grade %} on{% endif %}">All <b>{{ k.total }}</b></a>
+  {% for x in legend %}<a href="?{{ grade_query.urlencode }}&grade={{ x.grade }}" class="dm-gchip{% if grade == x.grade %} on{% endif %}">{% if x.grade in grades %}{% grade_chip x.grade %}{% else %}<i class="dot" style="background:{{ x.color }}"></i>{{ x.label }}{% endif %} <b>{{ x.n }}</b></a>{% endfor %}
+  {% if can_operate %}<form method="post" action="{% url 'domains:security_scan_all' %}" class="dm-scan-all" data-confirm="Scan every active monitored domain now? This can take a minute.">{% csrf_token %}<button class="btn primary sm" type="submit">{% icon "radar" 15 %}Scan all now</button></form>{% endif %}
+</nav>
+
+{% if selected %}
+<section class="panel dm-scan" id="scan-detail">
+  <div class="dm-scan-head">
+    {% grade_chip selected.grade 1 %}
+    <div class="dm-scan-id"><b>{{ selected.hostname }}</b>
+      <span class="t-mute">{% if selected.scan %}{% if selected.scan.score is not None %}Score {{ selected.scan.score }}/100 · {% endif %}scanned {{ selected.scan.scanned_at|date:"j M Y H:i" }} ({{ selected.scan.scanned_at|ago }}){% else %}Not scanned yet{% endif %}</span></div>
+    <div class="dm-scan-act">
+      {% if can_operate %}<form method="post" action="{% url 'domains:security_scan' selected.pk %}">{% csrf_token %}<button class="btn primary sm" type="submit">{% icon "radar" 15 %}Scan now</button></form>{% endif %}
+      <a class="btn sm" href="?{{ query.urlencode }}#domains" aria-label="Close details">{% icon "x" 15 %}Close</a>
+    </div>
+  </div>
+  {% if selected.scan and selected.scan.error %}<p class="dm-alert">{% ficon "x-circle" 16 %} {{ selected.scan.error }}</p>{% endif %}
+  {% if selected.scan and selected.scan.grade %}
+  <div class="grid dm-scan-grid">
+    <div>
+      <h3 class="dm-h3">Connection &amp; Certificate</h3>
+      <dl class="kv dm-kv">
+        <dt>TLS version</dt><dd>{{ selected.scan.tls_version|default:"–" }}</dd>
+        <dt>Cipher</dt><dd>{{ selected.scan.cipher|default:"–" }}</dd>
+        <dt>Certificate issuer</dt><dd>{{ selected.scan.cert_issuer|default:"–" }}</dd>
+        <dt>Certificate subject</dt><dd>{{ selected.scan.cert_subject|default:"–" }}</dd>
+        <dt>Expires</dt><dd>{% if selected.scan.cert_expires_at %}{{ selected.scan.cert_expires_at|date:"j M Y" }} <span class="{% if selected.scan.cert_days_left < 30 %}t-crit{% else %}t-mute{% endif %}">({{ selected.scan.cert_days_left }} days)</span>{% else %}–{% endif %}</dd>
+        <dt>Address</dt><dd>{{ selected.scan.ip_address|default:"–" }}</dd>
+        <dt>Final URL</dt><dd>{{ selected.scan.final_url|default:"–" }} {% if selected.scan.http_status %}<span class="t-mute">(HTTP {{ selected.scan.http_status }})</span>{% endif %}</dd>
+        <dt>HTTP → HTTPS</dt><dd>{% if selected.scan.https_redirect is None %}<span class="t-mute">Port 80 closed</span>{% elif selected.scan.https_redirect %}{% badge "ok" "Redirects" %}{% else %}{% badge "failed" "No redirect" %}{% endif %}</dd>
+      </dl>
+      <h3 class="dm-h3">Response Headers</h3>
+      <dl class="kv dm-kv dm-hdrs">
+        <dt>Strict-Transport-Security</dt><dd>{{ selected.scan.hsts|default:"—" }}</dd>
+        <dt>Content-Security-Policy</dt><dd>{{ selected.scan.csp|default:"—"|truncatechars:240 }}</dd>
+        <dt>X-Frame-Options</dt><dd>{{ selected.scan.x_frame_options|default:"—" }}</dd>
+        <dt>X-Content-Type-Options</dt><dd>{{ selected.scan.x_content_type_options|default:"—" }}</dd>
+        <dt>Referrer-Policy</dt><dd>{{ selected.scan.referrer_policy|default:"—" }}</dd>
+        <dt>Permissions-Policy</dt><dd>{{ selected.scan.permissions_policy|default:"—"|truncatechars:240 }}</dd>
+        <dt>Server</dt><dd>{{ selected.scan.server|default:"—" }}</dd>
+      </dl>
+    </div>
+    <div>
+      <h3 class="dm-h3">Failed Checks ({{ failed_findings|length }})</h3>
+      {% if failed_findings %}<ul class="dm-findings">{% for f in failed_findings %}
+        <li class="bad"><span class="dm-pf bad">{% icon "x" 13 %}</span><div><b>{{ f.label }}</b> <span class="chip {% if f.severity == 'critical' or f.severity == 'high' %}crit{% elif f.severity == 'medium' %}warn{% else %}mute{% endif %}">{{ f.severity }}</span>
+          <small>{{ f.detail }}</small><p class="dm-rec">{% icon "info" 14 %} {{ f.recommendation|ticks }}</p></div></li>{% endfor %}</ul>
+      {% else %}<p class="t-ok dm-allpass">{% ficon "check-circle" 16 %} Every check passes.</p>{% endif %}
+      <h3 class="dm-h3">Passed Checks ({{ passed_findings|length }})</h3>
+      <ul class="dm-findings">{% for f in passed_findings %}<li><span class="dm-pf ok">{% icon "check" 13 %}</span><div><b>{{ f.label }}</b><small>{{ f.detail }}</small></div></li>{% endfor %}</ul>
+    </div>
+  </div>
+  {% endif %}
+  {% if history %}<h3 class="dm-h3">Scan History</h3>
+  <div class="table-wrap dense"><table class="dm-mini"><thead><tr><th>Scanned</th><th>Grade</th><th class="num">Score</th><th>TLS</th><th class="num">Cert days</th><th>Failed checks / error</th></tr></thead><tbody>
+    {% for s in history %}<tr><td>{{ s.scanned_at|date:"j M Y H:i" }}</td><td>{% grade_chip s.grade %}</td><td class="num">{{ s.score|default_if_none:"–" }}</td><td>{{ s.tls_version|default:"–" }}</td><td class="num">{{ s.cert_days_left|default_if_none:"–" }}</td>
+      <td class="wrap">{% if s.error %}<span class="t-crit">{{ s.error }}</span>{% else %}{% for f in s.failed %}{{ f.label }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="t-ok">None</span>{% endfor %}{% endif %}</td></tr>{% endfor %}
+  </tbody></table></div>{% endif %}
+</section>
+{% endif %}
+
+<section class="grid dm-two dm-two-r">
+  <div class="panel"><div class="panel-h"><h2>Top Recommendations</h2><small>Failing checks across the latest scans</small></div>
+    {% if recommendations %}<ul class="dm-recs">{% for r in recommendations %}
+      <li><span class="chip {% if r.severity == 'critical' or r.severity == 'high' %}crit{% elif r.severity == 'medium' %}warn{% else %}mute{% endif %}">{{ r.severity }}</span>
+        <div><b>{{ r.label }}</b> <span class="t-mute">· {{ r.domains|length }} domain{{ r.domains|length|pluralize }}</span>
+          <p>{{ r.recommendation|ticks }}</p>
+          <small class="dm-affected">{% for d in r.domains|slice:":4" %}<a href="?{{ query.urlencode }}&selected={{ d.pk }}#scan-detail">{{ d.hostname }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}{% if r.domains|length > 4 %} and {{ r.domains|length|add:"-4" }} more{% endif %}</small></div></li>{% endfor %}</ul>
+    {% elif k.graded %}<div class="empty">{% ficon "check-circle" 18 %} No failing checks in the latest scans.</div>
+    {% else %}<div class="empty">No scans yet. {% if can_operate %}Use <b>Scan all now</b> or a row's <b>Scan now</b>; the{% else %}The{% endif %} scheduler (<code>manage.py run_probes</code>) scans every active domain daily.</div>{% endif %}</div>
+  <div class="panel"><div class="panel-h"><h2>Grade Distribution</h2></div>
+    <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-grades"></div>
+      <div class="donut-legend">{% for x in legend %}<span><i class="dot" style="background:{{ x.color }}"></i>{{ x.label }}</span><b>{{ x.n }} ({{ x.pct|floatformat:0 }}%)</b>
+      {% endfor %}</div></div></div>
+</section>
+
+<section class="panel" id="domains">
+  <div class="panel-h dm-tbar"><h2>Security Scans ({{ page.paginator.count }})</h2>
+    <form class="dm-filters" method="get">
+      {% if grade %}<input type="hidden" name="grade" value="{{ grade }}">{% endif %}{% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+      <select name="site" class="dm-sel" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="type" class="dm-sel" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for t in types %}<option {% if request.GET.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+      <a class="btn icon blue dm-btn-sq" href="{% url 'domains:security' %}" aria-label="Clear filters" title="Clear filters">{% icon "refresh" 16 %}</a>
+      <a class="btn ghost-primary dm-export" href="?{{ query.urlencode }}&format=csv">{% icon "download" 16 %}Export</a>
+    </form></div>
+  <div class="table-wrap dense"><table class="dm-table dm-sec-table">
+    <thead><tr><th>Domain</th>
+      <th><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort={% if sort == '-grade' %}grade{% else %}-grade{% endif %}#domains" title="Sort by grade">Grade {% icon "sort" 12 %}</a></th>
+      <th class="num">Score</th><th>TLS</th><th class="num">Cert</th>
+      {% for key, label in header_labels %}<th class="dm-hc" title="{{ label }}">{% if key == 'hsts' %}HSTS{% elif key == 'csp' %}CSP{% elif key == 'x_frame_options' %}XFO{% elif key == 'x_content_type_options' %}XCTO{% elif key == 'referrer_policy' %}Referrer{% elif key == 'permissions_policy' %}Perms{% else %}Server{% endif %}</th>{% endfor %}
+      <th>Scanned</th><th class="dm-act">Actions</th></tr></thead>
+    <tbody>{% for d in page %}
+      <tr class="{% if selected and selected.pk == d.pk %}sel{% endif %}">
+        <td><a href="?{{ query.urlencode }}&selected={{ d.pk }}#scan-detail">{{ d.hostname }}</a></td>
+        <td>{% if d.scan and not d.scan.grade %}<span class="chip crit" title="{{ d.scan.error }}">Failed</span>{% else %}{% grade_chip d.grade %}{% endif %}</td>
+        <td class="num">{% if d.scan %}{{ d.scan.score|default_if_none:"–" }}{% else %}–{% endif %}</td>
+        <td>{% if d.scan %}{{ d.scan.tls_version|default:"–"|cut:"TLSv" }}{% else %}–{% endif %}</td>
+        <td class="num {% if d.scan.cert_days_left is not None and d.scan.cert_days_left < 30 %}t-crit{% endif %}">{% if d.scan and d.scan.cert_days_left is not None %}{{ d.scan.cert_days_left }}d{% else %}–{% endif %}</td>
+        {% for key, label, f in d.header_checks %}<td class="dm-hc">{% if d.scan and d.scan.grade %}{% passfail f %}{% else %}<span class="dm-pf nd">–</span>{% endif %}</td>{% endfor %}
+        <td>{% if d.scan %}<span title="{{ d.scan.scanned_at|date:'j M Y H:i' }}">{{ d.scan.scanned_at|ago }}</span>{% else %}<span class="t-mute">Never</span>{% endif %}</td>
+        <td class="dm-act"><div class="row-actions">
+          <a class="btn icon blue" href="?{{ query.urlencode }}&selected={{ d.pk }}#scan-detail" aria-label="Findings for {{ d.hostname }}" title="Findings and recommendations">{% icon "eye" 15 %}</a>
+          {% if can_operate %}<form method="post" action="{% url 'domains:security_scan' d.pk %}">{% csrf_token %}<button class="btn icon" type="submit" aria-label="Scan {{ d.hostname }} now" title="Scan now">{% icon "radar" 15 %}</button></form>{% endif %}
+        </div></td>
+      </tr>
+    {% empty %}<tr><td colspan="14" class="empty">{% if request.GET.q or request.GET.site or request.GET.type or grade %}No domains match these filters.{% else %}No active domains yet.{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  <p class="dm-note t-mute">Scans connect to https://&lt;domain&gt;/ through the probe safety policy and read only the response headers. Grades: A ≥ 90, B ≥ 80, C ≥ 70, D ≥ 60, E ≥ 50, otherwise F; an untrusted certificate or TLS older than 1.2 is always F.</p>
+  {% include "core/_pager.html" with pager_noun="domains" %}
+</section>
+</div>
+{{ donut|json_script:"d-grades" }}
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}{% endblock %}

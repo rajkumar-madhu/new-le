@@ -1,0 +1,86 @@
+{% extends "core/base.html" %}{% load le dm static %}
+{% block title %}Uptime Monitoring{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}"><link rel="stylesheet" href="{% static 'domainmonitor/page.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains dm-x dm-up">
+{% include "domainmonitor/_head.html" %}
+
+<section class="kpis dm-kpis dm-kpis-6" aria-label="Uptime summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-ok">{% ficon "check-circle" 30 %}</div><div class="kpi-body"><div class="label">Uptime (24h)</div><div class="value {{ k.u24|uptime_tone }}">{{ k.u24|pct }}</div><div class="sub">{{ total }} domain{{ total|pluralize }}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "activity" 26 %}</div><div class="kpi-body"><div class="label">Uptime (7d)</div><div class="value {{ k.u7|uptime_tone }}">{{ k.u7|pct }}</div><div class="sub">Successful checks</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-purple">{% icon "calendar" 26 %}</div><div class="kpi-body"><div class="label">Uptime (30d)</div><div class="value {{ k.u30|uptime_tone }}">{{ k.u30|pct }}</div><div class="sub">Successful checks</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-crit">{% ficon "x-circle" 30 %}</div><div class="kpi-body"><div class="label">Downtime Periods</div><div class="value">{{ k.incidents }}</div><div class="sub" title="{{ k.affected }} domain{{ k.affected|pluralize }} affected, {{ day_label|lower }}">{% if k.ongoing %}<span class="t-crit">{{ k.ongoing }} ongoing</span> · {% endif %}{{ k.affected }} domain{{ k.affected|pluralize }}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-warn">{% ficon "clock" 30 %}</div><div class="kpi-body"><div class="label">Total Downtime</div><div class="value">{{ k.total_down }}</div><div class="sub" title="{% if k.longest %}Longest single period: {{ k.longest.domain.hostname }}{% endif %}">{% if k.longest %}Longest {{ k.longest.duration|duration }}{% else %}None recorded{% endif %}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile sq bg-info">{% icon "refresh" 26 %}</div><div class="kpi-body"><div class="label" title="Mean time to recover">MTTR</div><div class="value">{{ k.mttr }}</div><div class="sub">{% if k.down_now %}<span class="t-crit">{{ k.down_now }} down now</span>{% else %}Resolved periods{% endif %}</div></div></div></div>
+</section>
+
+<section class="grid dm-two">
+  <div class="panel" id="availability"><div class="panel-h nowrap"><h2>Daily Availability (All Domains)</h2>
+      <form class="right" method="get">{% for key, v in query.items %}{% if key != 'days' %}<input type="hidden" name="{{ key }}" value="{{ v }}">{% endif %}{% endfor %}
+        <select name="days" class="dm-sel" data-autosubmit aria-label="Availability period">{% for key, label in day_ranges %}<option value="{{ key }}"{% if key == days_key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
+    <div class="chart" data-chart="line" data-src="d-avail" style="height:190px"></div>
+    <div class="legend dm-legend"><span><i style="background:#16a34a"></i>Share of successful checks per day</span></div></div>
+  <div class="panel"><div class="panel-h"><h2>Recent Downtime</h2><a class="right view-all" href="#downtime">All periods</a></div>
+    {% if periods %}<ul class="dm-feed">{% for p in periods|slice:":5" %}
+      <li><span class="dm-feed-ic {% if p.ongoing %}crit{% else %}warn{% endif %}">{% if p.ongoing %}{% ficon "x-circle" 18 %}{% else %}{% ficon "clock" 18 %}{% endif %}</span>
+        <div><a href="{% url 'domains:list' %}?selected={{ p.domain.pk }}&dtab=history">{{ p.domain.hostname }}</a>
+          <small>{{ p.start|date:"j M H:i" }} – {% if p.ongoing %}<b class="t-crit">ongoing</b>{% else %}{{ p.end|date:"j M H:i" }}{% endif %}</small></div>
+        <b class="dm-feed-v">{{ p.duration_label }}</b></li>{% endfor %}</ul>
+    {% else %}<div class="empty">No downtime in the {{ day_label|lower }}.</div>{% endif %}</div>
+</section>
+
+<section class="panel" id="domains">
+  <div class="panel-h dm-tbar"><h2>Uptime by Domain ({{ page.paginator.count }})</h2>
+    <form class="dm-filters" method="get">
+      <input type="hidden" name="days" value="{{ days_key }}">{% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+      <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+      <select name="site" class="dm-sel" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="type" class="dm-sel" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for t in types %}<option {% if request.GET.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+      <select name="status" class="dm-sel" data-autosubmit aria-label="Status"><option value="">All Status</option><option value="up" {% if request.GET.status == 'up' %}selected{% endif %}>Up</option><option value="down" {% if request.GET.status == 'down' %}selected{% endif %}>Down</option><option value="unknown" {% if request.GET.status == 'unknown' %}selected{% endif %}>Not checked</option></select>
+      <a class="btn icon blue dm-btn-sq" href="{% url 'domains:uptime' %}" aria-label="Clear filters" title="Clear filters">{% icon "refresh" 16 %}</a>
+      <a class="btn ghost-primary dm-export" href="?{{ query.urlencode }}&format=csv">{% icon "download" 16 %}Export</a>
+    </form></div>
+  <div class="table-wrap dense"><table class="dm-table">
+    <thead><tr><th>Domain</th><th>Site</th><th>Status</th>
+      <th class="num">24h</th><th class="num">7d</th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=uptime#domains" title="Sort by 30-day uptime, lowest first">30d {% icon "sort" 12 %}</a></th>
+      <th>Daily Availability ({{ day_label }})</th>
+      <th class="num"><a class="dm-sort" href="?{{ sort_query.urlencode }}&sort=downtime#domains" title="Sort by total downtime, most first">Downtime {% icon "sort" 12 %}</a></th>
+      <th class="num">Periods</th><th>Last Down</th><th class="num">Checks (30d)</th></tr></thead>
+    <tbody>{% for d in page %}
+      <tr>
+        <td><a href="{% url 'domains:list' %}?selected={{ d.pk }}&dtab=history">{{ d.hostname }}</a></td>
+        <td>{{ d.site_key|default:"–" }}</td>
+        <td title="{{ d.last_error }}">{% badge d.status %}</td>
+        <td class="num {{ d.u24|uptime_tone }}">{{ d.u24|pct }}</td>
+        <td class="num {{ d.u7|uptime_tone }}">{{ d.u7|pct }}</td>
+        <td class="num {{ d.u30|uptime_tone }}"><b>{{ d.u30|pct }}</b></td>
+        <td><div class="dm-strip" style="--n:{{ days }}" role="img" aria-label="Daily availability of {{ d.hostname }}">{% for c in d.daily %}<i class="{{ c.pct|cell_tone }}" title="{{ c.date|date:'D j M' }}: {% if c.pct is None %}no checks{% else %}{{ c.pct }}% of {{ c.n }} checks{% endif %}"></i>{% endfor %}</div></td>
+        <td class="num {% if d.down_count %}t-crit{% endif %}">{{ d.down_total_label }}</td>
+        <td class="num">{{ d.down_count }}</td>
+        <td>{% if d.last_down %}{{ d.last_down.start|date:"j M H:i" }}{% if d.last_down.ongoing %} <span class="chip crit">ongoing</span>{% endif %}{% else %}<span class="t-mute">–</span>{% endif %}</td>
+        <td class="num">{{ d.checks30 }}</td>
+      </tr>
+    {% empty %}<tr><td colspan="11" class="empty">{% if request.GET.q or request.GET.site or request.GET.type or request.GET.status %}No domains match these filters.{% else %}No active domains yet. {% if can_operate %}<a href="{% url 'domains:list' %}?add=1#domain-form">Add a domain</a> to start collecting uptime.{% endif %}{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div>
+  <div class="dm-strip-legend legend"><span><i class="ok"></i>≥ 99.9%</span><span><i class="ok2"></i>≥ 99%</span><span><i class="warn"></i>≥ 95%</span><span><i class="crit"></i>&lt; 95%</span><span><i class="nd"></i>No checks</span></div>
+  {% include "core/_pager.html" with pager_noun="domains" %}
+</section>
+
+<section class="panel" id="downtime">
+  <div class="panel-h"><h2>Downtime Periods ({{ periods_total }})</h2><small>Contiguous failed checks, {{ day_label|lower }}. A period ends at the next successful check.</small>
+    {% if periods_total %}<a class="btn sm ghost-primary right" href="?{{ query.urlencode }}&format=csv&what=downtime">{% icon "download" 15 %}Download all (CSV)</a>{% endif %}</div>
+  <div class="table-wrap dense"><table class="dm-table">
+    <thead><tr><th>Domain</th><th>Site</th><th>Started</th><th>Ended</th><th class="num">Duration</th><th class="num">Failed checks</th><th>Reason</th></tr></thead>
+    <tbody>{% for p in periods %}
+      <tr><td><a href="{% url 'domains:list' %}?selected={{ p.domain.pk }}&dtab=history">{{ p.domain.hostname }}</a></td><td>{{ p.domain.site_key|default:"–" }}</td>
+        <td>{{ p.start|date:"j M Y H:i" }}</td><td>{% if p.ongoing %}<span class="chip crit">Ongoing</span>{% else %}{{ p.end|date:"j M Y H:i" }}{% endif %}</td>
+        <td class="num"><b>{{ p.duration_label }}</b></td><td class="num">{{ p.failed }}</td><td class="wrap dm-reason">{{ p.message|default:"–" }}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">No downtime recorded in the {{ day_label|lower }}.</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% if periods_total > periods|length %}<p class="dm-note t-mute">Showing the {{ periods|length }} most recent of {{ periods_total }} periods. Download the CSV for the full list.</p>{% endif %}
+</section>
+</div>
+{{ chart|json_script:"d-avail" }}
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}{% endblock %}

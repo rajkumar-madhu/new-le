@@ -17,6 +17,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
+from core.access import can, require, scope_by_site
+from core.audit import audit
 from probes import checks, runner
 from urlchecker.models import UrlCheck
 
@@ -36,8 +38,17 @@ RESP_RANGES = {"6": ("Last 6 hours", 360, 15, 4, "%H:%M"), "24": ("Last 24 hours
 UP_RANGES = {"7": ("Last 7 days", 7, 1), "14": ("Last 14 days", 14, 2), "30": ("Last 30 days", 30, 5)}
 
 
-def _scope():
-    return Domain.objects.filter(tenant_key=settings.LINKEDEYE_TENANT)
+def _scope(request=None):
+    """Domains of this tenant; with a request, limited to the sites the user may see ("All Sites" stays visible)."""
+    qs = Domain.objects.filter(tenant_key=settings.LINKEDEYE_TENANT)
+    if request is not None:
+        qs = scope_by_site(qs, request.user, field="site_key")
+    return qs
+
+
+def _render(request, template, context):
+    context.setdefault("can_operate", can(request.user, "operate"))
+    return render(request, template, context)
 
 
 def _uptime(domain_ids, hours, end=None):
@@ -124,7 +135,7 @@ def associated_services(domain):
 def overview(request):
     if request.GET.get("format") == "csv":
         return export_csv(request)
-    scope = _scope().filter(is_active=True)
+    scope = _scope(request).filter(is_active=True)
     domains = list(scope)
     total = len(domains)
     down = [d for d in domains if d.status == "down"]
@@ -212,7 +223,7 @@ def overview(request):
     if slices["other"]:
         legend.append(("Other issues", "", "#64748b", slices["other"]))
     legend = [{"label": l, "cls": c, "color": col, "n": v, "pct": pct(v)} for l, c, col, v in legend]
-    return render(request, "domainmonitor/overview.html", {
+    return _render(request, "domainmonitor/overview.html", {
         "tab": "overview", "page": page, "query": _query(request), "sort_query": _query(request, "sort"), "sort": sort,
         "total": total, "trend": trend,
         "n": {"healthy": len(healthy), "down": len(down), "expiring": len(expiring), "paused": len(paused)},
@@ -231,7 +242,7 @@ def overview(request):
 
 # ------------------------------------------------------------------ list (configuration view)
 def domain_list(request):
-    scope = _scope()
+    scope = _scope(request)
     qs = _filter(scope, request)
     paginator = Paginator(qs, _per_page(request))
     sel_pk, edit_pk = _int(request.GET.get("selected")), _int(request.GET.get("edit"))
@@ -249,7 +260,7 @@ def domain_list(request):
     if request.GET.get("edit"):
         editing = get_object_or_404(scope, pk=edit_pk or 0)
     if request.method == "POST":
-        if not request.user.is_staff:
+        if not can(request.user, "operate"):
             messages.error(request, "Only operators can add or change domains.")
             return redirect("domains:list")
         editing = scope.filter(pk=request.POST.get("pk")).first() if request.POST.get("pk") else None
@@ -262,6 +273,8 @@ def domain_list(request):
             except IntegrityError:
                 form.add_error("hostname", "This domain already exists.")
             else:
+                audit(request, "update" if editing else "create", obj, hostname=obj.hostname, site=obj.site_key,
+                      type=obj.domain_type, monitor_enabled=obj.monitor_enabled)
                 if obj.monitor_enabled and obj.is_active:
                     runner.run_domain_checks([obj])
                 messages.success(request, f"Saved {obj.hostname}.")
@@ -299,7 +312,7 @@ def domain_list(request):
             "services": associated_services(selected),
         }
     dtab = request.GET.get("dtab", "overview")
-    return render(request, "domainmonitor/list.html", {
+    return _render(request, "domainmonitor/list.html", {
         "tab": "list", "page": page, "query": _query(request), "selected": selected, "form": form, "editing": editing,
         "show_form": bool(editing) or request.GET.get("add") == "1" or request.method == "POST",
         "dtab": dtab if dtab in ("overview", "dns", "ssl", "site", "history") else "overview", **detail,
@@ -316,7 +329,7 @@ def domain_list(request):
 
 def dns_records(request):
     """Resolved addresses per domain, taken from the stored DomainCheck rows."""
-    domains = list(_filter(_scope().filter(is_active=True), request))
+    domains = list(_filter(_scope(request).filter(is_active=True), request))
     since = timezone.now() - timedelta(days=7)
     seen = defaultdict(dict)
     fails = defaultdict(int)
@@ -334,8 +347,8 @@ def dns_records(request):
         d.records = sorted(seen[d.pk].values(), key=lambda r: r["last"], reverse=True)
         d.fail_n = fails[d.pk]
         d.checks_n = checks_n[d.pk]
-    return render(request, "domainmonitor/dns.html", {
-        "tab": "dns", "rows": domains, "query": _query(request),
+    return _render(request, "domainmonitor/dns.html", {
+        "tab": "dns", "crumb": "DNS Records", "rows": domains, "query": _query(request),
         "k": {"resolved": sum(1 for d in domains if d.dns_status == "Resolved"),
               "failed": sum(1 for d in domains if d.dns_status == "Failed"),
               "changed": sum(1 for d in domains if len(d.records) > 1),
@@ -345,12 +358,12 @@ def dns_records(request):
 
 
 def ssl_certificates(request):
-    rows = sorted(_scope().filter(is_active=True), key=lambda d: (d.ssl_expires_at is None, d.ssl_expires_at or timezone.now()))
-    return render(request, "domainmonitor/ssl.html", {"tab": "ssl", "rows": rows})
+    rows = sorted(_scope(request).filter(is_active=True), key=lambda d: (d.ssl_expires_at is None, d.ssl_expires_at or timezone.now()))
+    return _render(request, "domainmonitor/ssl.html", {"tab": "ssl", "rows": rows, "crumb": "SSL Certificates"})
 
 
 def export_csv(request):
-    qs = _filter(_scope(), request)
+    qs = _filter(_scope(request), request)
     if request.GET.get("sort") in SORTS:
         qs = qs.order_by(*SORTS[request.GET["sort"]])
     up7 = _uptime(list(qs.values_list("pk", flat=True)), 24 * 7)
@@ -368,21 +381,24 @@ def export_csv(request):
     return resp
 
 
-@staff_member_required
 @require_POST
+@require("operate")
 def deactivate(request, pk):
-    d = get_object_or_404(_scope(), pk=pk)
+    d = get_object_or_404(_scope(request), pk=pk)
     d.is_active = not d.is_active
     d.save(update_fields=["is_active", "updated_at"])
+    audit(request, "update", d, is_active=d.is_active)
     messages.success(request, f"{d.hostname} {'reactivated' if d.is_active else 'deactivated'}.")
     return redirect(f"/domains/list/?selected={d.pk}")
 
 
 # ------------------------------------------------------------------ quick actions (JSON)
-@staff_member_required
 @require_POST
+@require("operate")
 def action(request, pk, kind):
-    d = get_object_or_404(_scope(), pk=pk)
+    d = get_object_or_404(_scope(request), pk=pk)
+    if kind in ("dns", "ssl", "uptime"):
+        audit(request, "run", d, check=kind)
     if kind == "dns":
         r = checks.dns_check(d.hostname)
         summary = f"{d.hostname} resolves to {', '.join(r.ips)}" if r.ok else r.error
@@ -403,11 +419,12 @@ def action(request, pk, kind):
     return JsonResponse({"error": "unknown action"}, status=404)
 
 
-@staff_member_required
 @require_POST
+@require("operate")
 def run_all(request):
-    items = list(_scope().filter(is_active=True, monitor_enabled=True))
+    items = list(_scope(request).filter(is_active=True, monitor_enabled=True))
     runner.run_domain_checks(items)
+    audit(request, "run", None, object_type="domainmonitor.domain", check="all", count=len(items))
     return JsonResponse({"checked": len(items), "summary": f"Checked {len(items)} domain(s)"})
 
 

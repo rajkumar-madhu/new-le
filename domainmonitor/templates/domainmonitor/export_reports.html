@@ -1,0 +1,66 @@
+{% extends "core/base.html" %}{% load le dm static %}
+{% block title %}Domain Reports{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}"><link rel="stylesheet" href="{% static 'domainmonitor/page.css' %}">{% endblock %}
+{% block content %}
+<div class="pg-domains dm-x dm-rep">
+{% include "domainmonitor/_head.html" %}
+
+<section class="panel dm-noprint">
+  <div class="panel-h"><h2>Export Reports</h2><small>Status, DNS, SSL, uptime and security grade of every domain in the filter</small></div>
+  <form class="dm-rep-form" method="get">
+    <label class="search dm-search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search domains…" aria-label="Search domains"></label>
+    <select name="site" class="dm-sel" data-autosubmit aria-label="Site"><option value="">All Sites</option>{% for s in sites %}<option {% if request.GET.site == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="type" class="dm-sel" data-autosubmit aria-label="Type"><option value="">All Types</option>{% for t in types %}<option {% if request.GET.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+    <select name="status" class="dm-sel" data-autosubmit aria-label="Status"><option value="">All Status</option><option value="up" {% if request.GET.status == 'up' %}selected{% endif %}>Up</option><option value="down" {% if request.GET.status == 'down' %}selected{% endif %}>Down</option><option value="unknown" {% if request.GET.status == 'unknown' %}selected{% endif %}>Not checked</option></select>
+    <select name="ssl" class="dm-sel" data-autosubmit aria-label="SSL status"><option value="">All SSL Status</option>{% for s in ssl_states %}<option {% if request.GET.ssl == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    <select name="active" class="dm-sel" data-autosubmit aria-label="Active"><option value="1" {% if active == '1' %}selected{% endif %}>Active domains</option><option value="0" {% if active == '0' %}selected{% endif %}>Inactive domains</option><option value="all" {% if active != '1' and active != '0' %}selected{% endif %}>Active and inactive</option></select>
+    <a class="btn icon blue dm-btn-sq" href="{% url 'domains:export_reports' %}" aria-label="Clear filters" title="Clear filters">{% icon "refresh" 16 %}</a>
+    <div class="dm-rep-btns">
+      <a class="btn primary" href="?{{ query.urlencode }}&format=csv">{% icon "download" 16 %}Download CSV</a>
+      <a class="btn ghost-primary" href="?{{ query.urlencode }}&format=json">{% icon "code" 16 %}Download JSON</a>
+      <button class="btn" type="button" data-print>{% icon "file" 16 %}Print summary</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel dm-report" aria-label="Report">
+  <header class="dm-rep-h">
+    <div><h2>Domain Status Report</h2>
+      <p class="t-mute">Generated {{ now|date:"j M Y H:i" }} by {{ user.get_username }} · {{ k.total }} domain{{ k.total|pluralize }}{% if active == '0' %} (inactive){% elif active == '1' %} (active){% endif %}{% if filter_label %} · Filters: {{ filter_label }}{% endif %}</p></div>
+  </header>
+  <div class="dm-sum">
+    <div><span>Domains</span><b>{{ k.total }}</b></div>
+    <div><span>Up</span><b class="t-ok">{{ k.up }}</b></div>
+    <div><span>Down</span><b class="{% if k.down %}t-crit{% endif %}">{{ k.down }}</b></div>
+    <div><span>Not checked</span><b>{{ k.unknown }}</b></div>
+    <div><span>DNS failures</span><b class="{% if k.dns_failed %}t-crit{% endif %}">{{ k.dns_failed }}</b></div>
+    <div><span title="Expiring, expired or invalid certificates">SSL attention</span><b class="{% if k.ssl_attention %}t-warn{% endif %}">{{ k.ssl_attention }}</b></div>
+    <div><span>Avg uptime 7d</span><b class="{{ k.u7|uptime_tone }}">{{ k.u7|pct }}</b></div>
+    <div><span>Avg uptime 30d</span><b class="{{ k.u30|uptime_tone }}">{{ k.u30|pct }}</b></div>
+    <div class="dm-sum-grades"><span>Security grades</span><b>{% for g, n, tone in k.grades %}<span class="dm-gcount">{% grade_chip g %} {{ n }}</span>{% endfor %}{% if k.unscanned %}<span class="dm-gcount t-mute">Not graded {{ k.unscanned }}</span>{% endif %}</b></div>
+  </div>
+  <div class="table-wrap dense"><table class="dm-table dm-rep-table">
+    <thead><tr><th>Domain</th><th>Site</th><th>Type</th><th>Status</th><th>DNS</th><th>IP Address</th><th>SSL</th><th>SSL Expiry</th><th class="num">Uptime 7d</th><th class="num">Uptime 30d</th><th>Grade</th><th>Last Checked</th></tr></thead>
+    <tbody>{% for r in rows %}
+      <tr>
+        <td><a href="{% url 'domains:list' %}?selected={{ r.id }}">{{ r.hostname }}</a>{% if not r.active %} <span class="chip mute">inactive</span>{% endif %}</td>
+        <td>{{ r.site|default:"–" }}</td><td>{{ r.type }}</td>
+        <td>{% badge r.status %}</td>
+        <td>{% if r.dns_status == 'Resolved' %}{% badge r.dns_status 'OK' %}{% else %}{% badge r.dns_status %}{% endif %}</td>
+        <td>{{ r.ip_address|default:"–" }}</td>
+        <td>{% badge r.ssl_status %}</td>
+        <td class="{% if r.ssl_days_left is not None and r.ssl_days_left < 30 %}t-crit{% endif %}">{% if r.ssl_expires_at %}{{ r.ssl_expires_at|date:"j M Y" }} <span class="t-mute">({{ r.ssl_days_left }}d)</span>{% else %}–{% endif %}</td>
+        <td class="num {{ r.uptime_7d|uptime_tone }}">{{ r.uptime_7d|pct }}</td>
+        <td class="num {{ r.uptime_30d|uptime_tone }}">{{ r.uptime_30d|pct }}</td>
+        <td>{% grade_chip r.security_grade %}</td>
+        <td>{% if r.last_checked_at %}{{ r.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="12" class="empty">No domains match these filters.</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% if truncated %}<p class="dm-note t-warn">Showing the first {{ rows|length }} of {{ total }} domains; narrow the filters to include the rest.</p>{% endif %}
+  <p class="dm-note t-mute">Uptime is the share of successful checks in the window; “–” means no checks were recorded. Grades come from the latest HTTPS security scan.</p>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}{% include "domainmonitor/_scripts.html" %}
+<script>document.querySelectorAll('[data-print]').forEach(b => b.addEventListener('click', () => window.print()));</script>{% endblock %}
