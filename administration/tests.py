@@ -774,3 +774,110 @@ class SeedTests(TestCase):
         self.assertFalse(any(u.has_usable_password() for u in users))
         self.assertEqual(Membership.objects.filter(user__in=users).count(), 4)
         self.assertIn("0 site(s), 0 user(s), 0 membership(s)", out.getvalue())
+
+
+# ------------------------------------------------------------------ regressions found by adversarial QA
+class QARegressionTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.c = client_for(self.admin)
+
+    def test_users_filter_role_and_site_match_the_same_membership(self):
+        # viewer on Mumbai, admin on DR: "admin on Mumbai" must not match (separate joins used to match it)
+        u = User.objects.create_user("mixed", "mixed@example.com", PW)
+        Membership.objects.create(user=u, site=self.mum, role="viewer")
+        Membership.objects.create(user=u, site=self.dr, role="admin")
+        url = reverse("administration:users")
+        names = lambda **q: sorted(x.username for x in self.c.get(url, q).context["page"])  # noqa: E731
+        self.assertEqual(names(role="admin", site=str(self.mum.pk)), ["siteadm"])
+        self.assertEqual(names(role="viewer", site=str(self.mum.pk)), ["mixed"])
+        self.assertEqual(names(role="admin", site=str(self.dr.pk)), ["mixed"])
+        # "admin on All sites" must not match a user who is admin on one site and has another All-sites role
+        self.assertEqual(names(role="admin", site="all"), ["boss"])
+        self.assertEqual(names(role="operator", site="all"), ["op"])
+        self.assertEqual(names(site="nope"), [])
+        # the CSV export applies the same filter
+        r = self.c.get(reverse("administration:users_export"), {"role": "admin", "site": str(self.mum.pk)})
+        rows = list(csv.reader(io.StringIO(r.content.decode())))
+        self.assertEqual([row[0] for row in rows[1:]], ["siteadm"])
+
+    def test_users_list_query_count_does_not_grow_with_users(self):
+        url = reverse("administration:users")
+        self.c.get(url)  # warm caches (content types, sessions)
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as before:
+            self.c.get(url, {"per": 100})
+        for i in range(25):
+            u = User.objects.create_user(f"bulk{i}", f"bulk{i}@example.com", PW)
+            Membership.objects.create(user=u, site=self.mum if i % 2 else None, role="viewer")
+        with CaptureQueriesContext(connection) as after:
+            self.c.get(url, {"per": 100})
+        self.assertEqual(len(after.captured_queries), len(before.captured_queries))
+
+    def test_audit_default_page_size_matches_pager_choices(self):
+        for i in range(30):
+            AuditEvent.objects.create(actor_name="bulk", action="run", object_type="x")
+        r = self.c.get(reverse("administration:audit"))
+        self.assertIn(r.context["page"].paginator.per_page, (10, 20, 50))
+        self.assertContains(r, f'value="{r.context["page"].paginator.per_page}" selected')
+
+    def test_non_superuser_cannot_change_superuser_memberships(self):
+        url = reverse("administration:membership_save", args=[self.root.pk])
+        self.c.post(url, {"site": str(self.mum.pk), "role": "viewer"})
+        self.assertFalse(Membership.objects.filter(user=self.root).exists())
+        m = Membership.objects.create(user=self.root, site=self.dr, role="viewer")
+        self.c.post(reverse("administration:membership_remove", args=[self.root.pk, m.pk]))
+        self.assertTrue(Membership.objects.filter(pk=m.pk).exists())
+        self.assertFalse(AuditEvent.objects.filter(action__startswith="membership_").exists())
+        r = self.c.get(reverse("administration:user_edit", args=[self.root.pk]))
+        self.assertNotContains(r, reverse("administration:membership_save", args=[self.root.pk]))
+        self.assertNotContains(r, reverse("administration:membership_remove", args=[self.root.pk, m.pk]))
+        # a superuser can
+        root = client_for(self.root)
+        root.post(reverse("administration:membership_remove", args=[self.root.pk, m.pk]))
+        self.assertFalse(Membership.objects.filter(pk=m.pk).exists())
+        r = root.get(reverse("administration:user_edit", args=[self.root.pk]))
+        self.assertContains(r, reverse("administration:membership_save", args=[self.root.pk]))
+
+    def test_case_variant_sites_from_bootstrap_stay_editable(self):
+        # bootstrap_sites matches names exactly, so "mumbai (nse)" can exist next to "Mumbai (NSE)"
+        UrlCheck.objects.create(name="lc", url="https://lc.example", site="mumbai (nse)")
+        self.c.post(reverse("administration:sites_bootstrap"))
+        lower = Site.objects.get(name="mumbai (nse)")
+        for site in (self.mum, lower):
+            r = self.c.post(reverse("administration:site_edit", args=[site.pk]), {
+                "name": site.name, "code": site.code, "region": "West", "timezone": "Asia/Kolkata", "criticality": "high"})
+            self.assertRedirects(r, reverse("administration:sites"), msg_prefix=site.name)
+            site.refresh_from_db()
+            self.assertEqual(site.region, "West")
+        # renaming to a case variant of another site is still refused
+        r = self.c.post(reverse("administration:site_edit", args=[self.dr.pk]), {
+            "name": "MUMBAI (NSE)", "code": "dr", "timezone": "UTC", "criticality": "low"})
+        self.assertIn("name", r.context["form"].errors)
+
+    def test_unchanged_site_name_keeps_exact_spelling(self):
+        odd = Site.objects.create(name="Pune  DC", code="PUNE")  # stored with a double space and an upper-case code
+        r = self.c.post(reverse("administration:site_edit", args=[odd.pk]), {
+            "name": "Pune DC", "code": "pune", "region": "West", "timezone": "Asia/Kolkata", "criticality": "low"})
+        self.assertRedirects(r, reverse("administration:sites"))
+        odd.refresh_from_db()
+        self.assertEqual((odd.name, odd.code, odd.region), ("Pune  DC", "PUNE", "West"))
+        a = AuditEvent.objects.get(action="update", object_type="core.site")
+        self.assertNotIn("name", a.details)
+        self.assertNotIn("code", a.details)
+
+    def test_site_code_unique_ignoring_case(self):
+        Site.objects.create(name="Legacy", code="LEG")
+        r = self.c.post(reverse("administration:site_create"), {
+            "name": "New", "code": "leg", "timezone": "UTC", "criticality": "low"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("code", r.context["form"].errors)
+        # a derived code skips taken codes regardless of case
+        Site.objects.create(name="Other", code="NEW-ONE")
+        self.c.post(reverse("administration:site_create"), {"name": "New One", "code": "", "timezone": "UTC", "criticality": "low"})
+        self.assertEqual(Site.objects.get(name="New One").code, "new-one-2")
+
+    def test_log_ingest_card_names_what_it_measures(self):
+        item = next(i for i in services.integrations() if i["key"] == "logs")
+        self.assertIn("Last error-level log event", [label for label, _ in item["details"]])

@@ -186,7 +186,7 @@ def integrations():
         "purpose": "Log shippers (Fluent Bit, Vector, Promtail…) post log lines with this bearer token.",
         "env": ["LINKEDEYE_LOG_INGEST_TOKEN"],
         "details": [("Endpoint", f"POST {li_url}"), ("Bearer token", _token_detail(li)),
-                    ("Last log event", last_log)],
+                    ("Last error-level log event", last_log)],
         "testable": False, "last_test": None,
         "warning": bool(li) and len(li) < 24,
     })

@@ -46,19 +46,20 @@
         <thead><tr><th>Site</th><th>Role</th><th>Since</th><th>Actions</th></tr></thead>
         <tbody>{% for m in memberships %}
           <tr><td>{% if m.site %}<a href="{% url 'administration:site_edit' m.site.pk %}">{{ m.site.name }}</a>{% else %}<b>All sites</b>{% endif %}</td>
-            <td><form class="adm-inline" method="post" action="{% url 'administration:membership_save' target.pk %}">{% csrf_token %}
+            <td>{% if locked %}{% include "administration/_role.html" with role=m.role %}{% else %}<form class="adm-inline" method="post" action="{% url 'administration:membership_save' target.pk %}">{% csrf_token %}
               <input type="hidden" name="site" value="{% if m.site %}{{ m.site.pk }}{% endif %}">
               <select name="role" aria-label="Role on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %}">{% for v, l in roles %}<option value="{{ v }}" {% if m.role == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
-              <button class="btn sm" type="submit">Change</button></form></td>
+              <button class="btn sm" type="submit">Change</button></form>{% endif %}</td>
             <td>{{ m.created_at|date:"j M Y" }}</td>
-            <td><form method="post" action="{% url 'administration:membership_remove' target.pk m.pk %}" data-confirm="Remove the {{ m.role }} role on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %} from {{ target.username }}?">{% csrf_token %}<button class="btn icon red" type="submit" title="Remove" aria-label="Remove membership on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %}">{% icon "trash" 15 %}</button></form></td></tr>
+            <td>{% if locked %}<span class="t-mute">–</span>{% else %}<form method="post" action="{% url 'administration:membership_remove' target.pk m.pk %}" data-confirm="Remove the {{ m.role }} role on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %} from {{ target.username }}?">{% csrf_token %}<button class="btn icon red" type="submit" title="Remove" aria-label="Remove membership on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %}">{% icon "trash" 15 %}</button></form>{% endif %}</td></tr>
         {% empty %}<tr><td colspan="4" class="empty">No memberships. {% if target.is_superuser %}Superusers are admin everywhere.{% elif target.is_staff %}As a staff user without memberships this user is an operator on all sites.{% else %}Without memberships this user is a viewer on all sites.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      {% if locked %}<p class="hint t-mute adm-note">Only a superuser can change another superuser's memberships.</p>{% else %}
       <form class="adm-add" method="post" action="{% url 'administration:membership_save' target.pk %}">{% csrf_token %}
         <div class="field"><label for="m-site">Site</label><select id="m-site" name="site">{% for v, l in membership_form.fields.site.choices %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
         <div class="field"><label for="m-role">Role</label><select id="m-role" name="role">{% for v, l in roles %}<option value="{{ v }}" {% if v == 'viewer' %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
         <button class="btn primary" type="submit">{% icon "plus" 15 %}Add / update</button>
       </form>
-      <p class="hint t-mute adm-note">Adding a role for a site that already has one replaces it. The highest role that applies wins.</p>
+      <p class="hint t-mute adm-note">Adding a role for a site that already has one replaces it. The highest role that applies wins.</p>{% endif %}
     </div>
   </div>
 

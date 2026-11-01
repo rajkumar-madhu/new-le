@@ -174,6 +174,10 @@ class SiteForm(forms.ModelForm):
         name = " ".join((self.cleaned_data.get("name") or "").split())
         if not name:
             raise forms.ValidationError("Enter a name.")
+        if self.instance.pk and " ".join(self.instance.name.split()) == name:
+            # Unchanged: keep the exact stored spelling (other modules match site names exactly) and skip the
+            # duplicate checks, because bootstrap_sites can create case variants such as "Mumbai" and "mumbai".
+            return self.instance.name
         if name.lower() == "all sites":
             raise forms.ValidationError("“All Sites” is reserved for records that apply everywhere.")
         if self._scope().filter(name__iexact=name).exists():
@@ -186,10 +190,12 @@ class SiteForm(forms.ModelForm):
         if not code and cleaned.get("name"):
             base = slugify(cleaned["name"])[:50] or "site"
             code, i = base, 2
-            while self._scope().filter(code=code).exists():
+            while self._scope().filter(code__iexact=code).exists():
                 code, i = f"{base}-{i}", i + 1
-        if code:
-            if self._scope().filter(code=code).exists():
+        if code and self.instance.pk and code == (self.instance.code or "").lower():
+            cleaned["code"] = self.instance.code          # unchanged
+        elif code:
+            if self._scope().filter(code__iexact=code).exists():
                 self.add_error("code", "A site with this code already exists.")
             cleaned["code"] = code
         return cleaned

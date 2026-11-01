@@ -154,18 +154,25 @@ def _filtered_users(request):
         qs = qs.filter(is_active=True)
     elif status == "inactive":
         qs = qs.filter(is_active=False)
+    # Role and site conditions on memberships go into ONE filter() call so they apply to the same membership row
+    # ("admin on site X"), not to two different memberships of the user (separate joins).
+    member = {}
     role = g.get("role")
     if role in ("admin", "operator", "viewer"):
-        qs = qs.filter(le_memberships__role=role)
+        member["le_memberships__role"] = role
     elif role == "superuser":
         qs = qs.filter(is_superuser=True)
     elif role == "none":
         qs = qs.filter(le_memberships__isnull=True, is_superuser=False)
     site = g.get("site")
     if site == "all":
-        qs = qs.filter(le_memberships__site__isnull=True, le_memberships__isnull=False)
+        member.update({"le_memberships__isnull": False, "le_memberships__site__isnull": True})
     elif site:
-        qs = qs.filter(le_memberships__site__pk=site) if site.isdigit() else qs.none()
+        if not site.isdigit():
+            return qs.none()
+        member["le_memberships__site__pk"] = site
+    if member:
+        qs = qs.filter(**member)
     return qs.distinct()
 
 
@@ -279,6 +286,9 @@ def _apply_membership_change(request, target, change):
 @require_POST
 def membership_save(request, pk):
     target = get_object_or_404(User, pk=pk)
+    if _guard_superuser(request, target):
+        messages.error(request, "Only a superuser can change another superuser.")
+        return redirect("administration:user_edit", pk=target.pk)
     form = MembershipForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Choose a valid site and role.")
@@ -317,6 +327,9 @@ def membership_save(request, pk):
 def membership_remove(request, pk, mid):
     target = get_object_or_404(User, pk=pk)
     m = get_object_or_404(Membership.objects.select_related("site"), pk=mid, user=target)
+    if _guard_superuser(request, target):
+        messages.error(request, "Only a superuser can change another superuser.")
+        return redirect("administration:user_edit", pk=target.pk)
     where, role = (m.site.name if m.site else "All sites"), m.role
     if _apply_membership_change(request, target, lambda: m.delete() or True) is None:
         return redirect("administration:user_edit", pk=target.pk)
@@ -542,7 +555,7 @@ def _looks_like_ip(q):
 @admin_required
 def audit_log(request):
     qs, d_from, d_to = _filtered_audit(request)
-    page = Paginator(qs, _per_page(request, 25)).get_page(request.GET.get("page"))
+    page = Paginator(qs, _per_page(request)).get_page(request.GET.get("page"))
     base = AuditEvent.objects.order_by()
     ctx = {"page": page, "query": _query(request),
            "actors": base.exclude(actor_name="").values_list("actor_name", flat=True).distinct().order_by("actor_name"),
