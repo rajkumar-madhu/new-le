@@ -1,9 +1,10 @@
 import csv
+import re
 from datetime import timedelta
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -64,12 +65,29 @@ def _csv(name, header, rows):
     w = csv.writer(resp)
     w.writerow(header)
     for r in rows:
-        w.writerow(["" if v is None else v for v in r])
+        w.writerow([_cell(v) for v in r])
     return resp
 
 
-def _execution_filters(request, qs):
-    g = request.GET
+def _cell(v):
+    """CSV cell; text a spreadsheet would evaluate as a formula (=, +, -, @, tab, CR) is prefixed with a quote."""
+    if v is None:
+        return ""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") and not _is_number(v):
+        return "'" + v
+    return v
+
+
+def _is_number(text):
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
+
+
+def _execution_filters(g, qs):
+    """Filter executions by the query parameters in `g` (a QueryDict)."""
     q = g.get("q", "").strip()
     if q:
         qs = qs.filter(Q(trigger__icontains=q) | Q(error__icontains=q) | Q(triggered_by__icontains=q)
@@ -110,7 +128,7 @@ def _runbook_filtered(request, qs):
     if g.get("service"):
         qs = qs.filter(service=g["service"])
     if g.get("tag"):
-        qs = qs.filter(tags__icontains=g["tag"])
+        qs = qs.filter(tags__iregex=r"(^|,)\s*" + re.escape(g["tag"].strip()) + r"\s*(,|$)")
     cutoff = timezone.localdate() - timedelta(days=REVIEW_AFTER_DAYS)
     if g.get("review") == "due":
         qs = qs.filter(Q(last_reviewed__isnull=True) | Q(last_reviewed__lt=cutoff))
@@ -224,7 +242,7 @@ def runbook_delete(request, pk):
 @require("view")
 def stackstorm(request, form=None):
     scope = services.executions_for(request.user).filter(kind="stackstorm")
-    qs = _execution_filters(request, scope).select_related("rule")
+    qs = _execution_filters(request.GET, scope).select_related("rule")
     page = Paginator(qs, _per_page(request)).get_page(request.GET.get("page"))
     initial = {}
     src = request.GET.get("from", "")
@@ -236,6 +254,7 @@ def stackstorm(request, form=None):
         **_perms(request), "page": page, "query": _query(request),
         "configured": services.stackstorm_configured(), "st2_url": services.stackstorm_display_url(),
         "api_key_set": bool(getattr(services.settings, "STACKSTORM_API_KEY", "")),
+        "can_trigger": services.can_manage(request.user, "operate", "All Sites"),
         "form": form or TriggerForm(initial=initial or {"payload": '{\n  "host": "",\n  "reason": "manual run from LinkedEye"\n}'}),
         "stats": _exec_stats(scope), "statuses": Execution.STATUSES,
         "rule_triggers": services.rules_for(request.user).filter(action="stackstorm"),
@@ -250,6 +269,9 @@ def _pretty(value):
 @require("operate")
 @require_POST
 def stackstorm_trigger(request):
+    if not services.can_manage(request.user, "operate", "All Sites"):
+        # a manual trigger is not tied to a site, so it needs operate rights across the tenant
+        return _deny(request, "Manual StackStorm triggers need the operator role on every site.", "automation:stackstorm")
     form = TriggerForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Fix the errors in the trigger form.")
@@ -284,7 +306,9 @@ def execution_detail(request, pk):
         event = Event.objects.filter(pk=ex.event_id).first()
     return render(request, "automation/execution_detail.html", {
         **_perms(request), "ex": ex, "event": event,
-        "can_rerun": can(request.user, "operate") and (ex.kind == "webhook" or ex.kind == "stackstorm" and services.stackstorm_configured()),
+        "can_rerun": services.can_manage(request.user, "operate", ex.site)
+                     and (ex.kind == "webhook" or ex.kind == "stackstorm" and services.stackstorm_configured()),
+        "can_retrigger": services.can_manage(request.user, "operate", ex.site),
         "st2_configured": services.stackstorm_configured(),
     })
 
@@ -293,6 +317,8 @@ def execution_detail(request, pk):
 @require_POST
 def execution_rerun(request, pk):
     ex = get_object_or_404(services.executions_for(request.user), pk=pk)
+    if not services.can_manage(request.user, "operate", ex.site):
+        return _deny(request, f"You cannot run automation for “{ex.site or 'all sites'}”.", ex.get_absolute_url())
     if ex.kind == "stackstorm":
         new = services.trigger_stackstorm(ex.trigger, ex.payload, triggered_by=_who(request), rule=ex.rule, site=ex.site)
     elif ex.kind == "webhook":
@@ -311,7 +337,7 @@ def execution_rerun(request, pk):
 
 @require("view")
 def execution_export(request):
-    qs = _execution_filters(request, services.executions_for(request.user)).select_related("rule")[:EXPORT_LIMIT]
+    qs = _execution_filters(request.GET, services.executions_for(request.user)).select_related("rule")[:EXPORT_LIMIT]
     return _csv("automation-executions.csv",
                 ["id", "kind", "trigger", "status", "http_status", "started_at", "finished_at", "duration_ms", "triggered_by",
                  "rule", "site", "result", "error"],
@@ -331,11 +357,13 @@ def workflows(request):
     elif request.GET.get("state") == "off":
         shown = shown.filter(enabled=False)
     execs = services.executions_for(request.user).filter(rule__isnull=False)
-    page = Paginator(_execution_filters(request, execs).select_related("rule"), _per_page(request)).get_page(request.GET.get("page"))
+    log_get = request.GET.copy()
+    log_get.pop("q", None)   # the search box filters the rules table only
+    page = Paginator(_execution_filters(log_get, execs).select_related("rule"), _per_page(request)).get_page(request.GET.get("page"))
     stats = _exec_stats(execs)
     since = timezone.now() - timedelta(hours=24)
     return render(request, "automation/workflows.html", {
-        **_perms(request), "rules": shown, "page": page, "query": _query(request),
+        **_perms(request), "rules": shown, "page": page, "query": _query(request), "log_query": _query(request, "q", "state"),
         "rule_total": rules.count(), "rule_enabled": rules.filter(enabled=True).count(),
         "fired24": rules.filter(last_fired_at__gte=since).count(), "stats": stats,
         "statuses": Execution.STATUSES, "all_rules": services.rules_for(request.user).only("pk", "name"),
@@ -389,7 +417,8 @@ def _sample_initial(request, rule):
     from core.models import Event
     eid = request.GET.get("event", "")
     if eid.isdigit():
-        ev = Event.objects.filter(pk=int(eid), tenant_key=services.tenant()).first()
+        from core.access import scope_by_site
+        ev = scope_by_site(Event.objects.filter(tenant_key=services.tenant()), request.user).filter(pk=int(eid)).first()
         if ev:
             return {"source": ev.source, "severity": ev.severity, "title": ev.title, "message": ev.message, "site": ev.site,
                     "fingerprint": ev.fingerprint}
@@ -516,9 +545,11 @@ def templates(request):
 def template_detail(request, pk):
     t = get_object_or_404(services.templates_for(request.user), pk=pk)
     values = [(s.label, t.values.get(s.key), s.key) for s in specs_for(t.kind)]
+    can_edit = services.can_manage_template(request.user, "operate", t)
     unknown = {k: v for k, v in t.values.items() if k not in {s.key for s in specs_for(t.kind)}}
     return render(request, "automation/template_detail.html", {
         **_perms(request), "t": t, "values": values, "unknown": unknown, "kind_help": KIND_HELP.get(t.kind, ""),
+        "can_edit": can_edit, "can_delete": services.can_manage_template(request.user, "admin", t),
         "kind_icon": KIND_ICONS.get(t.kind, "template"),
     })
 
@@ -528,6 +559,10 @@ def _template_form(request, t=None, kind=None):
     sites = services.site_names(request.user)
     if request.method == "POST":
         form = TemplateForm(request.POST, instance=t, kind=kind, sites=sites)
+        if form.is_valid() and not services.can_manage_template(request.user, "operate", form.values()):
+            site = services.template_site(form.values())
+            form.add_error("v_site" if "v_site" in form.fields else None,
+                           f"You cannot add or change templates for “{site}”: pick a site you operate.")
         if form.is_valid():
             obj = form.save(commit=False)
             created = obj.pk is None
@@ -558,6 +593,8 @@ def template_create(request):
 @require_http_methods(["GET", "POST"])
 def template_edit(request, pk):
     t = get_object_or_404(services.templates_for(request.user), pk=pk)
+    if not services.can_manage_template(request.user, "operate", t):
+        return _deny(request, f"You cannot change templates for “{services.template_site(t)}”.", t.get_absolute_url())
     return _template_form(request, t=t)
 
 
@@ -582,7 +619,7 @@ def template_apply(request, pk):
                 except Exception as e:  # the other module failed: show it, never a stack trace
                     form.add_error(None, f"Could not apply the template: {e.__class__.__name__}.")
                 else:
-                    Template.objects.filter(pk=t.pk).update(applied_count=t.applied_count + 1, last_applied_at=timezone.now())
+                    Template.objects.filter(pk=t.pk).update(applied_count=F("applied_count") + 1, last_applied_at=timezone.now())
                     audit(request, "apply", t, created=label, kind=t.kind, object=f"{obj._meta.label_lower}:{obj.pk}")
                     messages.success(request, f"Created {label} from template “{t.name}”.")
                     return redirect(url or t.get_absolute_url())
@@ -598,6 +635,8 @@ def template_apply(request, pk):
 @require_POST
 def template_delete(request, pk):
     t = get_object_or_404(services.templates_for(request.user), pk=pk)
+    if not services.can_manage_template(request.user, "admin", t):
+        return _deny(request, f"You cannot delete templates for “{services.template_site(t)}”.", t.get_absolute_url())
     name = t.name
     audit(request, "delete", t, name=name, kind=t.kind)
     t.delete()

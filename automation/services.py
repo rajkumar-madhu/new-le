@@ -83,6 +83,19 @@ def templates_for(user):
     return Template.objects.filter(tenant_key=tenant())
 
 
+def template_site(template_or_values):
+    """The site a template's records default to ("All Sites" when it names none)."""
+    values = template_or_values.values if isinstance(template_or_values, Template) else (template_or_values or {})
+    site = values.get("site") if isinstance(values, dict) else ""
+    return str(site or "All Sites")
+
+
+def can_manage_template(user, perm, template_or_values):
+    """Templates are shared by the whole tenant; one that defaults to a site may be managed by that site's
+    operators (admins for deletes), any other template only with the permission across the tenant."""
+    return can_manage(user, perm, template_site(template_or_values))
+
+
 def site_names(user=None):
     """Site names from core.Site, limited to what the user may see."""
     from core.access import visible_sites
@@ -161,6 +174,21 @@ def stackstorm_display_url():
     return f"{p.scheme}://{host}{p.path}"
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow redirects from StackStorm: urllib would re-send the St2-Api-Key header to whatever host the
+    Location names (and turn the POST into a GET to an arbitrary, unchecked address)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_st2_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def _st2_open(req, timeout=ST2_TIMEOUT):
+    return _st2_opener.open(req, timeout=timeout)
+
+
 def valid_trigger(trigger):
     trigger = str(trigger or "").strip()
     return bool(TRIGGER_RE.match(trigger)) and ".." not in trigger and "//" not in trigger
@@ -191,7 +219,7 @@ def trigger_stackstorm(trigger, payload, triggered_by="", rule=None, event=None,
             headers["St2-Api-Key"] = settings.STACKSTORM_API_KEY
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=ST2_TIMEOUT) as r:  # noqa: S310 - operator-configured URL
+            with _st2_open(req, timeout=ST2_TIMEOUT) as r:  # operator-configured URL; redirects are refused
                 code = r.status
                 raw = r.read(MAX_RESPONSE)
         except urllib.error.HTTPError as e:
@@ -200,7 +228,10 @@ def trigger_stackstorm(trigger, payload, triggered_by="", rule=None, event=None,
                 raw = e.read(MAX_RESPONSE)
             except Exception:
                 pass
-            return _finish(ex, "failed", http_status=e.code, response=raw, error=f"StackStorm returned HTTP {e.code}")
+            err = f"StackStorm returned HTTP {e.code}"
+            if 300 <= e.code < 400:
+                err += " (redirect not followed; set LINKEDEYE_STACKSTORM_URL to the final URL)"
+            return _finish(ex, "failed", http_status=e.code, response=raw, error=err)
         except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as e:
             return _finish(ex, "failed", error=f"StackStorm unreachable: {getattr(e, 'reason', e)}")
         if 200 <= code < 300:
@@ -220,9 +251,12 @@ def test_stackstorm():
         headers["St2-Api-Key"] = settings.STACKSTORM_API_KEY
     req = urllib.request.Request(stackstorm_endpoint(), headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=ST2_TIMEOUT) as r:  # noqa: S310 - operator-configured URL
+        with _st2_open(req, timeout=ST2_TIMEOUT) as r:  # operator-configured URL; redirects are refused
             return True, f"StackStorm answered HTTP {r.status}."
     except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:
+            return False, (f"StackStorm answered with a redirect (HTTP {e.code}); redirects are not followed. "
+                           "Set LINKEDEYE_STACKSTORM_URL to the final webhook URL.")
         if e.code in (401, 403):
             return False, f"StackStorm rejected the API key (HTTP {e.code}). Check LINKEDEYE_STACKSTORM_API_KEY."
         if e.code in (404, 405):
@@ -526,7 +560,12 @@ def _create_checked(model, values):
     except ValidationError as e:
         errs = {}
         for k, msgs in e.message_dict.items():
-            errs[k if k in values else "__all__"] = " ".join(msgs)
+            text = " ".join(msgs)
+            if k not in values and "name" in values and "already exists" in text and "name" in text.lower():
+                # (tenant_key, name) uniqueness is reported as a non-field error naming the internal tenant key
+                k, text = "name", f"A {model._meta.verbose_name} named “{values['name']}” already exists."
+            key = k if k in values else "__all__"
+            errs[key] = f"{errs[key]} {text}" if key in errs else text
         raise ApplyError(errs) from None
     with transaction.atomic():
         obj.save()

@@ -8,11 +8,9 @@
   <div class="glyph kc-ic k-{{ t.kind }}">{% icon kind_icon 28 %}</div>
   <div class="head-text"><h1>{{ t.name }}{% if t.is_example %} <span class="chip warn">example</span>{% endif %}</h1><p>{{ t.get_kind_display }} template{% if t.description %} · {{ t.description }}{% endif %}</p></div>
   <div class="actions">
-    {% if can_operate %}
-    <a class="btn primary" href="{% url 'automation:template_apply' t.pk %}">{% icon "play" 15 %}Apply</a>
-    <a class="btn" href="{% url 'automation:template_edit' t.pk %}">{% icon "edit" 15 %}Edit</a>
-    {% endif %}
-    {% if can_admin %}<form method="post" action="{% url 'automation:template_delete' t.pk %}" data-confirm="Delete the template “{{ t.name }}”? Records already created from it are not affected.">{% csrf_token %}<button class="btn danger-outline" type="submit">{% icon "trash" 15 %}Delete</button></form>{% endif %}
+    {% if can_operate %}<a class="btn primary" href="{% url 'automation:template_apply' t.pk %}">{% icon "play" 15 %}Apply</a>{% endif %}
+    {% if can_edit %}<a class="btn" href="{% url 'automation:template_edit' t.pk %}">{% icon "edit" 15 %}Edit</a>{% endif %}
+    {% if can_delete %}<form method="post" action="{% url 'automation:template_delete' t.pk %}" data-confirm="Delete the template “{{ t.name }}”? Records already created from it are not affected.">{% csrf_token %}<button class="btn danger-outline" type="submit">{% icon "trash" 15 %}Delete</button></form>{% endif %}
   </div>
 </div>
 

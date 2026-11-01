@@ -59,7 +59,7 @@
     </div>
     <div class="panel" id="trigger">
       <div class="panel-h"><h2>Manual trigger</h2></div>
-      {% if can_operate %}
+      {% if can_trigger %}
       <form method="post" action="{% url 'automation:stackstorm_trigger' %}" class="am-form" novalidate>{% csrf_token %}
         {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
         <div class="form-grid one">
@@ -71,7 +71,7 @@
           <button class="btn primary" type="submit"{% if not configured %} disabled title="StackStorm is not connected"{% endif %}>{% icon "play" 14 %}Trigger</button>
         </div>
       </form>
-      {% else %}<p class="t-mute small">Only operators can trigger StackStorm.</p>{% endif %}
+      {% else %}<p class="t-mute small">Only operators of every site can trigger StackStorm manually.</p>{% endif %}
     </div>
   </div>
 </section>

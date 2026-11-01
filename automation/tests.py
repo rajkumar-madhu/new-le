@@ -190,7 +190,7 @@ class RuleMatchingTests(TestCase):
 class StackStormTests(TestCase):
     @NO_ST2
     def test_not_configured_records_failed_execution(self):
-        with mock.patch("automation.services.urllib.request.urlopen") as op:
+        with mock.patch("automation.services._st2_open") as op:
             ex = services.trigger_stackstorm("restart", {"a": 1})
         op.assert_not_called()
         self.assertEqual(ex.status, "failed")
@@ -201,7 +201,7 @@ class StackStormTests(TestCase):
     @ST2
     def test_success_posts_json_with_api_key_and_timeout(self):
         calls = []
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen(calls=calls)):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen(calls=calls)):
             ex = services.trigger_stackstorm("linkedeye/restart", {"host": "web-1"}, triggered_by="alice")
         self.assertEqual(ex.status, "success")
         self.assertEqual(ex.http_status, 202)
@@ -217,40 +217,40 @@ class StackStormTests(TestCase):
     @ST2
     def test_http_error_is_recorded(self):
         err = urllib.error.HTTPError("u", 401, "Unauthorized", {}, BytesIO(b'{"faultstring": "bad key"}'))
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=err):
+        with mock.patch("automation.services._st2_open", side_effect=err):
             ex = services.trigger_stackstorm("restart", {})
         self.assertEqual((ex.status, ex.http_status), ("failed", 401))
         self.assertIn("bad key", ex.response_excerpt)
 
     @ST2
     def test_unreachable_and_unexpected_errors_never_raise(self):
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):
+        with mock.patch("automation.services._st2_open", side_effect=urllib.error.URLError("refused")):
             ex = services.trigger_stackstorm("restart", {})
         self.assertIn("unreachable", ex.error)
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=RuntimeError("boom")):
+        with mock.patch("automation.services._st2_open", side_effect=RuntimeError("boom")):
             ex = services.trigger_stackstorm("restart", {})
         self.assertEqual(ex.status, "failed")
         self.assertIn("RuntimeError", ex.error)
 
     @ST2
     def test_invalid_trigger_is_refused_without_a_call(self):
-        with mock.patch("automation.services.urllib.request.urlopen") as op:
+        with mock.patch("automation.services._st2_open") as op:
             ex = services.trigger_stackstorm("../../admin", {})
         op.assert_not_called()
         self.assertIn("Invalid trigger", ex.error)
 
     @ST2
     def test_non_json_payload_is_stored(self):
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen()):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen()):
             ex = services.trigger_stackstorm("restart", {"when": timezone.now()})
         self.assertIsInstance(ex.payload["when"], str)
 
     @ST2
     def test_connection_test(self):
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen(status=200)):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen(status=200)):
             self.assertTrue(services.test_stackstorm()[0])
         err = urllib.error.HTTPError("u", 403, "Forbidden", {}, BytesIO(b""))
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=err):
+        with mock.patch("automation.services._st2_open", side_effect=err):
             ok, text = services.test_stackstorm()
         self.assertFalse(ok)
         self.assertIn("API key", text)
@@ -297,7 +297,7 @@ class WebhookTests(TestCase):
 class RuleEngineTests(TestCase):
     def setUp(self):
         self.calls = []
-        p = mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen(calls=self.calls))
+        p = mock.patch("automation.services._st2_open", side_effect=fake_urlopen(calls=self.calls))
         p.start()
         self.addCleanup(p.stop)
 
@@ -653,7 +653,7 @@ class StackStormViewTests(ViewTestBase):
     @ST2
     def test_operator_manual_trigger(self):
         calls = []
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen(calls=calls)):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen(calls=calls)):
             r = self.login(self.operator).post(reverse("automation:stackstorm_trigger"),
                                                {"trigger": "restart_web", "payload": '{"host": "web-1"}'}, follow=True)
         ex = Execution.objects.get()
@@ -664,7 +664,7 @@ class StackStormViewTests(ViewTestBase):
 
     @ST2
     def test_invalid_payload_shows_error(self):
-        with mock.patch("automation.services.urllib.request.urlopen") as op:
+        with mock.patch("automation.services._st2_open") as op:
             r = self.login(self.operator).post(reverse("automation:stackstorm_trigger"), {"trigger": "x", "payload": "[1, 2]"})
         op.assert_not_called()
         self.assertEqual(r.status_code, 200)
@@ -673,14 +673,14 @@ class StackStormViewTests(ViewTestBase):
 
     @ST2
     def test_viewer_cannot_trigger(self):
-        with mock.patch("automation.services.urllib.request.urlopen") as op:
+        with mock.patch("automation.services._st2_open") as op:
             self.login(self.viewer).post(reverse("automation:stackstorm_trigger"), {"trigger": "x", "payload": "{}"})
         op.assert_not_called()
         self.assertFalse(Execution.objects.exists())
 
     @ST2
     def test_connection_test_is_audited(self):
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen(status=200)):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen(status=200)):
             r = self.login(self.operator).post(reverse("automation:stackstorm_test"), follow=True)
         self.assertContains(r, "StackStorm answered HTTP 200")
         self.assertTrue(AuditEvent.objects.filter(action="test_connection").exists())
@@ -688,7 +688,7 @@ class StackStormViewTests(ViewTestBase):
     @ST2
     def test_rerun(self):
         ex = Execution.objects.create(kind="stackstorm", trigger="restart", payload={"a": 1}, status="failed")
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen()):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen()):
             self.login(self.viewer).post(reverse("automation:execution_rerun", args=[ex.pk]))
             self.assertEqual(Execution.objects.count(), 1)
             r = self.login(self.operator).post(reverse("automation:execution_rerun", args=[ex.pk]))
@@ -758,7 +758,7 @@ class RuleViewTests(ViewTestBase):
     def test_test_evaluation_has_no_side_effects(self):
         rule = make_rule(title_contains="down")
         data = {"source": "urlchecker", "severity": "critical", "title": "Portal is DOWN", "site": "", "fingerprint": "f"}
-        with mock.patch("automation.services.urllib.request.urlopen") as op:
+        with mock.patch("automation.services._st2_open") as op:
             r = self.login(self.viewer).post(reverse("automation:rule_test", args=[rule.pk]), data)
         op.assert_not_called()
         self.assertContains(r, "The event matches this rule")
@@ -770,7 +770,7 @@ class RuleViewTests(ViewTestBase):
     def test_test_run_executes_action(self):
         rule = make_rule()
         data = {"source": "urlchecker", "severity": "critical", "title": "down", "fingerprint": "f", "run": "on"}
-        with mock.patch("automation.services.urllib.request.urlopen", side_effect=fake_urlopen()):
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen()):
             self.login(self.viewer).post(reverse("automation:rule_test", args=[rule.pk]), data)
             self.assertFalse(Execution.objects.exists())
             r = self.login(self.operator).post(reverse("automation:rule_test", args=[rule.pk]), data)
@@ -866,3 +866,193 @@ class SeedCommandTests(TestCase):
         call_command("seed_automation", stdout=StringIO())
         self.assertFalse(Runbook.objects.exclude(last_reviewed=None).exists())
         self.assertIsInstance(date.today(), date)
+
+
+# ------------------------------------------------------------------ regressions found by the end-to-end QA pass
+class _Recorder(BaseHTTPRequestHandler):
+    """Records every request (path + St2-Api-Key header); the redirect server answers POSTs with a 302."""
+
+    def _record(self):
+        self.server.seen.append((self.command, self.path, self.headers.get("St2-Api-Key")))
+
+    def do_GET(self):
+        self._record()
+        if self.server.redirect_to:
+            self.send_response(302)
+            self.send_header("Location", self.server.redirect_to)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.do_GET()
+
+    def log_message(self, *args):
+        pass
+
+
+def _serve(redirect_to=""):
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Recorder)
+    srv.seen, srv.redirect_to = [], redirect_to
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+class StackStormRedirectTests(TestCase):
+    """urllib re-sends custom headers on redirects: a 302 from StackStorm must not hand the API key to another host."""
+
+    def setUp(self):
+        self.thief = _serve()
+        self.st2 = _serve(redirect_to=f"http://127.0.0.1:{self.thief.server_address[1]}/steal")
+        self.settings_cm = override_settings(STACKSTORM_URL=f"http://127.0.0.1:{self.st2.server_address[1]}/api/v1/webhooks/",
+                                             STACKSTORM_API_KEY="k-123")
+        self.settings_cm.enable()
+
+    def tearDown(self):
+        self.settings_cm.disable()
+        for s in (self.thief, self.st2):
+            s.shutdown()
+            s.server_close()
+
+    def test_trigger_does_not_follow_redirect(self):
+        ex = services.trigger_stackstorm("restart", {"a": 1})
+        self.assertEqual((ex.status, ex.http_status), ("failed", 302))
+        self.assertIn("redirect not followed", ex.error)
+        self.assertEqual(self.st2.seen, [("POST", "/api/v1/webhooks/restart", "k-123")])
+        self.assertEqual(self.thief.seen, [])
+
+    def test_connection_test_does_not_follow_redirect(self):
+        ok, text = services.test_stackstorm()
+        self.assertFalse(ok)
+        self.assertIn("redirect", text)
+        self.assertEqual(self.thief.seen, [])
+
+
+@NO_AUTO_INCIDENT
+class QARegressionTests(ViewTestBase):
+    def setUp(self):
+        super().setUp()
+        self.mumbai = Site.objects.create(name="Mumbai", code="mumbai")
+        self.delhi = Site.objects.create(name="Delhi", code="delhi")
+        # operator on Mumbai, viewer on Delhi (can see Delhi records, must not change them)
+        self.local_op = User.objects.create_user("local", password="x")
+        Membership.objects.create(user=self.local_op, site=self.mumbai, role="operator")
+        Membership.objects.create(user=self.local_op, site=self.delhi, role="viewer")
+
+    @ST2
+    def test_rerun_needs_operate_on_the_execution_site(self):
+        delhi = Execution.objects.create(kind="stackstorm", trigger="restart", site="Delhi", status="failed")
+        mumbai = Execution.objects.create(kind="stackstorm", trigger="restart", site="Mumbai", status="failed")
+        self.login(self.local_op)
+        r = self.c.get(reverse("automation:execution_detail", args=[delhi.pk]))
+        self.assertEqual(r.status_code, 200)
+        self.assertNotContains(r, "Re-run")
+        self.assertNotContains(r, "Edit &amp; trigger")
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen()) as op:
+            r = self.c.post(reverse("automation:execution_rerun", args=[delhi.pk]))
+            self.assertRedirects(r, delhi.get_absolute_url(), fetch_redirect_response=False)
+            self.assertEqual(Execution.objects.count(), 2)
+            op.assert_not_called()
+            self.assertContains(self.c.get(reverse("automation:execution_detail", args=[mumbai.pk])), "Re-run")
+            self.c.post(reverse("automation:execution_rerun", args=[mumbai.pk]))
+        self.assertEqual(Execution.objects.count(), 3)
+
+    def test_sample_event_prefill_is_site_scoped(self):
+        rule = make_rule(site="Mumbai")
+        mumbai_only = User.objects.create_user("mviewer", password="x")
+        Membership.objects.create(user=mumbai_only, site=self.mumbai, role="viewer")
+        hidden = Event.objects.create(source="urlchecker", title="Secret Chennai outage", severity="critical", site="Chennai")
+        seen = Event.objects.create(source="urlchecker", title="Mumbai outage", severity="critical", site="Mumbai")
+        self.login(mumbai_only)
+        url = reverse("automation:rule_detail", args=[rule.pk])
+        self.assertNotContains(self.c.get(url + f"?event={hidden.pk}"), "Secret Chennai outage")
+        self.assertContains(self.c.get(url + f"?event={seen.pk}"), 'value="Mumbai outage"')
+
+    def test_rule_search_does_not_filter_the_execution_log(self):
+        rule = make_rule(name="Alpha")
+        Execution.objects.create(kind="stackstorm", trigger="restart", rule=rule, status="success")
+        r = self.login(self.viewer).get(reverse("automation:workflows") + "?q=zzz")
+        self.assertContains(r, "No rules match")
+        self.assertEqual(r.context["page"].paginator.count, 1)
+        self.assertNotIn("q=", r.context["log_query"].urlencode())
+
+    def test_tag_filter_matches_whole_tags(self):
+        make_runbook(title="Net book", tags="net, p1")
+        make_runbook(title="Network book", tags="network")
+        make_runbook(title="Last tag", tags="dns,  net ")
+        r = self.login(self.viewer).get(reverse("automation:runbooks") + "?tag=net")
+        titles = {rb.title for rb in r.context["page"]}
+        self.assertEqual(titles, {"Net book", "Last tag"})
+
+    def test_template_management_is_site_scoped(self):
+        glob = Template.objects.create(kind="incident", name="Global", fields={"title": "x"})
+        mine = Template.objects.create(kind="incident", name="Mumbai tpl", fields={"title": "x", "site": "Mumbai"})
+        self.login(self.local_op)
+        r = self.c.post(reverse("automation:template_edit", args=[glob.pk]), {"name": "Global", "description": "changed"})
+        self.assertRedirects(r, glob.get_absolute_url(), fetch_redirect_response=False)
+        glob.refresh_from_db()
+        self.assertEqual(glob.description, "")
+        self.assertNotContains(self.c.get(glob.get_absolute_url()), reverse("automation:template_edit", args=[glob.pk]))
+        r = self.c.post(reverse("automation:template_edit", args=[mine.pk]),
+                        {"name": "Mumbai tpl", "description": "ok", "v_title": "x", "v_site": "Mumbai"})
+        self.assertRedirects(r, mine.get_absolute_url(), fetch_redirect_response=False)
+        # moving it to a site the user only views is refused, as is a template without a site
+        r = self.c.post(reverse("automation:template_edit", args=[mine.pk]),
+                        {"name": "Mumbai tpl", "v_title": "x", "v_site": "Delhi"})
+        self.assertContains(r, "You cannot add or change templates")
+        r = self.c.post(reverse("automation:template_create") + "?kind=notification", {"name": "No site", "v_title": "x"})
+        self.assertContains(r, "You cannot add or change templates")
+        self.assertFalse(Template.objects.filter(name="No site").exists())
+        # a site-scoped admin may not delete a template shared by every site
+        local_admin = User.objects.create_user("ladmin", password="x")
+        Membership.objects.create(user=local_admin, site=self.mumbai, role="admin")
+        self.login(local_admin).post(reverse("automation:template_delete", args=[glob.pk]))
+        self.assertTrue(Template.objects.filter(pk=glob.pk).exists())
+        self.c.post(reverse("automation:template_delete", args=[mine.pk]))
+        self.assertFalse(Template.objects.filter(pk=mine.pk).exists())
+
+    def test_apply_duplicate_name_is_reported_on_the_name_field(self):
+        t = Template.objects.create(kind="url_check", name="Health")
+        data = {"name": "Portal", "url": "https://portal.example.com/", "expected_status": "200", "interval_seconds": "60",
+                "timeout_seconds": "10", "degraded_ms": "1000", "site": "All Sites"}
+        self.login(self.operator)
+        self.c.post(reverse("automation:template_apply", args=[t.pk]), data)
+        r = self.c.post(reverse("automation:template_apply", args=[t.pk]), data)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("already exists", " ".join(r.context["form"].errors.get("name", [])))
+        self.assertNotContains(r, "Tenant key")
+        t.refresh_from_db()
+        self.assertEqual(t.applied_count, 1)
+
+    def test_applied_count_is_incremented_in_the_database(self):
+        t = Template.objects.create(kind="notification", name="N", fields={"title": "Hello"})
+        Template.objects.filter(pk=t.pk).update(applied_count=7)  # e.g. applied by someone else meanwhile
+        stale = Template.objects.get(pk=t.pk)
+        stale.applied_count = 0
+        with mock.patch("automation.views.get_object_or_404", return_value=stale):
+            self.login(self.operator).post(reverse("automation:template_apply", args=[t.pk]),
+                                           {"title": "Hello", "severity": "info", "site": ""})
+        t.refresh_from_db()
+        self.assertEqual(t.applied_count, 8)
+
+    def test_csv_cells_cannot_become_formulas(self):
+        make_runbook(title="=HYPERLINK(\"http://evil\")", owner="+cmd", tags="@x", service="-2+3", ci_name="-5")
+        body = self.login(self.viewer).get(reverse("automation:runbook_export")).content.decode()
+        self.assertIn("'=HYPERLINK", body)
+        self.assertIn("'+cmd", body)
+        self.assertIn("'@x", body)
+        self.assertIn(",'-2+3,", body)
+        self.assertIn(",-5,", body)  # plain numbers stay numbers
+
+    @ST2
+    def test_manual_trigger_needs_operate_on_every_site(self):
+        self.login(self.local_op)
+        self.assertContains(self.c.get(reverse("automation:stackstorm")), "Only operators of every site")
+        with mock.patch("automation.services._st2_open", side_effect=fake_urlopen()) as op:
+            r = self.c.post(reverse("automation:stackstorm_trigger"), {"trigger": "restart", "payload": "{}"})
+            op.assert_not_called()
+        self.assertRedirects(r, reverse("automation:stackstorm"), fetch_redirect_response=False)
+        self.assertFalse(Execution.objects.exists())

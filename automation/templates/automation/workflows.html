@@ -8,7 +8,7 @@
   <div class="glyph tint-teal">{% icon "share" 30 %}</div>
   <div class="head-text"><h1>Event Workflows</h1><p>Rules that react to events from every module: open incidents, trigger StackStorm, call webhooks or link runbooks</p></div>
   <div class="actions">
-    <a class="btn" href="{% url 'automation:execution_export' %}?origin=rule&amp;{{ query.urlencode }}">{% icon "download" 16 %}Export log</a>
+    <a class="btn" href="{% url 'automation:execution_export' %}?origin=rule&amp;{{ log_query.urlencode }}">{% icon "download" 16 %}Export log</a>
     {% if can_operate %}<a class="btn primary" href="{% url 'automation:rule_create' %}">{% icon "plus" 16 %}New rule</a>{% endif %}
   </div>
 </div>

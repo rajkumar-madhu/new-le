@@ -10,7 +10,7 @@
     <p>{{ ex.get_kind_display }} · <span class="mono">{{ ex.trigger }}</span></p></div>
   <div class="actions">
     {% if can_rerun %}<form method="post" action="{% url 'automation:execution_rerun' ex.pk %}" data-confirm="Send the same payload again?">{% csrf_token %}<button class="btn primary" type="submit">{% icon "refresh" 15 %}Re-run</button></form>{% endif %}
-    {% if ex.kind == "stackstorm" and can_operate and st2_configured %}<a class="btn" href="{% url 'automation:stackstorm' %}?from={{ ex.pk }}#trigger">{% icon "edit" 15 %}Edit &amp; trigger</a>{% endif %}
+    {% if ex.kind == "stackstorm" and can_retrigger and st2_configured %}<a class="btn" href="{% url 'automation:stackstorm' %}?from={{ ex.pk }}#trigger">{% icon "edit" 15 %}Edit &amp; trigger</a>{% endif %}
   </div>
 </div>
 
