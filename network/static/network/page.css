@@ -220,3 +220,4 @@
   .pg-network .row-menu .menu-pop { right: auto; left: 0; }
   .pg-network .nw-ev td.msg, .pg-network .nw-polls td.msg { max-width: 260px; width: auto; }
 }
+.pg-network .row-actions span.btn.icon { opacity: .35; cursor: not-allowed; }

@@ -87,7 +87,7 @@
           <td>{% if d.ifs %}<span class="{% if d.ifs.0 < d.ifs.1 %}t-warn{% else %}t-ok{% endif %}">{{ d.ifs.0 }}</span> / {{ d.ifs.1 }} up{% else %}<span class="t-mute">–</span>{% endif %}</td>
           <td><div class="row-actions">
             {% if can_operate %}
-            <form method="post" action="{% url 'network:check' d.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon blue" type="submit" title="Check now" aria-label="Check {{ d.name }} now">{% icon "play" 14 %}</button></form>
+            {% if d.enabled %}<form method="post" action="{% url 'network:check' d.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn icon blue" type="submit" title="Check now" aria-label="Check {{ d.name }} now">{% icon "play" 14 %}</button></form>{% else %}<span class="btn icon" title="Monitoring disabled" aria-hidden="true">{% icon "play" 14 %}</span>{% endif %}
             <a class="btn icon blue" href="{% url 'network:edit' d.pk %}" title="Edit" aria-label="Edit {{ d.name }}">{% icon "edit" 15 %}</a>
             {% endif %}
             <a class="btn icon" href="{% url 'network:detail' d.pk %}" title="View details" aria-label="View {{ d.name }}">{% icon "eye" 15 %}</a>

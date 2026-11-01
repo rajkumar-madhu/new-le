@@ -3,7 +3,7 @@
 {% block page_css %}<link rel="stylesheet" href="{% static 'network/page.css' %}">{% endblock %}
 {% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:all' %}">Network Devices</a>{% icon "chevron-right" 14 %}<span>Discovery</span></nav>{% endblock %}
 {% block content %}
-<div class="pg-network"{% if active %} data-refresh="10"{% endif %}>
+<div class="pg-network"{% if active %} data-nw-refresh="10"{% endif %}>
 <div class="head">
   <div class="glyph bg-info">{% icon "radar" 30 %}</div>
   <div><h1>Network Discovery</h1><p>Scan a subnet for hosts answering on TCP ports, then approve them as monitored devices.</p></div>
@@ -54,4 +54,17 @@
   </div>
 </section>
 </div>
+<script>
+(function () {
+  var host = document.querySelector('[data-nw-refresh]');
+  if (!host) return;
+  // refresh the run list while a scan is in progress, but never wipe a form the operator is filling in
+  var form = document.querySelector('.pg-network form[method=post]'), dirty = false;
+  if (form) form.addEventListener('input', function () { dirty = true; });
+  setInterval(function () {
+    var a = document.activeElement, typing = a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+    if (!document.hidden && !dirty && !typing) location.reload();
+  }, +host.dataset.nwRefresh * 1000);
+})();
+</script>
 {% endblock %}

@@ -9,7 +9,7 @@
   <div><h1>Discovery of <span class="mono">{{ run.cidr }}</span> {% include "network/_run_status.html" %}</h1>
     <p>Ports {{ run.ports }}{% if run.site %} · approved devices go to {{ run.site }}{% endif %} · started by {{ run.requested_by_name|default:"system" }} {{ run.created_at|short_dt }}{% if run.duration_s is not None %} · {{ run.duration_s }} s{% endif %}</p></div>
   <div class="actions">
-    {% if can_operate and run.active %}<form method="post" action="{% url 'network:discovery_cancel' run.pk %}" data-confirm="Cancel this discovery run?">{% csrf_token %}<button class="btn" type="submit">{% icon "x" 16 %}Cancel run</button></form>{% endif %}
+    {% if can_manage_run and run.active %}<form method="post" action="{% url 'network:discovery_cancel' run.pk %}" data-confirm="Cancel this discovery run?">{% csrf_token %}<button class="btn" type="submit">{% icon "x" 16 %}Cancel run</button></form>{% endif %}
     {% if can_operate %}<a class="btn ghost-primary" href="{% url 'network:discovery' %}?cidr={{ run.cidr|urlencode }}&amp;ports={{ run.ports|urlencode }}{% if run.site %}&amp;site={{ run.site|urlencode }}{% endif %}">{% icon "refresh" 16 %}Run again</a>{% endif %}
   </div>
 </div>
@@ -36,7 +36,7 @@
     <div class="field"><label for="{{ approve_form.name_prefix.id_for_label }}">{{ approve_form.name_prefix.label }}</label>{{ approve_form.name_prefix }}</div>
     <div class="nw-approve-btns">
       <button class="btn primary sm" type="submit" formaction="{% url 'network:discovery_approve' run.pk %}">{% icon "check" 15 %}Approve selected</button>
-      <button class="btn sm" type="submit" formaction="{% url 'network:discovery_ignore' run.pk %}">{% icon "x" 15 %}Ignore selected</button>
+      {% if can_manage_run %}<button class="btn sm" type="submit" formaction="{% url 'network:discovery_ignore' run.pk %}">{% icon "x" 15 %}Ignore selected</button>{% endif %}
     </div>
   </div>
   {% endif %}
@@ -61,7 +61,7 @@
   if (!host) return;
   // keep refreshing while the scan runs, unless the operator is selecting hosts
   setInterval(function () {
-    if (!document.hidden && !document.querySelector('input[name="host"]:checked') && document.activeElement.tagName !== 'INPUT') location.reload();
+    if (!document.hidden && !document.querySelector('input[name="host"]:checked') && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) location.reload();
   }, +host.dataset.nwRefresh * 1000);
 })();
 document.querySelectorAll('[data-check-all]').forEach(function (all) {

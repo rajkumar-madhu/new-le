@@ -16,7 +16,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST
 
 from core import prometheus
-from core.access import can, require
+from core.access import can, require, visible_sites
 from core.audit import audit
 
 from . import discovery, jobs, metrics, services
@@ -58,7 +58,7 @@ def _wants_json(request):
 
 def _next(request, fallback):
     nxt = request.POST.get("next") or request.GET.get("next") or ""
-    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+    if _safe_url(request, nxt):
         return nxt
     return fallback
 
@@ -68,11 +68,28 @@ def _perms(request):
     return {"can_operate": can(u, "operate"), "can_admin": can(u, "admin")}
 
 
+def _safe_url(request, url):
+    return bool(url) and url_has_allowed_host_and_scheme(url, allowed_hosts={request.get_host()}, require_https=request.is_secure())
+
+
 def _deny(request, text="You do not have permission to do that.", fallback="network:all"):
     if _wants_json(request):
         return JsonResponse({"error": text}, status=403)
     messages.error(request, text)
-    return redirect(_next(request, request.META.get("HTTP_REFERER") or reverse(fallback)))
+    ref = request.META.get("HTTP_REFERER", "")
+    return redirect(_next(request, ref if _safe_url(request, ref) else reverse(fallback)))
+
+
+CSV_FORMULA_CHARS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(value):
+    """CSV cell safe to open in a spreadsheet: text starting like a formula is prefixed with a quote."""
+    if value is None:
+        return ""
+    if isinstance(value, str) and value.startswith(CSV_FORMULA_CHARS):
+        return "'" + value
+    return value
 
 
 def _device(request, pk):
@@ -188,11 +205,11 @@ def export_csv(request):
                 "status", "last_seen", "last_checked", "latency_ms", "last_error", "prometheus_instance", "uptime_seconds",
                 "enabled", "tags", "contact"])
     for d in qs:
-        w.writerow([d.name, d.device_type, d.vendor, d.model, d.serial, d.firmware, d.mgmt_ip, d.check_port, d.site, d.role,
+        w.writerow([_cell(v) for v in [d.name, d.device_type, d.vendor, d.model, d.serial, d.firmware, d.mgmt_ip, d.check_port, d.site, d.role,
                     d.environment, d.status, d.last_seen.isoformat() if d.last_seen else "",
                     d.last_checked_at.isoformat() if d.last_checked_at else "",
                     "" if d.last_latency_ms is None else d.last_latency_ms, d.last_error, d.prometheus_instance,
-                    "" if d.uptime_seconds is None else d.uptime_seconds, "yes" if d.enabled else "no", d.tags, d.contact])
+                    "" if d.uptime_seconds is None else d.uptime_seconds, "yes" if d.enabled else "no", d.tags, d.contact]])
     return resp
 
 
@@ -278,10 +295,18 @@ def device_form(request, pk=None):
                 # interfaces and uptime belonged to the previous snmp_exporter target
                 obj.uptime_seconds, obj.metrics_updated_at, obj.metrics_error = None, None, ""
                 device.interfaces.all().delete()
+            if device and "enabled" in changed and obj.enabled and obj.last_error == "Monitoring disabled":
+                obj.last_error = ""
             obj.save()
             if device:
                 audit(request, "update", obj, changed=changed)
-                messages.success(request, f"Saved “{obj.name}”.")
+                if obj.enabled and {"enabled", "mgmt_ip", "check_port"} & set(changed):
+                    # re-enabled or pointed at a new target: check it now instead of waiting for the poll
+                    result = jobs.check_devices([obj])[0]
+                    obj.refresh_from_db()
+                    messages.success(request, f"Saved “{obj.name}”. Check now – {_check_summary(obj, result)}")
+                else:
+                    messages.success(request, f"Saved “{obj.name}”.")
             else:
                 audit(request, "create", obj, device_type=obj.device_type, mgmt_ip=obj.mgmt_ip, site=obj.site)
                 if obj.enabled:
@@ -310,18 +335,33 @@ def device_delete(request, pk):
     return redirect(back)
 
 
+def _check_summary(device, result):
+    if result.ok:
+        return f"{device.name}: {device.get_status_display()} in {result.latency_ms:g} ms"
+    if device.status == DeviceStatus.UP and not result.blocked:
+        # one failed check does not mark an Up device down (see jobs.DOWN_AFTER_FAILURES)
+        return (f"{device.name}: check failed – {result.error}. Still Up: marked down after "
+                f"{jobs.DOWN_AFTER_FAILURES} failed checks in a row ({device.consecutive_failures} so far).")
+    return f"{device.name}: {device.get_status_display()} – {result.error}"
+
+
 @require("operate")
 @require_POST
 def check_now(request, pk):
     device = _device(request, pk)
     if not services.can_manage(request.user, "operate", device.site):
         return _deny(request)
+    if not device.enabled:
+        text = f"Monitoring is disabled for {device.name}; enable it before running a check."
+        if _wants_json(request):
+            return JsonResponse({"error": text, "status": device.status}, status=409)
+        messages.warning(request, text)
+        return redirect(_next(request, device.get_absolute_url()))
     result = jobs.check_devices([device])[0]
     device.refresh_from_db()
     audit(request, "run", device, check="reachability", status=device.status, ok=result.ok,
           latency_ms=result.latency_ms, error=result.error)
-    summary = (f"{device.name}: {device.get_status_display()}"
-               + (f" in {result.latency_ms:g} ms" if result.ok else f" – {result.error}"))
+    summary = _check_summary(device, result)
     if _wants_json(request):
         return JsonResponse({"status": device.status, "summary": summary, "latency_ms": result.latency_ms, "error": result.error})
     (messages.success if result.ok else messages.warning)(request, summary)
@@ -355,7 +395,7 @@ def check_all(request):
 @require("view")
 @require_http_methods(["GET", "POST"])
 def discovery_view(request):
-    runs_qs = DiscoveryRun.objects.filter(tenant_key=settings.LINKEDEYE_TENANT)
+    runs_qs = _runs_for(request.user)
     can_op = can(request.user, "operate")
     if request.method == "POST":
         if not can_op:
@@ -365,7 +405,7 @@ def discovery_view(request):
             site = form.cleaned_data["site"]
             if site and not services.can_manage(request.user, "operate", site):
                 form.add_error("site", "You cannot manage devices on this site.")
-            elif runs_qs.filter(status__in=["queued", "running"]).count() >= 3:
+            elif DiscoveryRun.objects.filter(tenant_key=settings.LINKEDEYE_TENANT, status__in=["queued", "running"]).count() >= 3:
                 form.add_error(None, "Three discovery runs are already in progress. Wait for one to finish.")
             else:
                 run = DiscoveryRun.objects.create(
@@ -385,8 +425,22 @@ def discovery_view(request):
     })
 
 
+def _runs_for(user):
+    """Discovery runs the user may see: runs for their sites, runs without a site and runs they started."""
+    qs = DiscoveryRun.objects.filter(tenant_key=settings.LINKEDEYE_TENANT)
+    sites = visible_sites(user)
+    if sites is None:
+        return qs
+    return qs.filter(Q(site__in=list(sites) + ["", "All Sites"]) | Q(requested_by=user))
+
+
 def _run(request, pk):
-    return get_object_or_404(DiscoveryRun, pk=pk, tenant_key=settings.LINKEDEYE_TENANT)
+    return get_object_or_404(_runs_for(request.user), pk=pk)
+
+
+def _can_manage_run(user, run):
+    """Cancel / ignore: the requester, or an operator for the run's site (tenant-wide for runs without a site)."""
+    return (run.requested_by_id is not None and run.requested_by_id == user.pk) or services.can_manage(user, "operate", run.site)
 
 
 def _ip_key(h):
@@ -410,7 +464,7 @@ def discovery_run(request, pk):
     return render(request, "network/discovery_run.html", {
         "run": run, "hosts": hosts, "counts": counts, "show": show,
         "approve_form": ApproveForm(initial={"site": run.site, "device_type": "switch"}),
-        "can_operate": can(request.user, "operate"),
+        "can_operate": can(request.user, "operate"), "can_manage_run": _can_manage_run(request.user, run),
     })
 
 
@@ -445,8 +499,18 @@ def discovery_approve(request, pk):
         messages.warning(request, "Select at least one new host to approve.")
         return redirect(back)
     now = timezone.now()
-    created = []
+    created, existing = [], []
+    known = {}
+    for d in Device.objects.filter(tenant_key=settings.LINKEDEYE_TENANT, mgmt_ip__in=[h.ip for h in hosts]):
+        known.setdefault(d.mgmt_ip.strip(), d)
     for h in hosts:
+        dev = known.get(h.ip)
+        if dev is not None:
+            # approved from another run (or added by hand) since this scan: link it, never duplicate it
+            h.status, h.device, h.decided_by_name, h.decided_at = "existing", dev, request.user.get_username(), now
+            h.save(update_fields=["status", "device", "decided_by_name", "decided_at"])
+            existing.append(h.ip)
+            continue
         port = 22 if 22 in h.open_ports else (h.open_ports[0] if h.open_ports else 22)
         dev = Device.objects.create(
             tenant_key=settings.LINKEDEYE_TENANT, name=_unique_name(f"{prefix}{h.ip}"), device_type=dtype, mgmt_ip=h.ip,
@@ -456,10 +520,15 @@ def discovery_approve(request, pk):
         h.status, h.device, h.decided_by_name, h.decided_at = "approved", dev, request.user.get_username(), now
         h.save(update_fields=["status", "device", "decided_by_name", "decided_at"])
         audit(request, "create", dev, via="discovery", run=run.pk, mgmt_ip=h.ip, device_type=dtype, site=site)
+        known[h.ip] = dev
         created.append(dev)
-    audit(request, "approve", run, hosts=[h.ip for h in hosts], device_type=dtype, site=site)
-    messages.success(request, f"Added {len(created)} device(s) as {dict(DeviceType.choices)[dtype]}. "
-                              "They are checked within a minute.")
+    audit(request, "approve", run, hosts=[d.mgmt_ip for d in created], already_devices=existing, device_type=dtype, site=site)
+    text = f"Added {len(created)} device(s) as {dict(DeviceType.choices)[dtype]}."
+    if created:
+        text += " They are checked within a minute."
+    if existing:
+        text += f" Skipped {len(existing)} address(es) that are already devices: {', '.join(existing)}."
+    (messages.success if created else messages.warning)(request, text)
     return redirect(back)
 
 
@@ -467,6 +536,8 @@ def discovery_approve(request, pk):
 @require_POST
 def discovery_ignore(request, pk):
     run = _run(request, pk)
+    if not _can_manage_run(request.user, run):
+        return _deny(request, "You cannot manage discovery runs for this site.", "network:discovery")
     hosts = _selected_hosts(request, run)
     if not hosts:
         messages.warning(request, "Select at least one new host to ignore.")
@@ -482,6 +553,8 @@ def discovery_ignore(request, pk):
 @require_POST
 def discovery_cancel(request, pk):
     run = _run(request, pk)
+    if not _can_manage_run(request.user, run):
+        return _deny(request, "You cannot manage discovery runs for this site.", "network:discovery")
     if not run.active:
         messages.warning(request, "This run has already finished.")
         return redirect(run.get_absolute_url())
@@ -501,8 +574,8 @@ def interfaces_csv(request, pk):
     w.writerow(["if_index", "name", "alias", "type", "admin_status", "oper_status", "speed_mbps", "in_mbps", "out_mbps",
                 "utilization_pct", "updated_at"])
     for i in device.interfaces.all():
-        w.writerow([i.if_index, i.name, i.alias, i.if_type, i.admin_status, i.oper_status, _blank(i.speed_mbps),
-                    _blank(i.in_mbps), _blank(i.out_mbps), _blank(i.utilization), i.updated_at.isoformat()])
+        w.writerow([_cell(v) for v in [i.if_index, i.name, i.alias, i.if_type, i.admin_status, i.oper_status, _blank(i.speed_mbps),
+                    _blank(i.in_mbps), _blank(i.out_mbps), _blank(i.utilization), i.updated_at.isoformat()]])
     return resp
 
 

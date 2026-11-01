@@ -28,6 +28,8 @@ SCAN_WORKERS = 32
 PROGRESS_EVERY = 16         # hosts between progress saves / cancel checks
 STALE_AFTER = timedelta(minutes=20)
 _slots = threading.BoundedSemaphore(2)   # concurrent scans per process
+_launched = set()                         # run pks with a live scan thread in this process
+_launched_lock = threading.Lock()
 
 
 def parse_cidr(text):
@@ -88,9 +90,19 @@ def scan_host(ip, ports, timeout=SCAN_TIMEOUT):
 
 
 def launch(run):
-    """Start scanning `run` in a background thread (returns immediately)."""
+    """Start scanning `run` in a background thread (returns immediately). Returns False when this
+    process already has a thread for the run (e.g. still waiting for a scan slot)."""
+    with _launched_lock:
+        if run.pk in _launched:
+            return False
+        _launched.add(run.pk)
     t = threading.Thread(target=_thread_main, args=(run.pk,), name=f"network-discovery-{run.pk}", daemon=True)
-    t.start()
+    try:
+        t.start()
+    except Exception:
+        with _launched_lock:
+            _launched.discard(run.pk)
+        raise
     return t
 
 
@@ -101,6 +113,8 @@ def _thread_main(pk):
     except Exception:  # noqa: BLE001 - a background thread must not die noisily
         log.exception("discovery run %s failed", pk)
     finally:
+        with _launched_lock:
+            _launched.discard(pk)
         connection.close()
 
 
@@ -180,8 +194,8 @@ def tick(launcher=None):
         failed += 1
     started = 0
     for run in DiscoveryRun.objects.filter(status="queued", created_at__lt=now - timedelta(seconds=15)).order_by("created_at")[:2]:
-        launcher(run)
-        started += 1
+        if launcher(run) is not False:
+            started += 1
     if started or failed:
         return f"discovery: started {started}, failed {failed} stale"
     return None

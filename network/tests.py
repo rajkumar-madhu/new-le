@@ -674,3 +674,171 @@ class SeedTests(TestCase):
         self.assertEqual(Device.objects.get(name="FG-01").tags, "prod")
         call_command("seed_network", "--remove", stdout=StringIO())
         self.assertEqual(list(Device.objects.values_list("name", flat=True)), ["FG-01"])
+
+
+# ---------------------------------------------------------------------------------------------- regressions (E2E review)
+@override_settings(LINKEDEYE_TENANT=T, PROMETHEUS_URL="", PROBE_ALLOWED_PRIVATE_CIDRS=["192.0.2.0/24"])
+class RegressionTests(TestCase):
+    def setUp(self):
+        self.viewer, self.operator, self.admin = users()
+        self.c = Client()
+        self.c.force_login(self.operator)
+
+    def test_check_now_refused_for_disabled_device(self):
+        # a disabled device used to be checked anyway: status went unknown -> down and a second critical event fired
+        d = dev("off-1", enabled=False, status="unknown", last_error="Monitoring disabled")
+        with mock.patch("network.probe.tcp_probe", return_value=fail()) as tp:
+            r = self.c.post(reverse("network:check", args=[d.pk]), HTTP_ACCEPT="application/json")
+            self.c.post(reverse("network:check", args=[d.pk]))
+        self.assertEqual(r.status_code, 409)
+        tp.assert_not_called()
+        d.refresh_from_db()
+        self.assertEqual(d.status, "unknown")
+        self.assertFalse(Event.objects.exists())
+        self.assertFalse(DevicePoll.objects.exists())
+        r = self.c.get(reverse("network:detail", args=[d.pk]))
+        self.assertNotContains(r, ">Check now<")
+
+    def test_device_disabled_or_deleted_while_probing_is_not_recorded(self):
+        a, b = dev("a-1"), dev("b-1", mgmt_ip="192.0.2.11")
+        # the poll loop holds `a` and `b` in memory while an operator disables one and deletes the other
+        Device.objects.filter(pk=a.pk).update(enabled=False, status="unknown")
+        Device.objects.filter(pk=b.pk).delete()
+        with mock.patch("network.probe.tcp_probe", return_value=fail()):
+            jobs.check_devices([a, b])
+        a.refresh_from_db()
+        self.assertEqual(a.status, "unknown")
+        self.assertFalse(DevicePoll.objects.exists())
+        self.assertFalse(Event.objects.exists())
+
+    def test_reenable_checks_immediately_and_clears_disabled_note(self):
+        d = dev("re-1", enabled=False, status="unknown", last_error="Monitoring disabled")
+        data = {"name": "re-1", "device_type": "switch", "mgmt_ip": "192.0.2.10", "check_port": 22, "site": "", "enabled": "on"}
+        with mock.patch("network.probe.tcp_probe", return_value=ok()) as tp:
+            self.c.post(reverse("network:edit", args=[d.pk]), data)
+        tp.assert_called_once()
+        d.refresh_from_db()
+        self.assertEqual((d.status, d.last_error), ("up", ""))
+
+    def test_single_failure_summary_explains_still_up(self):
+        d = dev("up-1", status="up")
+        with mock.patch("network.probe.tcp_probe", return_value=fail()):
+            r = self.c.post(reverse("network:check", args=[d.pk]), HTTP_ACCEPT="application/json")
+        body = r.json()
+        self.assertEqual(body["status"], "up")
+        self.assertIn("Still Up", body["summary"])
+        self.assertIn("2 failed checks", body["summary"])
+
+    def test_approve_never_duplicates_an_existing_address(self):
+        r1 = DiscoveryRun.objects.create(tenant_key=T, cidr="192.0.2.4/32", status="done")
+        r2 = DiscoveryRun.objects.create(tenant_key=T, cidr="192.0.2.4/32", status="done")
+        h1 = DiscoveredHost.objects.create(run=r1, ip="192.0.2.4", open_ports=[22])
+        h2 = DiscoveredHost.objects.create(run=r2, ip="192.0.2.4", open_ports=[22])
+        self.c.post(reverse("network:discovery_approve", args=[r1.pk]), {"host": [h1.pk], "device_type": "switch", "site": ""})
+        r = self.c.post(reverse("network:discovery_approve", args=[r2.pk]), {"host": [h2.pk], "device_type": "switch", "site": ""},
+                        follow=True)
+        self.assertEqual(Device.objects.filter(mgmt_ip="192.0.2.4").count(), 1)
+        h2.refresh_from_db()
+        self.assertEqual((h2.status, h2.device), ("existing", Device.objects.get(mgmt_ip="192.0.2.4")))
+        self.assertContains(r, "already devices: 192.0.2.4")
+        audit_row = AuditEvent.objects.filter(action="approve", object_id=str(r2.pk)).get()
+        self.assertEqual((audit_row.details["hosts"], audit_row.details["already_devices"]), ([], ["192.0.2.4"]))
+
+    def test_discovery_runs_are_scoped_by_site(self):
+        dr = Site.objects.create(tenant_key=T, name="DR Site", code="dr")
+        Site.objects.create(tenant_key=T, name="Mumbai (NSE)", code="mum")
+        u = User.objects.create_user("dr-op", password="pw")
+        Membership.objects.create(user=u, site=dr, role="operator")
+        mum = DiscoveryRun.objects.create(tenant_key=T, cidr="192.0.2.0/29", status="running", site="Mumbai (NSE)",
+                                          started_at=timezone.now())
+        host = DiscoveredHost.objects.create(run=mum, ip="192.0.2.1", open_ports=[22])
+        mine = DiscoveryRun.objects.create(tenant_key=T, cidr="192.0.2.8/29", status="done", site="DR Site")
+        anyone = DiscoveryRun.objects.create(tenant_key=T, cidr="192.0.2.16/29", status="running", site="",
+                                             requested_by=self.admin, started_at=timezone.now())
+        c = Client()
+        c.force_login(u)
+        page = c.get(reverse("network:discovery")).content.decode()
+        self.assertIn("192.0.2.8/29", page)
+        self.assertIn("192.0.2.16/29", page)
+        self.assertNotIn("192.0.2.0/29", page)
+        self.assertEqual(c.get(mum.get_absolute_url()).status_code, 404)
+        c.post(reverse("network:discovery_ignore", args=[mum.pk]), {"host": [host.pk]})
+        c.post(reverse("network:discovery_cancel", args=[mum.pk]))
+        host.refresh_from_db()
+        mum.refresh_from_db()
+        self.assertEqual((host.status, mum.status), ("new", "running"))
+        # a site-less run started by someone else needs a tenant-wide operator to cancel it
+        r = c.get(anyone.get_absolute_url())
+        self.assertNotContains(r, "Cancel run")
+        c.post(reverse("network:discovery_cancel", args=[anyone.pk]))
+        anyone.refresh_from_db()
+        self.assertEqual(anyone.status, "running")
+        self.assertFalse(AuditEvent.objects.filter(action__in=["cancel", "ignore"]).exists())
+        self.assertEqual(c.get(mine.get_absolute_url()).status_code, 200)
+
+    def test_csv_exports_neutralise_formulas(self):
+        d = dev("=cmd|' /C calc'!A0", role="+SUM(1)", tags="@x", vendor="-2+3")
+        Interface.objects.create(device=d, if_index=1, name="=HYPERLINK(\"http://x\")", alias="@evil")
+        self.c.force_login(self.viewer)
+        body = self.c.get(reverse("network:export")).content.decode()
+        self.assertIn("'=cmd", body)
+        self.assertIn("'+SUM(1)", body)
+        self.assertIn("'@x", body)
+        self.assertIn("'-2+3", body)
+        self.assertNotIn(",=", body)
+        body = self.c.get(reverse("network:interfaces_export", args=[d.pk])).content.decode()
+        self.assertIn("'=HYPERLINK", body)
+        self.assertIn("'@evil", body)
+
+    def test_deny_ignores_foreign_referer(self):
+        d = dev("ref-1", site="Mumbai (NSE)")
+        mum = Site.objects.create(tenant_key=T, name="Mumbai (NSE)", code="mum")
+        dr = Site.objects.create(tenant_key=T, name="DR Site", code="dr")
+        u = User.objects.create_user("v2", password="pw")
+        Membership.objects.create(user=u, site=mum, role="viewer")
+        Membership.objects.create(user=u, site=dr, role="operator")
+        c = Client()
+        c.force_login(u)
+        r = c.post(reverse("network:check", args=[d.pk]), HTTP_REFERER="https://evil.example/")
+        self.assertEqual(r.status_code, 302)
+        self.assertFalse(r["Location"].startswith("https://evil.example"))
+        self.assertFalse(DevicePoll.objects.exists())
+
+    def test_tick_does_not_relaunch_a_run_already_waiting_in_this_process(self):
+        run = DiscoveryRun.objects.create(tenant_key=T, cidr="192.0.2.0/30", created_at=timezone.now() - timedelta(minutes=1))
+        gate = threading.Event()
+        with mock.patch("network.discovery.execute", side_effect=lambda pk: gate.wait(5)), \
+                mock.patch("network.discovery.connection"):
+            t = discovery.launch(run)
+            self.assertIs(discovery.launch(run), False)
+            self.assertIsNone(discovery.tick())  # nothing new started
+            gate.set()
+            t.join(5)
+        self.assertNotIn(run.pk, discovery._launched)
+
+    def test_uptime_only_clears_stale_interface_rates(self):
+        d = dev(prometheus_instance="sw1")
+        Interface.objects.create(device=d, if_index=1, name="Gi1", in_mbps=5, out_mbps=5, utilization=1)
+        metrics.apply(d, {"interfaces": {}, "uptime": 3600.0}, [])
+        i = d.interfaces.get()
+        self.assertEqual((i.in_mbps, i.out_mbps, i.utilization), (None, None, None))
+        d.refresh_from_db()
+        self.assertEqual(d.uptime_seconds, 3600)
+        self.assertIn("no IF-MIB interface series", d.metrics_error)
+
+    def test_state_set_labels_are_truncated(self):
+        long = "x" * 40
+        data = {"i": {"interfaces": {}, "uptime": None}}
+        with mock.patch("core.prometheus.query", side_effect=lambda q: [prom_row(1.0, instance="i", ifIndex="1", ifOperStatus=long)]
+                        if "ifOperStatus" in q else []):
+            data, _errors = metrics.fetch(["i"])
+        self.assertEqual(len(data["i"]["interfaces"][1]["oper"]), 20)
+
+    def test_seed_matches_names_case_insensitively_and_remove_needs_exact_tag(self):
+        dev("fg-01", tags="prod")                          # real device, different case
+        dev("lb-01", tags="examples-lab")                  # real device whose tag only contains "example"
+        call_command("seed_network", stdout=StringIO())
+        self.assertFalse(Device.objects.filter(name="FG-01").exists())
+        self.assertEqual(Device.objects.get(name="lb-01").tags, "examples-lab")
+        call_command("seed_network", "--remove", stdout=StringIO())
+        self.assertEqual(sorted(Device.objects.values_list("name", flat=True)), ["fg-01", "lb-01"])

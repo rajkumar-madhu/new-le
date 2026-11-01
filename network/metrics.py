@@ -60,7 +60,7 @@ def queries(selector):
 def _state(metric, value, label):
     # gauge with enum values (snmp_exporter default) or a state set ({ifOperStatus="up"} 1)
     if label in metric:
-        return metric[label] if value == 1 else None
+        return str(metric[label])[:20] if value == 1 else None
     if value is None:
         return None
     return IF_STATES.get(int(value), "unknown")
@@ -165,6 +165,9 @@ def apply(device, result, errors, now=None):
             transitions.append((obj, old, obj.oper_status))
     if interfaces and existing:  # interfaces that disappeared from the device
         Interface.objects.filter(pk__in=[i.pk for i in existing.values()]).delete()
+    elif existing:  # only sysUpTime came back: keep the inventory but never show old rates as current
+        Interface.objects.filter(pk__in=[i.pk for i in existing.values()]).update(in_mbps=None, out_mbps=None, utilization=None)
+        errors = list(errors) + ["no IF-MIB interface series"]
     device.uptime_seconds = int(uptime) if uptime is not None else None
     device.metrics_updated_at = now
     device.metrics_error = ("Partial data: " + "; ".join(errors))[:300] if errors else ""

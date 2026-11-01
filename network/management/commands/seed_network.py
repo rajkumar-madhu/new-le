@@ -55,19 +55,26 @@ class Command(BaseCommand):
         tenant = settings.LINKEDEYE_TENANT
         names = [e["name"] for e in EXAMPLES]
         if remove:
-            qs = Device.objects.filter(tenant_key=tenant, name__in=names, tags__icontains="example")
-            n = qs.count()
-            qs.delete()
+            # only records still carrying the exact "example" tag (never a real device that reuses a name)
+            pks = [d.pk for d in Device.objects.filter(tenant_key=tenant, name__in=names) if d.is_example]
+            Device.objects.filter(pk__in=pks).delete()
+            n = len(pks)
             self.stdout.write(self.style.SUCCESS(f"Removed {n} example device(s)."))
             return
         created = updated = 0
         for e in EXAMPLES:
             fields = dict(e, description=NOTE)
-            existing = Device.objects.filter(tenant_key=tenant, name=e["name"]).first()
-            if existing is not None and "example" not in existing.tags.lower():
+            # names are unique case-insensitively (the device form enforces it), so match the same way
+            existing = Device.objects.filter(tenant_key=tenant, name__iexact=e["name"]).first()
+            if existing is not None and not existing.is_example:
                 self.stdout.write(self.style.WARNING(f"Skipped {e['name']}: a real device with that name exists."))
                 continue
-            _obj, was_created = Device.objects.update_or_create(tenant_key=tenant, name=e["name"], defaults=fields)
-            created += was_created
-            updated += not was_created
+            if existing is None:
+                Device.objects.create(tenant_key=tenant, **fields)
+                created += 1
+            else:
+                for k, v in fields.items():
+                    setattr(existing, k, v)
+                existing.save()
+                updated += 1
         self.stdout.write(self.style.SUCCESS(f"Example devices: {created} created, {updated} updated (tagged 'example')."))

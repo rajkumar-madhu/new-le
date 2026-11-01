@@ -16,7 +16,7 @@
       {% if can_operate %}<a class="btn" href="{% url 'network:edit' device.pk %}">{% icon "edit" 16 %}Edit Device</a>
       <a class="btn ghost-primary" href="{{ discovery_url }}">{% icon "refresh" 16 %}Run Discovery</a>{% endif %}
       {% if topology_url %}<a class="btn" href="{{ topology_url }}">{% icon "share" 16 %}Open in Topology</a>{% endif %}
-      {% if can_operate %}<form method="post" action="{% url 'network:check' device.pk %}">{% csrf_token %}<button class="btn" type="submit">{% icon "radar" 16 %}Check now</button></form>{% endif %}
+      {% if can_operate and device.enabled %}<form method="post" action="{% url 'network:check' device.pk %}">{% csrf_token %}<button class="btn" type="submit">{% icon "radar" 16 %}Check now</button></form>{% endif %}
       <details class="row-menu nw-more"><summary class="btn" aria-label="More actions">{% icon "more" 16 %}More</summary>
         <div class="menu-pop">
           <a href="{% url 'network:interfaces_export' device.pk %}">{% icon "download" 14 %}Export interfaces (CSV)</a>

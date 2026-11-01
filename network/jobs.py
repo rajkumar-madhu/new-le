@@ -60,7 +60,11 @@ def check_devices(devices):
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = list(pool.map(lambda d: probe.tcp_probe(d.mgmt_ip.strip(), d.check_port, timeout), devices))
     now = timezone.now()
+    # a device deleted or disabled while it was being probed must not get a status (or an event) back
+    live = set(Device.objects.filter(pk__in=[d.pk for d in devices], enabled=True).values_list("pk", flat=True))
     for d, r in zip(devices, results):
+        if d.pk not in live:
+            continue
         try:
             record(d, r, now)
         except Exception:  # noqa: BLE001 - one bad row must not stop the others
