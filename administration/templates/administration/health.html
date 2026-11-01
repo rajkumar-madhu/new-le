@@ -1,0 +1,81 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}System Health{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "administration/_crumbs.html" with here="System Health" %}{% endblock %}
+{% block content %}
+<div class="pg-admin" data-refresh="120">
+<div class="head">
+  <div class="glyph">{% icon "heartbeat" 44 %}</div>
+  <div><h1>System Health</h1><p>State of this LinkedEye instance: database, migrations, the probe scheduler, events and versions.</p></div>
+  <div class="actions">{% if h.overall == 'ok' %}{% badge "healthy" "All systems healthy" %}{% elif h.overall == 'crit' %}{% badge "critical" "Problem detected" %}{% else %}{% badge "warning" "Needs attention" %}{% endif %}
+    <a class="btn" href="{% url 'administration:health' %}">{% icon "refresh" 16 %}Refresh</a></div>
+</div>
+{% include "administration/_tabs.html" with tab="health" %}
+
+<section class="kpis" aria-label="Health checks">
+  {% for c in h.checks %}
+  <div class="kpi stacked adm-check {{ c.status }}"><div class="kpi-top"><div class="tile s-{% if c.status == 'mute' %}mute{% else %}{{ c.status }}{% endif %}">{% icon c.icon 22 %}</div>
+    <div class="kpi-body"><div class="label">{{ c.label }}</div><div class="value adm-v">{{ c.value }}</div></div></div><div class="sub" title="{{ c.detail }}">{{ c.detail }}</div></div>
+  {% endfor %}
+</section>
+
+<section class="grid g-2">
+  <div class="panel">
+    <div class="panel-h"><h2>Probe scheduler freshness</h2><small>warn when the newest result is older than {{ h.stale_minutes }} min</small></div>
+    <div class="table-wrap dense"><table>
+      <thead><tr><th>Source</th><th class="num">Enabled</th><th>Latest result</th><th>Age</th><th>Status</th></tr></thead>
+      <tbody>{% for p in h.probes %}
+        <tr><td>{{ p.label }}</td><td class="num">{{ p.enabled }}</td><td>{% if p.latest %}{{ p.latest|date:"j M Y H:i:s" }}{% else %}–{% endif %}</td><td>{{ p.age_text }}</td>
+          <td title="{{ p.note }}">{% if p.status == 'ok' %}{% badge "ok" "Fresh" %}{% elif p.status == 'warn' %}{% badge "warning" "Stale" %}{% else %}{% badge "inactive" "Idle" %}{% endif %}</td></tr>
+      {% endfor %}</tbody></table></div>
+    <dl class="kv adm-kv adm-gap">
+      <dt>Scheduler heartbeat</dt><dd>{% if h.heartbeat %}{{ h.heartbeat.seen_at|date:"j M Y H:i:s" }} ({{ h.heartbeat.seen_at|ago }}) · {{ h.heartbeat.host|default:"unknown host" }}{% if h.heartbeat.pid %} · pid {{ h.heartbeat.pid }}{% endif %}{% else %}<span class="t-warn">Never — start <code>manage.py run_probes</code></span>{% endif %}</dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Events in the last {{ h.events.hours }} h</h2><small>{{ h.events.total }} total</small></div>
+    <div class="adm-sev">{% for s in h.events.severity %}
+      <div class="adm-sev-i {{ s.key }}"><b>{{ s.count }}</b><span>{{ s.label }}</span></div>{% endfor %}</div>
+    {% if h.events.sources %}
+    <div class="hbar adm-hbar">{% for s in h.events.sources %}
+      <span>{{ s.source }}</span><span class="track"><i class="fill-info" style="width:{% widthratio s.n h.events.sources.0.n 100 %}%"></i></span><b>{{ s.n }}</b>{% endfor %}</div>
+    {% else %}<p class="empty">No events in the last {{ h.events.hours }} hours.</p>{% endif %}
+  </div>
+</section>
+
+<section class="grid g-2">
+  <div class="panel">
+    <div class="panel-h"><h2>Migrations</h2><small>{% if h.pending %}{{ h.pending|length }} pending{% else %}all applied{% endif %}</small></div>
+    {% if h.pending %}
+    <p class="t-warn">Run <code>manage.py migrate</code> to apply:</p>
+    <ul class="adm-list">{% for app, name in h.pending %}<li><code>{{ app }}.{{ name }}</code></li>{% endfor %}</ul>
+    {% else %}<p class="t-ok">{% icon "check-circle" 16 %} The database schema is up to date.</p>{% endif %}
+    <div class="panel-h adm-sub"><h2>Deployment checks</h2></div>
+    <dl class="kv adm-kv">{% for label, status, text in h.deployment %}<dt>{{ label }}</dt><dd class="t-{{ status }}">{{ text }}</dd>{% endfor %}</dl>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Registered jobs</h2><small>run by <code>manage.py run_probes</code></small></div>
+    <div class="table-wrap dense"><table>
+      <thead><tr><th>Job</th><th>Interval</th><th>Function</th></tr></thead>
+      <tbody>{% for j in h.jobs %}<tr><td><code>{{ j.name }}</code></td><td>{{ j.interval_text }}</td><td class="t-mute adm-fn" title="{{ j.func }}">{{ j.func }}</td></tr>
+      {% empty %}<tr><td colspan="3" class="empty">No periodic jobs are registered.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</section>
+
+<section class="grid g-2">
+  <div class="panel">
+    <div class="panel-h"><h2>Platform</h2></div>
+    <dl class="kv adm-kv">{% for label, value in h.platform %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h2>Applications</h2></div>
+    <div class="table-wrap dense adm-apps"><table>
+      <thead><tr><th>App</th><th>Version</th><th>Latest migration</th><th>Pending</th></tr></thead>
+      <tbody>{% for a in h.apps %}<tr><td class="adm-app"><b>{{ a.name }}</b><span class="t-mute">{{ a.label }}</span></td><td>{{ a.version|default:"–" }}</td><td>{% if a.migration %}<code>{{ a.migration }}</code>{% else %}–{% endif %}</td>
+        <td>{% if a.pending %}<span class="t-warn">{{ a.pending }}</span>{% else %}0{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</section>
+</div>
+{% endblock %}

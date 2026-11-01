@@ -1,0 +1,44 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}New User{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'administration:users' as users_url %}{% include "administration/_crumbs.html" with parent="Users & Roles" parent_url=users_url here="New user" %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph">{% icon "users-cog" 44 %}</div>
+  <div><h1>New user</h1><p>Create an account and give it its first role. You can add more site memberships afterwards.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'administration:users' %}">{% icon "chevron-left" 17 %}Back to users</a></div>
+</div>
+
+<section class="grid g-main">
+  <form class="panel" method="post" action="{% url 'administration:user_create' %}" autocomplete="off">{% csrf_token %}
+    <div class="panel-h"><h2>Account</h2></div>
+    {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+    <div class="form-grid">
+      {% include "administration/_field.html" with f=form.username %}
+      {% include "administration/_field.html" with f=form.email %}
+      {% include "administration/_field.html" with f=form.first_name %}
+      {% include "administration/_field.html" with f=form.last_name %}
+      <div class="field full adm-sep"><h3>Initial access</h3></div>
+      {% include "administration/_field.html" with f=form.site %}
+      {% include "administration/_field.html" with f=form.role %}
+      <div class="field full adm-sep"><h3>Password</h3></div>
+      {% include "administration/_password_fields.html" %}
+      <div class="field full adm-foot"><a class="btn" href="{% url 'administration:users' %}">Cancel</a><button class="btn primary" type="submit">{% icon "plus" 16 %}Create user</button></div>
+    </div>
+  </form>
+  <div class="stack">
+    <div class="panel adm-help">
+      <div class="panel-h"><h2>Roles</h2></div>
+      <dl class="kv">
+        <dt><span class="chip adm-role viewer">Viewer</span></dt><dd>Reads everything on their sites.</dd>
+        <dt><span class="chip adm-role operator">Operator</span></dt><dd>Also runs checks, acknowledges, adds and edits records.</dd>
+        <dt><span class="chip adm-role admin">Admin</span></dt><dd>Also deletes, changes settings and manages users. Admin on <b>All sites</b> opens this console.</dd>
+      </dl>
+      <p class="t-mute adm-note">A role on <b>All sites</b> applies to every site, including sites created later. A user without memberships is a viewer on all sites (operator if they are staff).</p>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'administration/admin.js' %}"></script>{% endblock %}

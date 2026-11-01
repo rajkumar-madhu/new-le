@@ -1,0 +1,53 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}My Profile{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}{% if is_admin %}<a href="{% url 'administration:index' %}">Administration</a>{% icon "chevron-right" 14 %}{% endif %}<span>My profile</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph"><span class="adm-avatar">{{ profile.username|slice:":1"|upper }}</span></div>
+  <div><h1>{{ profile.get_full_name|default:profile.username }}</h1><p>{{ profile.username }}{% if profile.email %} · {{ profile.email }}{% endif %}</p></div>
+  <div class="actions">{% include "administration/_role.html" with role=role %}{% if is_admin %}<a class="btn" href="{% url 'administration:user_edit' profile.pk %}">{% icon "edit" 16 %}Manage account</a>{% endif %}</div>
+</div>
+
+<section class="grid g-main">
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Access</h2><small>read-only — ask an administrator to change your roles</small></div>
+      <dl class="kv">
+        <dt>Effective role</dt><dd>{% include "administration/_role.html" with role=role %}{% if role_note %} <span class="t-mute">({{ role_note }})</span>{% endif %}</dd>
+        <dt>Can operate</dt><dd>{% if can_operate %}Yes — run checks, acknowledge, add and edit records{% else %}No — read-only{% endif %}</dd>
+        <dt>Administration</dt><dd>{% if is_admin %}Yes{% else %}No{% endif %}</dd>
+      </dl>
+      <div class="panel-h adm-sub"><h2>Memberships</h2></div>
+      <div class="table-wrap dense"><table><thead><tr><th>Site</th><th>Role</th><th>Since</th></tr></thead><tbody>
+        {% for m in memberships %}<tr><td>{% if m.site %}{{ m.site.name }}{% else %}<b>All sites</b>{% endif %}</td><td>{% include "administration/_role.html" with role=m.role %}</td><td>{{ m.created_at|date:"j M Y" }}</td></tr>
+        {% empty %}<tr><td colspan="3" class="empty">{% if profile.is_superuser %}Superuser: admin on every site.{% else %}No memberships: the default {{ role }} role applies on all sites.{% endif %}</td></tr>{% endfor %}
+      </tbody></table></div>
+      {% if per_site %}
+      <div class="panel-h adm-sub"><h2>Role per site</h2></div>
+      <div class="adm-roles adm-persite">{% for r in per_site %}<span class="adm-ps"><span>{{ r.site.name }}</span>{% if r.role %}{% include "administration/_role.html" with role=r.role %}{% else %}<span class="chip mute">No access</span>{% endif %}</span>{% endfor %}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Account</h2></div>
+      <dl class="kv">
+        <dt>Username</dt><dd>{{ profile.username }}</dd>
+        <dt>Name</dt><dd>{{ profile.get_full_name|default:"–" }}</dd>
+        <dt>E-mail</dt><dd>{{ profile.email|default:"–" }}</dd>
+        <dt>Last login</dt><dd>{% if profile.last_login %}{{ profile.last_login|date:"j M Y H:i" }}{% else %}–{% endif %}</dd>
+        <dt>Joined</dt><dd>{{ profile.date_joined|date:"j M Y" }}</dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>My recent activity</h2></div>
+      <ul class="adm-feed">{% for e in recent %}
+        <li><span class="chip">{{ e.action }}</span><span class="adm-feed-t" title="{{ e.object_repr }}">{{ e.object_repr|default:e.object_type|truncatechars:48 }}</span><time datetime="{{ e.occurred_at|date:'c' }}">{{ e.occurred_at|short_dt }}</time></li>
+      {% empty %}<li class="t-mute">No recorded activity yet.</li>{% endfor %}</ul>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}

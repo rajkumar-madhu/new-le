@@ -1,0 +1,50 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Integrations{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "administration/_crumbs.html" with here="Integrations" %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph">{% icon "plug" 44 %}</div>
+  <div><h1>Integrations</h1><p>External systems LinkedEye talks to. Settings come from environment variables; secret values are never shown.</p></div>
+  <div class="actions"><span class="chip {% if n_configured == n_total %}ok{% elif n_configured %}warn{% else %}mute{% endif %} adm-count">{{ n_configured }} of {{ n_total }} configured</span></div>
+</div>
+{% include "administration/_tabs.html" with tab="integrations" %}
+
+<section class="adm-int-grid">
+  {% for it in items %}
+  <article class="panel adm-int{% if not it.configured %} off{% endif %}" id="{{ it.key }}">
+    <div class="adm-int-h">
+      <div class="tile {% if it.configured %}{% if it.warning %}s-warn{% else %}s-ok{% endif %}{% else %}s-mute{% endif %}">{% icon it.icon 22 %}</div>
+      <div class="adm-int-t"><h2>{{ it.name }}</h2><p>{{ it.purpose }}</p></div>
+      <div class="adm-int-s">{% if it.configured %}{% if it.warning %}{% badge "warning" "Weak token" %}{% else %}{% badge "ok" "Configured" %}{% endif %}{% else %}{% badge "inactive" "Not connected" %}{% endif %}</div>
+    </div>
+    <dl class="kv adm-kv">
+      {% for label, value in it.details %}<dt>{{ label }}</dt><dd>{% if value.year %}{{ value|date:"j M Y H:i" }} ({{ value|ago }}){% elif value is None %}Never{% else %}{{ value }}{% endif %}</dd>{% endfor %}
+    </dl>
+    <div class="adm-env"><span class="t-mute">Environment:</span> {% for e in it.env %}<code>{{ e }}</code>{% endfor %}</div>
+    {% if not it.configured %}<p class="adm-nc">{% icon "info" 15 %}Not connected — set <code>{{ it.env.0 }}</code> and restart LinkedEye.</p>{% endif %}
+    {% if it.testable %}
+    <div class="adm-int-f">
+      <div class="adm-last">{% if it.last_test %}Last test {{ it.last_test.tested_at|ago }} by {{ it.last_test.tested_by_name }}:
+        <span class="{% if it.last_test.ok %}t-ok{% else %}t-crit{% endif %}">{{ it.last_test.message }}</span>{% else %}<span class="t-mute">Not tested yet.</span>{% endif %}</div>
+      <form method="post" action="{% url 'administration:integration_test' it.test_key %}">{% csrf_token %}
+        <button class="btn sm {% if it.test_enabled %}primary{% endif %}" type="submit" {% if not it.test_enabled %}disabled title="Configure {{ it.name }} first"{% endif %}>{% icon "play" 13 %}{{ it.test_label }}</button></form>
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</section>
+
+<section class="panel">
+  <div class="panel-h"><h2>Test history</h2><div class="right"><a class="view-all" href="{% url 'administration:audit' %}?action=test">In the audit log</a></div></div>
+  <div class="table-wrap dense adm-table"><table>
+    <thead><tr><th>Time</th><th>Integration</th><th>Result</th><th>Message</th><th class="num">Duration</th><th>By</th></tr></thead>
+    <tbody>{% for t in history %}
+      <tr><td>{{ t.tested_at|short_dt }}</td><td>{{ t.get_integration_display }}</td>
+        <td>{% if t.ok %}{% badge "ok" "Passed" %}{% else %}{% badge "failed" %}{% endif %}</td>
+        <td class="wrap">{{ t.message }}</td><td class="num">{{ t.duration_ms|ms }}</td><td>{{ t.tested_by_name }}</td></tr>
+    {% empty %}<tr><td colspan="6" class="empty">No integration has been tested yet.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+</div>
+{% endblock %}

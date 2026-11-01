@@ -1,0 +1,106 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}User {{ target.username }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'administration:users' as users_url %}{% include "administration/_crumbs.html" with parent="Users & Roles" parent_url=users_url here=target.username %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph"><span class="adm-avatar">{{ target.username|slice:":1"|upper }}</span></div>
+  <div><h1>{{ target.get_full_name|default:target.username }}{% if is_self %} <span class="chip">You</span>{% endif %}</h1>
+    <p>{{ target.username }}{% if target.email %} · {{ target.email }}{% endif %} · joined {{ target.date_joined|date:"j M Y" }}</p></div>
+  <div class="actions">
+    {% if target.is_active %}{% badge "active" %}{% else %}{% badge "inactive" "Deactivated" %}{% endif %}
+    {% if target.is_superuser %}<span class="chip adm-role super">Superuser</span>{% endif %}
+    <a class="btn" href="{% url 'administration:users' %}">{% icon "chevron-left" 17 %}All users</a>
+  </div>
+</div>
+
+{% if one_time_password %}
+<section class="panel adm-onetime" role="alert">
+  <div class="panel-h"><h2>{% icon "key" 18 %} Generated password for {{ target.username }}</h2></div>
+  <p>Copy it now and hand it over securely. It is not stored in readable form and will not be shown again.</p>
+  <div class="adm-secret"><code id="one-time-password">{{ one_time_password }}</code><button class="btn sm" type="button" data-copy="one-time-password">{% icon "file" 14 %}Copy</button></div>
+</section>
+{% endif %}
+
+<section class="grid g-main">
+  <div class="stack">
+    <form class="panel" method="post" action="{% url 'administration:user_edit' target.pk %}">{% csrf_token %}
+      <div class="panel-h"><h2>Profile</h2></div>
+      {% if locked %}<p class="t-mute">Only a superuser can change another superuser.</p>{% endif %}
+      <fieldset class="adm-fs" {% if locked %}disabled{% endif %}>
+      <div class="form-grid">
+        <div class="field"><label>Username</label><input type="text" value="{{ target.username }}" disabled aria-label="Username"><span class="hint">Usernames cannot be changed.</span></div>
+        {% include "administration/_field.html" with f=form.email %}
+        {% include "administration/_field.html" with f=form.first_name %}
+        {% include "administration/_field.html" with f=form.last_name %}
+        <div class="field full"><label class="inline-check"><span class="switch">{{ form.is_staff }}<span></span></span>{{ form.is_staff.label }}</label><span class="hint">{{ form.is_staff.help_text }}</span>{% for e in form.is_staff.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+        <div class="field full adm-foot"><button class="btn primary" type="submit">Save profile</button></div>
+      </div>
+      </fieldset>
+    </form>
+
+    <div class="panel" id="memberships">
+      <div class="panel-h"><h2>Site memberships</h2><small>Effective role: {% include "administration/_role.html" with role=role %}{% if role_note %} <span class="t-mute">({{ role_note }})</span>{% endif %}</small></div>
+      <div class="table-wrap dense"><table>
+        <thead><tr><th>Site</th><th>Role</th><th>Since</th><th>Actions</th></tr></thead>
+        <tbody>{% for m in memberships %}
+          <tr><td>{% if m.site %}<a href="{% url 'administration:site_edit' m.site.pk %}">{{ m.site.name }}</a>{% else %}<b>All sites</b>{% endif %}</td>
+            <td><form class="adm-inline" method="post" action="{% url 'administration:membership_save' target.pk %}">{% csrf_token %}
+              <input type="hidden" name="site" value="{% if m.site %}{{ m.site.pk }}{% endif %}">
+              <select name="role" aria-label="Role on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %}">{% for v, l in roles %}<option value="{{ v }}" {% if m.role == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+              <button class="btn sm" type="submit">Change</button></form></td>
+            <td>{{ m.created_at|date:"j M Y" }}</td>
+            <td><form method="post" action="{% url 'administration:membership_remove' target.pk m.pk %}" data-confirm="Remove the {{ m.role }} role on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %} from {{ target.username }}?">{% csrf_token %}<button class="btn icon red" type="submit" title="Remove" aria-label="Remove membership on {% if m.site %}{{ m.site.name }}{% else %}All sites{% endif %}">{% icon "trash" 15 %}</button></form></td></tr>
+        {% empty %}<tr><td colspan="4" class="empty">No memberships. {% if target.is_superuser %}Superusers are admin everywhere.{% elif target.is_staff %}As a staff user without memberships this user is an operator on all sites.{% else %}Without memberships this user is a viewer on all sites.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      <form class="adm-add" method="post" action="{% url 'administration:membership_save' target.pk %}">{% csrf_token %}
+        <div class="field"><label for="m-site">Site</label><select id="m-site" name="site">{% for v, l in membership_form.fields.site.choices %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="m-role">Role</label><select id="m-role" name="role">{% for v, l in roles %}<option value="{{ v }}" {% if v == 'viewer' %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+        <button class="btn primary" type="submit">{% icon "plus" 15 %}Add / update</button>
+      </form>
+      <p class="hint t-mute adm-note">Adding a role for a site that already has one replaces it. The highest role that applies wins.</p>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="panel">
+      <div class="panel-h"><h2>Account</h2></div>
+      <dl class="kv">
+        <dt>Status</dt><dd>{% if target.is_active %}{% badge "active" %}{% else %}{% badge "inactive" "Deactivated" %}{% endif %}</dd>
+        <dt>Last login</dt><dd>{% if target.last_login %}{{ target.last_login|date:"j M Y H:i" }} ({{ target.last_login|ago }}){% else %}Never{% endif %}</dd>
+        <dt>Joined</dt><dd>{{ target.date_joined|date:"j M Y H:i" }}</dd>
+        <dt>Django admin</dt><dd>{% if target.is_superuser %}Superuser{% elif target.is_staff %}Staff{% else %}No{% endif %}</dd>
+      </dl>
+      <div class="adm-acct">
+      {% if is_self %}<p class="t-mute">You cannot deactivate your own account.</p>
+      {% elif locked %}<p class="t-mute">Only a superuser can deactivate a superuser.</p>
+      {% else %}
+        <form method="post" action="{% url 'administration:user_toggle_active' target.pk %}" data-confirm="{% if target.is_active %}Deactivate {{ target.username }}? They will be signed out and can no longer sign in.{% else %}Reactivate {{ target.username }}?{% endif %}">{% csrf_token %}
+          {% if target.is_active %}<button class="btn adm-danger" type="submit">{% icon "pause" 15 %}Deactivate user</button>{% else %}<button class="btn primary" type="submit">{% icon "play" 14 %}Reactivate user</button>{% endif %}
+        </form>
+      {% endif %}
+      </div>
+    </div>
+
+    <form class="panel" id="password" method="post" action="{% url 'administration:user_password' target.pk %}" autocomplete="off">{% csrf_token %}
+      <div class="panel-h"><h2>Set password</h2></div>
+      {% if locked %}<p class="t-mute">Only a superuser can change a superuser's password.</p>{% else %}
+      <div class="form-grid">
+        {% include "administration/_password_fields.html" with form=password_form %}
+        <div class="field full adm-foot"><button class="btn primary" type="submit">{% icon "key" 15 %}Set password</button></div>
+      </div>
+      {% if not is_self %}<p class="hint t-mute adm-note">Changing the password signs {{ target.username }} out of every session.</p>{% endif %}
+      {% endif %}
+    </form>
+
+    <div class="panel">
+      <div class="panel-h"><h2>Recent activity</h2><div class="right"><a class="view-all" href="{% url 'administration:audit' %}?actor={{ target.username|urlencode }}">By this user</a></div></div>
+      <ul class="adm-feed">{% for e in recent %}
+        <li><span class="chip">{{ e.action }}</span><span class="adm-feed-t">{% if e.actor_id == target.pk %}{{ e.object_repr|default:e.object_type|truncatechars:48 }}{% else %}by {{ e.actor_name|default:"system" }}{% endif %}</span><time datetime="{{ e.occurred_at|date:'c' }}">{{ e.occurred_at|short_dt }}</time></li>
+      {% empty %}<li class="t-mute">No recorded activity.</li>{% endfor %}</ul>
+    </div>
+  </div>
+</section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'administration/admin.js' %}"></script>{% endblock %}

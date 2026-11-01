@@ -1,0 +1,62 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Administration{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "administration/_crumbs.html" %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph">{% icon "settings" 44 %}</div>
+  <div><h1>Administration</h1><p>Users and roles, sites, the audit trail, integrations and the health of this LinkedEye instance</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'administration:profile' %}">{% icon "user" 17 %}My profile</a>
+    <a class="btn" href="{% url 'admin:index' %}">{% icon "external" 17 %}Django admin</a>
+  </div>
+</div>
+{% include "administration/_tabs.html" with tab="index" %}
+
+<section class="adm-cards" aria-label="Administration areas">
+  <a class="panel adm-card" href="{% url 'administration:users' %}">
+    <div class="tile s-info">{% icon "users" 24 %}</div>
+    <div class="adm-card-body"><h2>Users &amp; Roles</h2><p>Accounts, site memberships and roles (admin / operator / viewer), activation and passwords.</p>
+      <div class="adm-card-meta"><b>{{ n_active }}</b> active of {{ n_users }} · <b>{{ n_admins }}</b> admin{{ n_admins|pluralize }}</div></div>
+    {% icon "chevron-right" 18 "adm-go" %}</a>
+  <a class="panel adm-card" href="{% url 'administration:sites' %}">
+    <div class="tile s-purple">{% icon "globe" 24 %}</div>
+    <div class="adm-card-body"><h2>Sites</h2><p>Customer sites and locations with region, timezone and criticality.</p>
+      <div class="adm-card-meta"><b>{{ n_sites }}</b> site{{ n_sites|pluralize }}{% if n_unmapped %} · <span class="t-warn">{{ n_unmapped }} name{{ n_unmapped|pluralize }} in use without a site record</span>{% endif %}</div></div>
+    {% icon "chevron-right" 18 "adm-go" %}</a>
+  <a class="panel adm-card" href="{% url 'administration:audit' %}">
+    <div class="tile s-ok">{% icon "file-search" 24 %}</div>
+    <div class="adm-card-body"><h2>Audit Log</h2><p>Who changed what and when, with filters and CSV export.</p>
+      <div class="adm-card-meta"><b>{{ n_audit }}</b> event{{ n_audit|pluralize }} in the last 24 h</div></div>
+    {% icon "chevron-right" 18 "adm-go" %}</a>
+  <a class="panel adm-card" href="{% url 'administration:integrations' %}">
+    <div class="tile s-warn">{% icon "plug" 24 %}</div>
+    <div class="adm-card-body"><h2>Integrations</h2><p>Prometheus, Alertmanager, log ingest, StackStorm, notifications and Nagios.</p>
+      <div class="adm-card-meta"><b>{{ n_configured }}</b> of {{ n_integrations }} configured</div></div>
+    {% icon "chevron-right" 18 "adm-go" %}</a>
+  <a class="panel adm-card" href="{% url 'administration:health' %}">
+    <div class="tile {% if health == 'ok' %}s-ok{% elif health == 'crit' %}s-crit{% else %}s-warn{% endif %}">{% icon "heartbeat" 24 %}</div>
+    <div class="adm-card-body"><h2>System Health</h2><p>Database, migrations, scheduler and probe freshness, events, jobs and versions.</p>
+      <div class="adm-card-meta">{% if health == 'ok' %}{% badge "healthy" %}{% elif health == 'crit' %}{% badge "critical" "Problem" %}{% else %}{% badge "warning" "Needs attention" %}{% endif %}</div></div>
+    {% icon "chevron-right" 18 "adm-go" %}</a>
+  <a class="panel adm-card" href="{% url 'admin:index' %}">
+    <div class="tile s-mute">{% icon "database" 24 %}</div>
+    <div class="adm-card-body"><h2>Django admin</h2><p>Low-level access to every model. Prefer the pages above: they validate input and write the audit trail.</p>
+      <div class="adm-card-meta">Staff users only</div></div>
+    {% icon "external" 18 "adm-go" %}</a>
+</section>
+
+<section class="panel">
+  <div class="panel-h"><h2>Recent changes</h2><div class="right"><a class="view-all" href="{% url 'administration:audit' %}">View audit log</a></div></div>
+  <div class="table-wrap dense"><table>
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Object</th><th>Result</th></tr></thead>
+    <tbody>{% for e in recent %}
+      <tr><td title="{{ e.occurred_at|date:'Y-m-d H:i:s' }}">{{ e.occurred_at|short_dt }}</td><td>{{ e.actor_name|default:"system" }}</td>
+        <td><span class="chip">{{ e.action }}</span></td>
+        <td class="adm-obj"><span class="t-mute">{{ e.object_type }}</span> {{ e.object_repr|truncatechars:60 }}</td>
+        <td>{% if e.result == 'ok' %}{% badge "ok" "OK" %}{% else %}{% badge "failed" e.result|capfirst %}{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No audit events recorded yet.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+</div>
+{% endblock %}

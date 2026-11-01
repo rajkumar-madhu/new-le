@@ -1,0 +1,61 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Sites{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "administration/_crumbs.html" with here="Sites" %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph">{% icon "globe" 44 %}</div>
+  <div><h1>Sites</h1><p>Customer sites and locations. Monitoring records refer to sites by name; memberships grant roles per site.</p></div>
+  <div class="actions">
+    <form method="post" action="{% url 'administration:sites_bootstrap' %}">{% csrf_token %}<button class="btn" type="submit" title="Create a site record for every site name used by URL checks and domains">{% icon "refresh" 17 %}Create sites from existing data</button></form>
+    <a class="btn primary" href="{% url 'administration:site_create' %}">{% icon "plus" 17 %}New site</a>
+  </div>
+</div>
+{% include "administration/_tabs.html" with tab="sites" %}
+
+{% if unmapped %}
+<section class="panel adm-banner warn" role="status">
+  {% icon "alert" 20 %}
+  <div><b>{{ unmapped|length }} site name{{ unmapped|pluralize }} in use without a site record:</b> {{ unmapped|join:", " }}.
+    <span class="t-mute">Users cannot be given a role on these sites until a record exists.</span></div>
+  <form method="post" action="{% url 'administration:sites_bootstrap' %}">{% csrf_token %}<button class="btn sm primary" type="submit">Create {{ unmapped|length }} site{{ unmapped|pluralize }}</button></form>
+</section>
+{% endif %}
+
+<section class="kpis" aria-label="Summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "globe" 22 %}</div><div class="kpi-body"><div class="label">Sites</div><div class="value">{{ k.total }}</div></div></div><div class="sub">Site records</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "flame" 22 %}</div><div class="kpi-body"><div class="label">Critical sites</div><div class="value">{{ k.critical }}</div></div></div><div class="sub">Criticality “Critical”</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "link" 22 %}</div><div class="kpi-body"><div class="label">Global URL checks</div><div class="value">{{ k.global_urls }}</div></div></div><div class="sub">Site “All Sites”</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "browser" 22 %}</div><div class="kpi-body"><div class="label">Global domains</div><div class="value">{{ k.global_domains }}</div></div></div><div class="sub">Site “All Sites”</div></div>
+</section>
+
+<section class="panel">
+  <div class="panel-h"><h2>Sites ({{ page.paginator.count }})</h2></div>
+  <form class="toolbar" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Search name, code or region…" aria-label="Search sites"></label>
+    <select name="criticality" data-autosubmit aria-label="Criticality"><option value="">Any criticality</option>{% for v, l in criticality %}<option value="{{ v }}" {% if request.GET.criticality == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn" type="submit">{% icon "filter" 15 %}Filter</button>
+    {% if query %}<a class="btn icon blue" href="{% url 'administration:sites' %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>{% endif %}
+  </form>
+  <div class="table-wrap dense adm-table"><table>
+    <thead><tr><th>Name</th><th>Code</th><th>Region</th><th>Timezone</th><th>Criticality</th><th class="num">URL checks</th><th class="num">Domains</th><th class="num">Members</th><th>Actions</th></tr></thead>
+    <tbody>{% for s in page %}
+      <tr><td><a href="{% url 'administration:site_edit' s.pk %}">{{ s.name }}</a>{% if s.description %}<div class="t-mute adm-desc" title="{{ s.description }}">{{ s.description|truncatechars:60 }}</div>{% endif %}</td>
+        <td><code>{{ s.code }}</code></td>
+        <td>{{ s.region|default:"–" }}</td>
+        <td>{{ s.timezone }}</td>
+        <td><span class="chip adm-crit {{ s.criticality }}">{{ s.get_criticality_display }}</span></td>
+        <td class="num">{% if s.n_urls %}<a href="{% url 'urlchecker:index' %}?site={{ s.name|urlencode }}">{{ s.n_urls }}</a>{% else %}0{% endif %}</td>
+        <td class="num">{% if s.n_domains %}<a href="{% url 'domains:list' %}?site={{ s.name|urlencode }}">{{ s.n_domains }}</a>{% else %}0{% endif %}</td>
+        <td class="num">{% if s.n_members %}<a href="{% url 'administration:users' %}?site={{ s.pk }}">{{ s.n_members }}</a>{% else %}0{% endif %}</td>
+        <td><div class="row-actions">
+          <a class="btn icon blue" href="{% url 'administration:site_edit' s.pk %}" title="Edit" aria-label="Edit {{ s.name }}">{% icon "edit" 15 %}</a>
+          {% if not s.n_members %}<form method="post" action="{% url 'administration:site_delete' s.pk %}" data-confirm="Delete the site “{{ s.name }}”?{% if s.n_urls or s.n_domains %} {{ s.n_urls }} URL check(s) and {{ s.n_domains }} domain(s) keep using its name.{% endif %}">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ s.name }}">{% icon "trash" 15 %}</button></form>{% endif %}
+        </div></td></tr>
+    {% empty %}<tr><td colspan="9" class="empty">{% if query %}No sites match these filters.{% else %}No sites yet. Add one, or create them from the site names your URL checks and domains already use.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="sites" %}
+</section>
+</div>
+{% endblock %}

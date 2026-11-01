@@ -1,0 +1,60 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if site %}Site {{ site.name }}{% else %}New Site{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% url 'administration:sites' as sites_url %}{% if site %}{% include "administration/_crumbs.html" with parent="Sites" parent_url=sites_url here=site.name %}{% else %}{% include "administration/_crumbs.html" with parent="Sites" parent_url=sites_url here="New site" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph">{% icon "globe" 44 %}</div>
+  <div><h1>{% if site %}{{ site.name }}{% else %}New site{% endif %}</h1><p>{% if site %}Code {{ site.code }} · created {{ site.created_at|date:"j M Y" }}{% else %}Add a customer site or location.{% endif %}</p></div>
+  <div class="actions"><a class="btn" href="{% url 'administration:sites' %}">{% icon "chevron-left" 17 %}All sites</a></div>
+</div>
+
+<section class="grid g-main">
+  <form class="panel" method="post" action="{% if site %}{% url 'administration:site_edit' site.pk %}{% else %}{% url 'administration:site_create' %}{% endif %}">{% csrf_token %}
+    <div class="panel-h"><h2>Site details</h2></div>
+    {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+    <div class="form-grid">
+      {% include "administration/_field.html" with f=form.name %}
+      {% include "administration/_field.html" with f=form.code %}
+      {% include "administration/_field.html" with f=form.region %}
+      {% include "administration/_field.html" with f=form.timezone %}
+      {% include "administration/_field.html" with f=form.criticality %}
+      <div class="field"></div>
+      {% include "administration/_field.html" with f=form.description full=1 %}
+      <div class="field full adm-foot"><a class="btn" href="{% url 'administration:sites' %}">Cancel</a><button class="btn primary" type="submit">{% if site %}Save site{% else %}{% icon "plus" 16 %}Create site{% endif %}</button></div>
+    </div>
+  </form>
+  <div class="stack">
+    {% if site %}
+    <div class="panel">
+      <div class="panel-h"><h2>Usage</h2></div>
+      <dl class="kv">
+        <dt>URL checks</dt><dd>{% if n_urls %}<a href="{% url 'urlchecker:index' %}?site={{ site.name|urlencode }}">{{ n_urls }}</a>{% else %}0{% endif %}</dd>
+        <dt>Domains</dt><dd>{% if n_domains %}<a href="{% url 'domains:list' %}?site={{ site.name|urlencode }}">{{ n_domains }}</a>{% else %}0{% endif %}</dd>
+        <dt>Members</dt><dd>{{ members|length }}</dd>
+      </dl>
+      <p class="hint t-mute adm-note">Records refer to the site by name. Renaming the site does not change them.</p>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Members</h2></div>
+      <ul class="adm-feed">{% for m in members %}
+        <li><a href="{% url 'administration:user_edit' m.user.pk %}">{{ m.user.username }}</a>{% include "administration/_role.html" with role=m.role %}</li>
+      {% empty %}<li class="t-mute">Nobody has a role on this site specifically. Users with a role on All sites still have access.</li>{% endfor %}</ul>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Delete site</h2></div>
+      {% if members %}<p class="t-mute">Remove the {{ members|length }} membership{{ members|pluralize }} first: deleting the site would silently remove those users' access.</p>
+      {% else %}<form method="post" action="{% url 'administration:site_delete' site.pk %}" data-confirm="Delete the site “{{ site.name }}”?">{% csrf_token %}
+        <p class="t-mute">Deleting removes the site record only{% if n_urls or n_domains %}; {{ n_urls }} URL check(s) and {{ n_domains }} domain(s) keep using the name{% endif %}.</p>
+        <button class="btn adm-danger" type="submit">{% icon "trash" 15 %}Delete site</button></form>{% endif %}
+    </div>
+    {% else %}
+    <div class="panel adm-help"><div class="panel-h"><h2>About sites</h2></div>
+      <p class="t-mute">The site name is what URL checks, domains, devices and tickets store. Use the same spelling those records use, or create the sites from existing data on the Sites page.</p>
+      <p class="t-mute">Criticality helps prioritise incidents; the timezone is used for site-local schedules.</p></div>
+    {% endif %}
+  </div>
+</section>
+</div>
+{% endblock %}

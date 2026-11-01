@@ -1,0 +1,48 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Audit Log{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'administration/page.css' %}">{% endblock %}
+{% block crumbs %}{% include "administration/_crumbs.html" with here="Audit Log" %}{% endblock %}
+{% block content %}
+<div class="pg-admin">
+<div class="head">
+  <div class="glyph">{% icon "file-search" 44 %}</div>
+  <div><h1>Audit Log</h1><p>Append-only record of every change made through LinkedEye: who, what, when and from where.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'administration:audit_export' %}?{{ query.urlencode }}">{% icon "download" 17 %}Export CSV</a></div>
+</div>
+{% include "administration/_tabs.html" with tab="audit" %}
+
+<section class="panel">
+  <form class="adm-filters" method="get">
+    {% if request.GET.per %}<input type="hidden" name="per" value="{{ request.GET.per }}">{% endif %}
+    <label class="search adm-q">{% icon "search" 16 %}<input type="search" name="q" value="{{ request.GET.q }}" placeholder="Object, ID, actor or IP…" aria-label="Search audit log"></label>
+    <div class="field"><label for="f-actor">Actor</label><select id="f-actor" name="actor"><option value="">Anyone</option>{% for a in actors %}<option {% if request.GET.actor == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="f-action">Action</label><select id="f-action" name="action"><option value="">Any action</option>{% for a in actions %}<option {% if request.GET.action == a %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="f-type">Object type</label><select id="f-type" name="type"><option value="">Any type</option>{% for t in types %}<option {% if request.GET.type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="f-result">Result</label><select id="f-result" name="result"><option value="">Any result</option>{% for r in results %}<option {% if request.GET.result == r %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+    <div class="field"><label for="f-from">From</label><input id="f-from" type="date" name="from" value="{{ request.GET.from }}"></div>
+    <div class="field"><label for="f-to">To</label><input id="f-to" type="date" name="to" value="{{ request.GET.to }}"></div>
+    <div class="adm-filter-btns"><button class="btn primary" type="submit">{% icon "filter" 15 %}Apply</button>{% if filtered %}<a class="btn" href="{% url 'administration:audit' %}">{% icon "x" 14 %}Clear</a>{% endif %}</div>
+  </form>
+  {% if date_error %}<p class="err">Dates must be in YYYY-MM-DD format; the invalid date was ignored.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-h"><h2>Events ({{ page.paginator.count }})</h2>{% if filtered %}<small>filtered</small>{% endif %}</div>
+  <div class="table-wrap dense adm-table"><table>
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Object type</th><th>Object</th><th>Result</th><th>Source IP</th><th>Details</th></tr></thead>
+    <tbody>{% for e in page %}
+      <tr>
+        <td title="{{ e.occurred_at|date:'c' }}">{{ e.occurred_at|date:"j M Y H:i:s" }}</td>
+        <td>{% if e.actor_name %}<a href="?actor={{ e.actor_name|urlencode }}">{{ e.actor_name }}</a>{% else %}system{% endif %}</td>
+        <td><a class="chip" href="?action={{ e.action|urlencode }}">{{ e.action }}</a></td>
+        <td>{% if e.object_type %}<a href="?type={{ e.object_type|urlencode }}">{{ e.object_type }}</a>{% else %}–{% endif %}</td>
+        <td class="adm-obj" title="{{ e.object_repr }}">{{ e.object_repr|default:"–"|truncatechars:50 }}{% if e.object_id %} <span class="t-mute">#{{ e.object_id }}</span>{% endif %}</td>
+        <td>{% if e.result == 'ok' %}{% badge "ok" "OK" %}{% else %}{% badge "failed" e.result|capfirst %}{% endif %}</td>
+        <td>{{ e.source_ip|default:"–" }}</td>
+        <td>{% if e.details %}<details class="adm-details"><summary>{{ e.details|length }} field{{ e.details|length|pluralize }}</summary><dl>{% for k, v in e.details.items %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}</dl></details>{% else %}<span class="t-mute">–</span>{% endif %}</td>
+      </tr>
+    {% empty %}<tr><td colspan="8" class="empty">{% if filtered %}No audit events match these filters.{% else %}No audit events recorded yet.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  {% include "core/_pager.html" with pager_noun="events" %}
+</section>
+</div>
+{% endblock %}
