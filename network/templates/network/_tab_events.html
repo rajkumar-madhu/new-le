@@ -1,0 +1,19 @@
+{% load le network_tags %}
+<section class="grid nw-row3">
+  <div class="panel"><div class="panel-h"><h2>Device Events</h2><span class="right t-mute small">Up/down changes{% if device.prometheus_instance %} and interface state changes{% endif %}</span></div>
+    {% include "network/_events_table.html" %}
+  </div>
+  <div class="panel"><div class="panel-h"><h2>Availability (24h)</h2></div>
+    {% if avail_chart %}<div class="chart" data-chart="bars" data-src="nw-avail" style="height:150px"></div>
+    <div class="legend nw-legend"><span><i style="background:#16a34a"></i>Up</span><span><i style="background:#dc2626"></i>Down</span><span><i style="background:#cbd5e1"></i>Not checked</span></div>
+    <dl class="kv nw-avail-kv"><dt>Last 24 hours</dt><dd class="{{ avail24|avail_tone }}">{{ avail24|percent:2 }}</dd><dt>Last 7 days</dt><dd class="{{ avail7|avail_tone }}">{{ avail7|percent:2 }}</dd><dt>Status since</dt><dd>{{ device.status_changed_at|short_dt }}</dd></dl>
+    {% else %}<div class="nw-empty sm">{% icon "heartbeat" 24 %}<p>No checks recorded yet.</p></div>{% endif %}
+  </div>
+</section>
+<section class="panel"><div class="panel-h"><h2>Check History</h2><span class="right t-mute small">Latest 50 reachability checks (TCP {{ device.check_port }})</span></div>
+  {% if polls %}
+  <div class="table-wrap dense"><table class="nw-polls"><thead><tr><th>Time</th><th>Result</th><th class="num">Latency</th><th>Detail</th></tr></thead><tbody>
+  {% for p in polls %}<tr><td>{{ p.checked_at|date:"Y-m-d H:i:s" }}</td><td>{% badge p.status %}</td><td class="num">{{ p.latency_ms|latency }}</td><td class="msg" title="{{ p.error }}">{{ p.error|default:"Connected" }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="nw-empty sm">{% icon "file" 24 %}<p>No checks recorded yet.</p></div>{% endif %}
+</section>

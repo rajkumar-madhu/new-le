@@ -1,0 +1,3 @@
+{% load le %}{% if events %}<div class="table-wrap dense"><table class="nw-ev"><thead><tr><th>Time</th><th>Severity</th><th>Event</th><th>Message</th></tr></thead><tbody>
+{% for e in events %}<tr><td>{{ e.occurred_at|date:"Y-m-d H:i:s" }}</td><td>{% badge e.severity %}</td><td title="{{ e.title }}">{{ e.title }}</td><td class="msg" title="{{ e.message }}">{{ e.message|default:"–" }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<div class="nw-empty sm">{% icon "bell" 24 %}<p>No events for this device yet. An event is raised when it goes down or comes back up{% if device.prometheus_instance %}, and when an interface changes state{% endif %}.</p></div>{% endif %}

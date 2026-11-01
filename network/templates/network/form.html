@@ -1,0 +1,37 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}{% if device %}Edit {{ device.name }}{% else %}Add Device{% endif %}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'network/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:all' %}">Network Devices</a>{% icon "chevron-right" 14 %}{% if device %}<a href="{{ device.type_list_url }}">{{ device.type_plural }}</a>{% icon "chevron-right" 14 %}<a href="{{ device.get_absolute_url }}">{{ device.name }}</a>{% icon "chevron-right" 14 %}<span>Edit</span>{% else %}<span>Add Device</span>{% endif %}</nav>{% endblock %}
+{% block content %}
+<div class="pg-network nw-formpage">
+<div class="head">
+  <div class="glyph bg-info">{% icon "network" 30 %}</div>
+  <div><h1>{% if device %}Edit {{ device.name }}{% else %}Add Device{% endif %}</h1><p>The device is checked every minute with a TCP connect to its management address. Interface data comes from Prometheus when an snmp_exporter instance is set.</p></div>
+</div>
+<form method="post" class="panel nw-form" novalidate>{% csrf_token %}
+  {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+  {% for title, fields in form.groups %}
+  <fieldset><legend>{{ title }}</legend>
+    <div class="form-grid nw-grid">
+    {% for f in fields %}
+      {% if f.name == "enabled" %}
+      <div class="field nw-check"><label class="inline-check"><span class="switch">{{ f }}<span></span></span>{{ f.label }}</label>{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+      {% else %}
+      <div class="field{% if f.name == 'description' %} full{% endif %}">
+        <label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}
+        {% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}
+        {% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+  <datalist id="net-vendors">{% for v in vendors %}<option value="{{ v }}">{% endfor %}</datalist>
+  <div class="nw-form-foot">
+    <a class="btn" href="{% if device %}{{ device.get_absolute_url }}{% else %}{% url 'network:all' %}{% endif %}">Cancel</a>
+    <button class="btn primary" type="submit">{% if device %}Save changes{% else %}Add device{% endif %}</button>
+  </div>
+</form>
+</div>
+{% endblock %}

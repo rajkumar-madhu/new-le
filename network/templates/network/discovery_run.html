@@ -1,0 +1,73 @@
+{% extends "core/base.html" %}{% load le static network_tags %}
+{% block title %}Discovery #{{ run.pk }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'network/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:all' %}">Network Devices</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:discovery' %}">Discovery</a>{% icon "chevron-right" 14 %}<span>#{{ run.pk }} {{ run.cidr }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-network"{% if run.active %} data-nw-refresh="4"{% endif %}>
+<div class="head">
+  <div class="glyph bg-info">{% icon "radar" 30 %}</div>
+  <div><h1>Discovery of <span class="mono">{{ run.cidr }}</span> {% include "network/_run_status.html" %}</h1>
+    <p>Ports {{ run.ports }}{% if run.site %} · approved devices go to {{ run.site }}{% endif %} · started by {{ run.requested_by_name|default:"system" }} {{ run.created_at|short_dt }}{% if run.duration_s is not None %} · {{ run.duration_s }} s{% endif %}</p></div>
+  <div class="actions">
+    {% if can_operate and run.active %}<form method="post" action="{% url 'network:discovery_cancel' run.pk %}" data-confirm="Cancel this discovery run?">{% csrf_token %}<button class="btn" type="submit">{% icon "x" 16 %}Cancel run</button></form>{% endif %}
+    {% if can_operate %}<a class="btn ghost-primary" href="{% url 'network:discovery' %}?cidr={{ run.cidr|urlencode }}&amp;ports={{ run.ports|urlencode }}{% if run.site %}&amp;site={{ run.site|urlencode }}{% endif %}">{% icon "refresh" 16 %}Run again</a>{% endif %}
+  </div>
+</div>
+
+<section class="kpis nw-kpis5" aria-label="Run summary">
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "grid" 22 %}</div><div class="kpi-body"><div class="label">Addresses</div><div class="value">{{ run.total_addresses }}</div></div></div><div class="sub">In {{ run.cidr }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "radar" 22 %}</div><div class="kpi-body"><div class="label">Scanned</div><div class="value">{{ run.scanned }}</div></div></div><div class="sub"><span class="util"><i class="fill-info" style="width:{{ run.progress }}%"></i></span>{{ run.progress }}% done</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "shield" 22 %}</div><div class="kpi-body"><div class="label">Skipped by policy</div><div class="value">{{ run.skipped }}</div></div></div><div class="sub">Not allowed to be contacted</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Hosts found</div><div class="value">{{ run.found }}</div></div></div><div class="sub">{{ counts.new }} awaiting decision</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "plus" 22 %}</div><div class="kpi-body"><div class="label">Approved</div><div class="value">{{ counts.approved }}</div></div></div><div class="sub">{{ counts.existing }} already monitored · {{ counts.ignored }} ignored</div></div>
+</section>
+{% if run.error %}<div class="nw-alert crit">{% icon "alert" 16 %}<span>{{ run.error }}</span></div>{% endif %}
+
+<form method="post" class="panel" id="hosts">{% csrf_token %}
+  <div class="panel-h"><h2>Discovered Hosts</h2>
+    <nav class="seg right" aria-label="Filter hosts">
+      <a href="?" class="{% if not show %}on{% endif %}">All</a><a href="?show=new" class="{% if show == 'new' %}on{% endif %}">New ({{ counts.new }})</a>
+      <a href="?show=approved" class="{% if show == 'approved' %}on{% endif %}">Approved</a><a href="?show=existing" class="{% if show == 'existing' %}on{% endif %}">Existing</a><a href="?show=ignored" class="{% if show == 'ignored' %}on{% endif %}">Ignored</a>
+    </nav></div>
+  {% if can_operate and counts.new %}
+  <div class="nw-approve">
+    <div class="field"><label for="{{ approve_form.device_type.id_for_label }}">{{ approve_form.device_type.label }}</label>{{ approve_form.device_type }}</div>
+    <div class="field"><label for="{{ approve_form.site.id_for_label }}">Site</label>{{ approve_form.site }}</div>
+    <div class="field"><label for="{{ approve_form.name_prefix.id_for_label }}">{{ approve_form.name_prefix.label }}</label>{{ approve_form.name_prefix }}</div>
+    <div class="nw-approve-btns">
+      <button class="btn primary sm" type="submit" formaction="{% url 'network:discovery_approve' run.pk %}">{% icon "check" 15 %}Approve selected</button>
+      <button class="btn sm" type="submit" formaction="{% url 'network:discovery_ignore' run.pk %}">{% icon "x" 15 %}Ignore selected</button>
+    </div>
+  </div>
+  {% endif %}
+  <div class="table-wrap dense"><table class="nw-hosts">
+    <thead><tr>{% if can_operate %}<th class="cb"><input type="checkbox" data-check-all="host" aria-label="Select all new hosts"></th>{% endif %}<th>IP Address</th><th>Open Ports</th><th class="num">Latency</th><th>Status</th><th>Device</th><th>Decided</th></tr></thead>
+    <tbody>
+    {% for h in hosts %}
+      <tr>{% if can_operate %}<td class="cb">{% if h.status == "new" %}<input type="checkbox" name="host" value="{{ h.pk }}" aria-label="Select {{ h.ip }}">{% endif %}</td>{% endif %}
+        <td class="mono">{{ h.ip }}</td><td>{% for p in h.open_ports %}<span class="chip">{{ p }}</span> {% endfor %}</td><td class="num">{{ h.latency_ms|latency }}</td>
+        <td>{% if h.status == "new" %}{% badge "info" "New" %}{% elif h.status == "approved" %}{% badge "ok" "Approved" %}{% elif h.status == "existing" %}{% badge "paused" "Already a device" %}{% else %}{% badge "inactive" "Ignored" %}{% endif %}</td>
+        <td>{% if h.device %}<a href="{% url 'network:detail' h.device_id %}">{{ h.device.name }}</a>{% else %}<span class="t-mute">–</span>{% endif %}</td>
+        <td>{% if h.decided_at %}{{ h.decided_by_name }} · {{ h.decided_at|short_dt }}{% else %}<span class="t-mute">–</span>{% endif %}</td></tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty">{% if run.active %}Scanning… hosts appear here as they answer.{% elif show %}No hosts in this state.{% else %}No host answered on ports {{ run.ports }}.{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+</form>
+</div>
+<script>
+(function () {
+  var host = document.querySelector('[data-nw-refresh]');
+  if (!host) return;
+  // keep refreshing while the scan runs, unless the operator is selecting hosts
+  setInterval(function () {
+    if (!document.hidden && !document.querySelector('input[name="host"]:checked') && document.activeElement.tagName !== 'INPUT') location.reload();
+  }, +host.dataset.nwRefresh * 1000);
+})();
+document.querySelectorAll('[data-check-all]').forEach(function (all) {
+  all.addEventListener('change', function () {
+    document.querySelectorAll('input[name="' + all.dataset.checkAll + '"]').forEach(function (b) { b.checked = all.checked; });
+  });
+});
+</script>
+{% endblock %}

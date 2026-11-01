@@ -1,0 +1,20 @@
+{% load le network_tags %}
+<section class="panel">
+  <div class="panel-h nowrap"><h2>Traffic Overview</h2>
+    <nav class="seg right" aria-label="Range"><a href="?tab=traffic&amp;range=24h" class="{% if traffic_range == '24h' %}on{% endif %}">24 hours</a><a href="?tab=traffic&amp;range=7d" class="{% if traffic_range == '7d' %}on{% endif %}">7 days</a></nav></div>
+  {% if traffic %}
+    <div class="chart" data-chart="line" data-src="nw-traffic" style="height:260px"></div>
+    <div class="legend nw-legend"><span><i style="background:#1565f0"></i>Inbound now <b>{{ total_in|mbps }}</b></span><span><i style="background:#f97316"></i>Outbound now <b>{{ total_out|mbps }}</b></span><span class="t-mute">Sum of all interfaces (rate over 5 min) from Prometheus</span></div>
+  {% else %}<div class="nw-empty">{% icon "activity" 28 %}<p>{{ traffic_msg }}</p></div>{% endif %}
+</section>
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>Busiest Interfaces</h2><a class="right view-all" href="?tab=interfaces">All interfaces {% icon "arrow-right" 14 %}</a></div>
+    {% if has_rates %}{% include "network/_iface_table.html" with rows=top_interfaces %}
+    {% else %}<div class="nw-empty sm">{% icon "plug" 24 %}<p>{{ metrics_msg|default:"No interface rates reported." }}</p></div>{% endif %}
+  </div>
+  <div class="panel"><div class="panel-h nowrap"><h2>Check Latency</h2><span class="right t-mute small">Hourly average, last 24 hours</span></div>
+    {% if latency_chart %}<div class="chart" data-chart="line" data-src="nw-latency" style="height:200px"></div>
+    <p class="nw-note">TCP connect time from the LinkedEye server to {{ device.mgmt_ip }}:{{ device.check_port }}. 24h average {{ avg_latency|latency }}.</p>
+    {% else %}<div class="nw-empty sm">{% icon "zap" 24 %}<p>No successful checks in the last 24 hours.</p></div>{% endif %}
+  </div>
+</section>

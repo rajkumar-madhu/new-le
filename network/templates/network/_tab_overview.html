@@ -1,0 +1,70 @@
+{% load le network_tags %}
+<section class="kpis nw-dkpis" aria-label="Device summary">
+  <div class="kpi"><div class="kpi-top"><div class="nw-status t-{{ device.status|tone }}">{% if device.status == "up" %}{% ficon "check-circle" 38 %}{% elif device.status == "down" %}{% ficon "x-circle" 38 %}{% else %}{% ficon "help" 38 %}{% endif %}</div>
+    <div class="kpi-body"><div class="label">Device Status</div><div class="value t-{{ device.status|tone }}">{{ device.get_status_display }}</div><div class="sub" title="{{ device.last_seen|default_if_none:'' }}">Last seen: {{ device.last_seen|ago }}</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-ok sq">{% icon "heartbeat" 22 %}</div>
+    <div class="kpi-body"><div class="label">Availability (24h)</div><div class="value {{ avail24|avail_tone }}">{{ avail24|percent:2 }}</div><div class="sub">7 days: {{ avail7|percent:2 }}</div></div></div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-purple sq">{% icon "zap" 22 %}</div>
+    <div class="kpi-body"><div class="label">Check Latency</div><div class="value">{{ device.last_latency_ms|latency }}</div></div></div>
+    {% if spark %}<div class="chart" data-chart="spark" data-src="nw-spark" style="height:20px"></div>{% else %}<div class="sub">24h avg: {{ avg_latency|latency }}</div>{% endif %}</div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-info sq">{% icon "clock" 22 %}</div>
+    <div class="kpi-body"><div class="label">Uptime</div>{% if device.uptime_seconds is not None %}<div class="value">{{ device.uptime_short }}</div><div class="sub" title="{{ device.uptime_display }}">{{ device.uptime_display }}</div>{% else %}<div class="value t-mute">–</div><div class="sub" title="{{ metrics_msg }}">No metrics source</div>{% endif %}</div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-info sq">{% icon "network" 22 %}</div>
+    <div class="kpi-body"><div class="label">Interfaces Up</div>{% if if_total %}<div class="value">{{ if_up }} / {{ if_total }}</div><div class="sub">{% widthratio if_up if_total 100 %}% operational</div>{% else %}<div class="value t-mute">–</div><div class="sub">No interface data</div>{% endif %}</div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-info sq">{% icon "arrow-down" 22 %}</div>
+    <div class="kpi-body"><div class="label">Inbound (now)</div><div class="value{% if total_in is None %} t-mute{% endif %}">{{ total_in|mbps }}</div><div class="sub">{% if total_in is None %}No metrics source{% else %}Sum of interfaces{% endif %}</div></div></div></div>
+  <div class="kpi"><div class="kpi-top"><div class="tile bg-warn sq">{% icon "arrow-up" 22 %}</div>
+    <div class="kpi-body"><div class="label">Outbound (now)</div><div class="value{% if total_out is None %} t-mute{% endif %}">{{ total_out|mbps }}</div><div class="sub">{% if total_out is None %}No metrics source{% else %}Sum of interfaces{% endif %}</div></div></div></div>
+</section>
+
+<section class="grid nw-row2">
+  <div class="panel" id="device-info"><div class="panel-h"><h2>Device Information</h2>{% if can_operate %}<a class="right view-all" href="{% url 'network:edit' device.pk %}">Edit {% icon "arrow-right" 14 %}</a>{% endif %}</div>
+    <div class="nw-photo" aria-hidden="true"><span class="nw-photo-lbl">{{ device.vendor }} {{ device.model }}</span><span class="nw-appliance">{% icon device.type_icon 24 %}<i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+    <div class="table-wrap dense"><table class="nw-kv"><tbody>
+      <tr><td>Hostname</td><td>{{ device.name }}</td></tr>
+      <tr><td>Management IP</td><td class="mono">{{ device.mgmt_ip }}</td></tr>
+      <tr><td>Check</td><td>TCP {{ device.check_port }} every 60 s</td></tr>
+      <tr><td>Type</td><td>{{ device.get_device_type_display }}</td></tr>
+      <tr><td>Vendor / Model</td><td>{{ device.vendor|default:"–" }} {{ device.model }}</td></tr>
+      <tr><td>Serial Number</td><td>{{ device.serial|default:"–" }}</td></tr>
+      <tr><td>Firmware Version</td><td>{{ device.firmware|default:"–" }}</td></tr>
+      <tr><td>Site / Location</td><td>{{ device.site|default:"–" }}</td></tr>
+      <tr><td>Role</td><td>{{ device.role|default:"–" }}</td></tr>
+      <tr><td>Environment</td><td>{{ device.get_environment_display|default:"–" }}</td></tr>
+      <tr><td>Contact</td><td>{{ device.contact|default:"–" }}</td></tr>
+      <tr><td>Prometheus</td><td>{% if device.prometheus_instance %}<span class="mono">{{ device.prometheus_instance }}</span>{% else %}<span class="t-mute">not set</span>{% endif %}</td></tr>
+      <tr><td>Description</td><td>{{ device.description|default:"–" }}</td></tr>
+    </tbody></table></div></div>
+
+  <div class="panel" id="interfaces"><div class="panel-h"><h2>Interface Status (Top 10)</h2><a class="right view-all" href="?tab=interfaces">View All Interfaces {% icon "arrow-right" 14 %}</a></div>
+    {% if top_interfaces %}
+    {% include "network/_iface_table.html" with rows=top_interfaces compact=True %}
+    {% if metrics_msg %}<p class="nw-note">{{ metrics_msg }}</p>{% endif %}
+    {% else %}<div class="nw-empty">{% icon "plug" 28 %}<p>{{ metrics_msg|default:"No interfaces reported for this device yet." }}</p>{% if not device.prometheus_instance and can_operate %}<a class="btn sm" href="{% url 'network:edit' device.pk %}#id_prometheus_instance">Set Prometheus instance</a>{% endif %}</div>{% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="panel" id="traffic"><div class="panel-h nowrap"><h2>Traffic Overview</h2><span class="right t-mute small">Last 24 hours</span></div>
+      {% if traffic %}
+      <div class="chart" data-chart="line" data-src="nw-traffic" style="height:132px"></div>
+      <div class="legend nw-legend"><span><i style="background:#1565f0"></i>Inbound <b>{{ total_in|mbps }}</b></span><span><i style="background:#f97316"></i>Outbound <b>{{ total_out|mbps }}</b></span></div>
+      {% else %}<div class="nw-empty sm">{% icon "activity" 24 %}<p>{{ traffic_msg }}</p></div>{% endif %}
+    </div>
+    <div class="panel"><div class="panel-h nowrap"><h2>Availability</h2><span class="right t-mute small">Checks per hour, last 24 hours</span></div>
+      {% if avail_chart %}
+      <div class="chart" data-chart="bars" data-src="nw-avail" style="height:112px"></div>
+      <div class="legend nw-legend"><span><i style="background:#16a34a"></i>Up</span><span><i style="background:#dc2626"></i>Down</span><span><i style="background:#cbd5e1"></i>Not checked</span><span>24h <b class="{{ avail24|avail_tone }}">{{ avail24|percent:2 }}</b></span></div>
+      {% else %}<div class="nw-empty sm">{% icon "heartbeat" 24 %}<p>No checks recorded yet. Checks run every minute while <code>manage.py run_probes</code> is running{% if can_operate %}, or use Check now{% endif %}.</p></div>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="grid nw-row3">
+  <div class="panel"><div class="panel-h"><h2>Recent Events</h2><a class="right view-all" href="?tab=events">View All {% icon "arrow-right" 14 %}</a></div>
+    {% include "network/_events_table.html" %}
+  </div>
+  <div class="panel"><div class="panel-h nowrap"><h2>Check Latency</h2><span class="right t-mute small">Hourly average, last 24 hours</span></div>
+    {% if latency_chart %}<div class="chart" data-chart="line" data-src="nw-latency" style="height:150px"></div>
+    {% else %}<div class="nw-empty sm">{% icon "zap" 24 %}<p>No successful checks in the last 24 hours.</p></div>{% endif %}
+  </div>
+</section>

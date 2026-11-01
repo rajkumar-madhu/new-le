@@ -1,0 +1,36 @@
+{% load le network_tags %}
+<section class="grid g-2">
+  <div class="panel"><div class="panel-h"><h2>Configuration</h2>{% if can_operate %}<a class="right btn sm" href="{% url 'network:edit' device.pk %}">{% icon "edit" 15 %}Edit Device</a>{% endif %}</div>
+    <dl class="kv">
+      <dt>Name</dt><dd>{{ device.name }}</dd>
+      <dt>Type</dt><dd>{{ device.get_device_type_display }}</dd>
+      <dt>Vendor</dt><dd>{{ device.vendor|default:"–" }}</dd>
+      <dt>Model</dt><dd>{{ device.model|default:"–" }}</dd>
+      <dt>Serial number</dt><dd>{{ device.serial|default:"–" }}</dd>
+      <dt>Firmware / OS</dt><dd>{{ device.firmware|default:"–" }}</dd>
+      <dt>Site</dt><dd>{{ device.site|default:"–" }}</dd>
+      <dt>Role</dt><dd>{{ device.role|default:"–" }}</dd>
+      <dt>Environment</dt><dd>{{ device.get_environment_display|default:"–" }}</dd>
+      <dt>Contact</dt><dd>{{ device.contact|default:"–" }}</dd>
+      <dt>Tags</dt><dd>{% for t in device.tag_list %}<span class="chip">{{ t }}</span> {% empty %}–{% endfor %}</dd>
+      <dt>Description</dt><dd>{{ device.description|default:"–"|linebreaksbr }}</dd>
+      <dt>Added</dt><dd>{{ device.created_at|short_dt }}{% if discovered %} · from <a href="{% url 'network:discovery_run' discovered.run_id %}">discovery of {{ discovered.run.cidr }}</a>{% endif %}</dd>
+      <dt>Last changed</dt><dd>{{ device.updated_at|short_dt }}</dd>
+    </dl></div>
+  <div class="panel"><div class="panel-h"><h2>Monitoring</h2></div>
+    <dl class="kv">
+      <dt>Monitoring</dt><dd>{% if device.enabled %}<span class="t-ok">Enabled</span>{% else %}<span class="t-mute">Disabled</span>{% endif %}</dd>
+      <dt>Reachability</dt><dd>TCP connect to <span class="mono">{{ device.mgmt_ip }}:{{ device.check_port }}</span> every 60 s; marked down after 2 failed checks in a row</dd>
+      <dt>Last check</dt><dd>{{ device.last_checked_at|short_dt }}{% if device.last_error %} · <span class="t-crit">{{ device.last_error }}</span>{% endif %}</dd>
+      <dt>Prometheus</dt><dd>{% if prometheus_on %}<span class="t-ok">Connected</span>{% else %}<span class="t-mute">Not connected – set LINKEDEYE_PROMETHEUS_URL</span>{% endif %}</dd>
+      <dt>Instance label</dt><dd>{% if device.prometheus_instance %}<span class="mono">{{ device.prometheus_instance }}</span>{% else %}<span class="t-mute">not set</span>{% endif %}</dd>
+      <dt>Last metrics</dt><dd>{{ device.metrics_updated_at|short_dt }}{% if device.metrics_error %} · <span class="t-warn">{{ device.metrics_error }}</span>{% endif %}</dd>
+    </dl></div>
+</section>
+<section class="panel"><div class="panel-h"><h2>Change History</h2><span class="right t-mute small">Audit trail for this device</span></div>
+  {% if audit_rows %}
+  <div class="table-wrap dense"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody>
+  {% for a in audit_rows %}<tr><td>{{ a.occurred_at|date:"Y-m-d H:i:s" }}</td><td>{{ a.actor_name }}</td><td>{{ a.action }}</td><td class="msg" title="{{ a.details }}">{% for k, v in a.details.items %}{{ k }}: {{ v }}{% if not forloop.last %} · {% endif %}{% endfor %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<div class="nw-empty sm">{% icon "file" 24 %}<p>No recorded changes.</p></div>{% endif %}
+</section>

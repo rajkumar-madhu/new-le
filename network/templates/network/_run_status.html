@@ -1,0 +1,1 @@
+{% load le %}{% if run.status == "done" %}{% badge "ok" "Completed" %}{% elif run.status == "running" %}{% badge "in progress" "Running" %}{% elif run.status == "queued" %}{% badge "info" "Queued" %}{% elif run.status == "failed" %}{% badge "failed" "Failed" %}{% else %}{% badge "paused" "Cancelled" %}{% endif %}

@@ -1,0 +1,13 @@
+{% load le network_tags %}
+<section class="panel">
+  <div class="panel-h"><h2>Interfaces ({{ if_total }})</h2>
+    <div class="right">{% if device.metrics_updated_at %}<span class="t-mute small">Updated {{ device.metrics_updated_at|ago }}</span>{% endif %}
+      {% if if_total %}<a class="btn sm ghost-primary" href="{% url 'network:interfaces_export' device.pk %}">{% icon "download" 15 %}CSV</a>{% endif %}</div></div>
+  {% if metrics_msg %}<div class="nw-alert {% if interfaces %}warn{% else %}mute{% endif %}">{% icon "info" 16 %}<span>{{ metrics_msg }}</span></div>{% endif %}
+  {% if interfaces %}
+    <div class="nw-ifsum"><span><b class="t-ok">{{ if_up }}</b> up</span><span><b class="{% if if_down %}t-crit{% else %}t-mute{% endif %}">{{ if_down }}</b> down</span><span><b>{{ if_total }}</b> total</span>{% if if_admin_down %}<span><b class="t-mute">{{ if_admin_down }}</b> administratively down</span>{% endif %}</div>
+    {% include "network/_iface_table.html" with rows=interfaces %}
+  {% else %}
+    <div class="nw-empty">{% icon "plug" 28 %}<p>Interfaces come from Prometheus snmp_exporter (IF-MIB): <code>ifHCInOctets</code>, <code>ifHCOutOctets</code>, <code>ifOperStatus</code>, <code>ifAdminStatus</code>, <code>ifHighSpeed</code>. Set the device's Prometheus instance to the snmp_exporter target label.</p>{% if can_operate %}<a class="btn sm" href="{% url 'network:edit' device.pk %}#id_prometheus_instance">Edit device</a>{% endif %}</div>
+  {% endif %}
+</section>

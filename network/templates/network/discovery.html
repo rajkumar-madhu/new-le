@@ -1,0 +1,57 @@
+{% extends "core/base.html" %}{% load le static %}
+{% block title %}Network Discovery{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'network/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:all' %}">Network Devices</a>{% icon "chevron-right" 14 %}<span>Discovery</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-network"{% if active %} data-refresh="10"{% endif %}>
+<div class="head">
+  <div class="glyph bg-info">{% icon "radar" 30 %}</div>
+  <div><h1>Network Discovery</h1><p>Scan a subnet for hosts answering on TCP ports, then approve them as monitored devices.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'network:all' %}">{% icon "list" 17 %}All Devices</a></div>
+</div>
+
+<section class="grid nw-disc">
+  <div class="panel">
+    <div class="panel-h"><h2>New Discovery</h2></div>
+    {% if can_operate %}
+    <form method="post" novalidate>{% csrf_token %}
+      {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
+      <div class="form-grid nw-grid1">
+        {% for f in form %}
+        <div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}{% if f.field.required %} <span class="req">*</span>{% endif %}</label>{{ f }}
+          {% if f.help_text %}<span class="hint">{{ f.help_text }}</span>{% endif %}{% for e in f.errors %}<span class="err">{{ e }}</span>{% endfor %}</div>
+        {% endfor %}
+        <div class="field"><button class="btn primary" type="submit">{% icon "radar" 16 %}Start Discovery</button></div>
+      </div>
+    </form>
+    {% else %}<p class="t-mute">Only operators can start a discovery.</p>{% endif %}
+    <div class="nw-policy">
+      <h3>{% icon "shield" 15 %}Probe policy</h3>
+      <ul>
+        <li>At most /{{ limits.prefix }} (256 addresses) and {{ limits.ports }} ports per run; {{ limits.timeout }} s per connection attempt.</li>
+        <li>Link-local (incl. 169.254.169.254), multicast and reserved addresses are never contacted.</li>
+        <li>Private and loopback ranges are scanned only when listed in <code>LINKEDEYE_PROBE_ALLOWED_PRIVATE_CIDRS</code>{% if allowed_cidrs %}: <span class="mono">{{ allowed_cidrs|join:", " }}</span>{% else %} (currently empty){% endif %}.</li>
+        <li>Every run and approval is recorded in the audit log.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Discovery Runs ({{ page.paginator.count }})</h2>{% if active %}<span class="right t-mute small">{% icon "refresh" 14 %}Refreshing while a run is in progress</span>{% endif %}</div>
+    <div class="table-wrap dense"><table class="nw-runs">
+      <thead><tr><th>#</th><th>Network</th><th>Ports</th><th>Status</th><th>Progress</th><th class="num">Hosts found</th><th>Started by</th><th>When</th></tr></thead>
+      <tbody>
+      {% for r in page %}
+        <tr><td><a href="{% url 'network:discovery_run' r.pk %}">#{{ r.pk }}</a></td><td class="mono"><a href="{% url 'network:discovery_run' r.pk %}">{{ r.cidr }}</a></td><td>{{ r.ports }}</td>
+          <td>{% include "network/_run_status.html" with run=r %}</td>
+          <td><span class="util"><i class="fill-info" style="width:{{ r.progress }}%"></i></span>{{ r.progress }}%</td>
+          <td class="num">{{ r.found }}</td><td>{{ r.requested_by_name|default:"–" }}</td><td>{{ r.created_at|short_dt }}</td></tr>
+      {% empty %}
+        <tr><td colspan="8" class="empty">No discovery has been run yet.</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% include "core/_pager.html" with pager_noun="runs" %}
+  </div>
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "core/base.html" %}{% load le static network_tags %}
+{% block title %}{{ device.name }}{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'network/page.css' %}">{% endblock %}
+{% block crumbs %}<nav class="crumbs"><a href="{% url 'dashboard' %}">Home</a>{% icon "chevron-right" 14 %}<a href="{% url 'network:all' %}">Network Devices</a>{% icon "chevron-right" 14 %}<a href="{{ device.type_list_url }}">{{ device.type_plural }}</a>{% if device.vendor %}{% icon "chevron-right" 14 %}<a href="{{ device.type_list_url }}?vendor={{ device.vendor|urlencode }}">{{ device.vendor }}</a>{% endif %}{% icon "chevron-right" 14 %}<span>{{ device.name }}</span></nav>{% endblock %}
+{% block content %}
+<div class="pg-network nw-detail">
+<div class="head nw-head">
+  <div class="nw-device" aria-hidden="true"><span class="nw-device-lbl">{{ device.vendor|default:device.get_device_type_display }}</span><span class="nw-device-box">{% icon device.type_icon 24 %}<i></i><i></i><i></i><i></i></span></div>
+  <div class="nw-title">
+    <h1>{{ device.name }} {% badge device.status %}{% if device.is_example %} <span class="sample-pill" title="Created by manage.py seed_network">Example record</span>{% endif %}{% if not device.enabled %} <span class="chip mute">Monitoring disabled</span>{% endif %}</h1>
+    <p><span class="mi">{{ device.model|default:device.get_device_type_display }}</span><span class="sep">|</span><wbr><span class="mi mono">{{ device.mgmt_ip }}</span><span class="sep">|</span><wbr><span class="mi">Site: {{ device.site|default:"–" }}</span><span class="sep">|</span><wbr><span class="mi">Uptime: {% if device.uptime_seconds is not None %}{{ device.uptime_display }}{% else %}<span class="t-mute" title="{{ metrics_msg }}">–</span>{% endif %}</span></p>
+    <p><span class="mi">SN: {{ device.serial|default:"–" }}</span><span class="sep">|</span><wbr><span class="mi">Firmware: {{ device.firmware|default:"–" }}</span><span class="sep">|</span><wbr><span class="mi">Role: {{ device.role|default:"–" }}</span><span class="sep">|</span><wbr><span class="mi">Environment: {{ device.get_environment_display|default:"–" }}</span></p>
+  </div>
+  <div class="actions nw-actions">
+    <div class="nw-btns">
+      {% if can_operate %}<a class="btn" href="{% url 'network:edit' device.pk %}">{% icon "edit" 16 %}Edit Device</a>
+      <a class="btn ghost-primary" href="{{ discovery_url }}">{% icon "refresh" 16 %}Run Discovery</a>{% endif %}
+      {% if topology_url %}<a class="btn" href="{{ topology_url }}">{% icon "share" 16 %}Open in Topology</a>{% endif %}
+      {% if can_operate %}<form method="post" action="{% url 'network:check' device.pk %}">{% csrf_token %}<button class="btn" type="submit">{% icon "radar" 16 %}Check now</button></form>{% endif %}
+      <details class="row-menu nw-more"><summary class="btn" aria-label="More actions">{% icon "more" 16 %}More</summary>
+        <div class="menu-pop">
+          <a href="{% url 'network:interfaces_export' device.pk %}">{% icon "download" 14 %}Export interfaces (CSV)</a>
+          <a href="?tab=events">{% icon "file" 14 %}Check history</a>
+          {% if can_admin %}<form method="post" action="{% url 'network:delete' device.pk %}" data-confirm="Delete {{ device.name }} with its check history and interfaces?">{% csrf_token %}<button class="danger" type="submit">{% icon "trash" 14 %}Delete device</button></form>{% endif %}
+        </div></details>
+    </div>
+    <div class="nw-tags">
+      <span class="nw-tag tone-ink">{% icon device.type_icon 13 %}{{ device.get_device_type_display }}</span>
+      {% if device.vendor %}<span class="nw-tag tone-crit">{% icon "grid" 13 %}{{ device.vendor }}</span>{% endif %}
+      <span class="nw-tag tone-ok">{% icon "radar" 13 %}TCP {{ device.check_port }}</span>
+      {% if device.prometheus_instance %}<span class="nw-tag tone-ok">{% icon "activity" 13 %}SNMP</span>{% endif %}
+      {% for t in device.tag_list %}<span class="nw-tag">{% icon "tag" 13 %}{{ t }}</span>{% endfor %}
+      {% if device.environment %}<span class="nw-tag tone-info">{% icon "globe" 13 %}{{ device.get_environment_display }}</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<nav class="tabs nw-tabs" aria-label="Device sections">
+  {% for key, label in tabs %}<a href="?tab={{ key }}" class="{% if tab == key %}on{% endif %}"{% if tab == key %} aria-current="page"{% endif %}>{{ label }}{% if key == "interfaces" and if_total %} <small>{{ if_total }}</small>{% endif %}</a>{% endfor %}
+</nav>
+
+{% if device.last_error and device.status != "up" %}<div class="nw-alert {% if device.status == 'down' %}crit{% else %}mute{% endif %}">{% icon "alert" 16 %}<span><b>Last check:</b> {{ device.last_error }}{% if device.last_checked_at %} ({{ device.last_checked_at|ago }}){% endif %}</span></div>{% endif %}
+
+{% if tab == "overview" %}{% include "network/_tab_overview.html" %}
+{% elif tab == "interfaces" %}{% include "network/_tab_interfaces.html" %}
+{% elif tab == "traffic" %}{% include "network/_tab_traffic.html" %}
+{% elif tab == "events" %}{% include "network/_tab_events.html" %}
+{% else %}{% include "network/_tab_configuration.html" %}{% endif %}
+</div>
+{% if traffic %}{{ traffic|json_script:"nw-traffic" }}{% endif %}{% if avail_chart %}{{ avail_chart|json_script:"nw-avail" }}{% endif %}
+{% if latency_chart %}{{ latency_chart|json_script:"nw-latency" }}{% endif %}{% if spark %}{{ spark|json_script:"nw-spark" }}{% endif %}
+<script>
+document.addEventListener('click', function (e) {
+  document.querySelectorAll('.pg-network details.row-menu[open]').forEach(function (d) { if (!d.contains(e.target)) d.removeAttribute('open'); });
+});
+</script>
+{% endblock %}
