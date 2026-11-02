@@ -1144,8 +1144,12 @@ class AuditFixTests(Base):
         self.assertRedirects(self.login(self.admin).post(reverse("servicedesk:sla"), data), reverse("servicedesk:sla"))
 
     def test_out_of_range_sla_target_does_not_block_ticket_creation(self):
-        SlaPolicy.objects.filter(priority="P3").update(resolution_minutes=100000000000)
-        with self.assertLogs("linkedeye.servicedesk", level="WARNING"):
+        # A target beyond the calendar (storable on SQLite, not on PostgreSQL's integer column) is handed to the
+        # due-date code directly, so the test does not depend on the database's integer range.
+        from servicedesk import sla
+        bad = SlaPolicy(priority="P3", name="Medium", response_minutes=240, resolution_minutes=100000000000)
+        with mock.patch.object(sla, "policy_for", return_value=bad), \
+                self.assertLogs("linkedeye.servicedesk", level="WARNING"):
             t = self.incident(priority="P3")
         self.assertIsNone(t.resolution_due)
         self.assertEqual(t.response_due - t.opened_at, timedelta(minutes=240))
