@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 
 from core.events import emit
@@ -43,16 +44,26 @@ def _probe_url(check):
 
 
 def save_url_result(check, r, now):
+    """Store the result; returns the new status, or None if the check was deleted while it was probed."""
     status, message = evaluate_url(check, r)
-    UrlResult.objects.create(url_check=check, checked_at=now, status=status, http_status=r.status if r.ok else None,
-                             response_ms=r.response_ms if r.ok else None, tls_expires_at=r.tls_expires_at,
-                             message=message[:500])
     previous = check.last_status
-    check.last_checked_at, check.last_status = now, status
-    check.last_http_status = r.status if r.ok else None
-    check.last_response_ms = r.response_ms if r.ok else None
-    check.last_error = "" if status == Status.ONLINE else message[:500]
-    check.save(update_fields=["last_checked_at", "last_status", "last_http_status", "last_response_ms", "last_error"])
+    try:
+        with transaction.atomic():
+            UrlResult.objects.create(url_check=check, checked_at=now, status=status,
+                                     http_status=r.status if r.ok else None,
+                                     response_ms=r.response_ms if r.ok else None, tls_expires_at=r.tls_expires_at,
+                                     message=message[:500])
+            check.last_checked_at, check.last_status = now, status
+            check.last_http_status = r.status if r.ok else None
+            check.last_response_ms = r.response_ms if r.ok else None
+            check.last_error = "" if status == Status.ONLINE else message[:500]
+            check.save(update_fields=["last_checked_at", "last_status", "last_http_status", "last_response_ms",
+                                      "last_error"])
+    except DatabaseError:  # incl. IntegrityError: the check was deleted while its probe was in flight
+        if UrlCheck.objects.filter(pk=check.pk).exists():
+            raise  # a real database problem, not a deleted check
+        log.warning("url check %s (pk=%s) is gone; result discarded", check.name, check.pk)
+        return None
     if previous != status:
         log.info("url %s: %s -> %s (%s)", check.name, previous, status, message)
         if previous != Status.UNKNOWN or status != Status.ONLINE:
@@ -82,6 +93,7 @@ def _probe_domain(domain):
 
 
 def save_domain_result(domain, probe, now):
+    """Store the result; returns the new status, or None if the domain was deleted while it was probed."""
     dns, http, tls = probe
     up = bool(http and http.ok and http.status < 500)
     ssl_status = tls.status if tls else "Unknown"
@@ -89,23 +101,31 @@ def save_domain_result(domain, probe, now):
     if http and http.ok and http.status >= 500:
         message = f"HTTP {http.status}"
     ip = (http.ip if http and http.ip else (dns.ips[0] if dns.ips else None))
-    DomainCheck.objects.create(domain=domain, checked_at=now, up=up, http_status=http.status if http and http.ok else None,
-                               response_ms=http.response_ms if up else None, ip_address=ip,
-                               dns_status="Resolved" if dns.ok else "Failed", ssl_status=ssl_status,
-                               ssl_expires_at=tls.expires_at if tls else None, message=message[:500])
     previous = domain.status  # before it is overwritten, so up/down transitions are detected
-    domain.status = "up" if up else "down"
-    domain.dns_status = "Resolved" if dns.ok else "Failed"
-    domain.ssl_status = ssl_status
-    domain.ip_address = ip
-    domain.http_status = http.status if http and http.ok else None
-    domain.response_ms = http.response_ms if up else None
-    if tls and tls.expires_at:
-        domain.ssl_expires_at = tls.expires_at
-    domain.last_checked_at = now
-    domain.last_error = message[:500]
-    domain.save(update_fields=["status", "dns_status", "ssl_status", "ip_address", "http_status", "response_ms",
-                               "ssl_expires_at", "last_checked_at", "last_error", "updated_at"])
+    try:
+        with transaction.atomic():
+            DomainCheck.objects.create(domain=domain, checked_at=now, up=up,
+                                       http_status=http.status if http and http.ok else None,
+                                       response_ms=http.response_ms if up else None, ip_address=ip,
+                                       dns_status="Resolved" if dns.ok else "Failed", ssl_status=ssl_status,
+                                       ssl_expires_at=tls.expires_at if tls else None, message=message[:500])
+            domain.status = "up" if up else "down"
+            domain.dns_status = "Resolved" if dns.ok else "Failed"
+            domain.ssl_status = ssl_status
+            domain.ip_address = ip
+            domain.http_status = http.status if http and http.ok else None
+            domain.response_ms = http.response_ms if up else None
+            if tls and tls.expires_at:
+                domain.ssl_expires_at = tls.expires_at
+            domain.last_checked_at = now
+            domain.last_error = message[:500]
+            domain.save(update_fields=["status", "dns_status", "ssl_status", "ip_address", "http_status", "response_ms",
+                                       "ssl_expires_at", "last_checked_at", "last_error", "updated_at"])
+    except DatabaseError:  # incl. IntegrityError: the domain was deleted while its probe was in flight
+        if Domain.objects.filter(pk=domain.pk).exists():
+            raise  # a real database problem, not a deleted domain
+        log.warning("domain %s (pk=%s) is gone; result discarded", domain.hostname, domain.pk)
+        return None
     if previous != domain.status and not (previous == "unknown" and domain.status == "up"):
         emit("domainmonitor", f"{domain.hostname} is {domain.status}", severity="critical" if domain.status == "down" else "ok",
              message=message, site=domain.site_key, obj=domain, fingerprint=f"domain:{domain.pk}",
@@ -126,8 +146,10 @@ def run_domain_checks(items):
 # ---------------------------------------------------------------- scheduler
 def run_due(now=None):
     now = now or timezone.now()
-    urls = [c for c in UrlCheck.objects.filter(enabled=True) if c.is_due(now)]
-    domains = [d for d in Domain.objects.filter(is_active=True, monitor_enabled=True) if d.is_due(now)]
+    tenant = settings.LINKEDEYE_TENANT  # other tenants' rows in a shared DB belong to their own deployment
+    urls = [c for c in UrlCheck.objects.filter(tenant_key=tenant, enabled=True) if c.is_due(now)]
+    domains = [d for d in Domain.objects.filter(tenant_key=tenant, is_active=True, monitor_enabled=True)
+               if d.is_due(now)]
     run_url_checks(urls)
     run_domain_checks(domains)
     return len(urls), len(domains)
@@ -135,6 +157,7 @@ def run_due(now=None):
 
 def prune(now=None):
     cutoff = (now or timezone.now()) - timedelta(days=settings.PROBE_RETENTION_DAYS)
-    a, _ = UrlResult.objects.filter(checked_at__lt=cutoff).delete()
-    b, _ = DomainCheck.objects.filter(checked_at__lt=cutoff).delete()
+    tenant = settings.LINKEDEYE_TENANT  # other tenants' history follows their own retention setting
+    a, _ = UrlResult.objects.filter(url_check__tenant_key=tenant, checked_at__lt=cutoff).delete()
+    b, _ = DomainCheck.objects.filter(domain__tenant_key=tenant, checked_at__lt=cutoff).delete()
     return a + b

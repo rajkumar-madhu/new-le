@@ -29,6 +29,14 @@ class BoundedModelMultipleChoiceField(forms.ModelMultipleChoiceField):
 MAX_IMPORT_ROWS = 5000
 
 
+def link_queryset(qs, user, field):
+    """URL checks (`site`) or domains (`site_key`) a CI may be linked to: those on the user's sites."""
+    if user is None:
+        return qs
+    from core.access import scope_by_site
+    return scope_by_site(qs, user, field=field)
+
+
 def site_choices(current=""):
     """Site names from core.Site plus any value already in use, with "All Sites" first."""
     from core.models import Site
@@ -99,8 +107,8 @@ class CIForm(forms.ModelForm):
         from domainmonitor.models import Domain
         from urlchecker.models import UrlCheck
         tenant = settings.LINKEDEYE_TENANT
-        self.fields["url_checks"].queryset = UrlCheck.objects.filter(tenant_key=tenant).order_by("name")
-        self.fields["domains"].queryset = Domain.objects.filter(tenant_key=tenant).order_by("hostname")
+        self.fields["url_checks"].queryset = link_queryset(UrlCheck.objects.filter(tenant_key=tenant), user, "site").order_by("name")
+        self.fields["domains"].queryset = link_queryset(Domain.objects.filter(tenant_key=tenant), user, "site_key").order_by("hostname")
         self.fields["site"].choices = site_choices(self.instance.site if self.instance and self.instance.pk else "")
         self.fields["site"].initial = self.instance.site if self.instance and self.instance.pk else "All Sites"
 
@@ -144,6 +152,19 @@ class CIForm(forms.ModelForm):
             obj.save()
             self.save_m2m()
         return obj
+
+    def _save_m2m(self):
+        # keep links to checks and domains on sites the user cannot see (they are not offered as choices)
+        hidden = {}
+        if self.instance.pk:
+            for name in self.LINK_FIELDS:
+                hidden[name] = list(getattr(self.instance, name).exclude(pk__in=self.fields[name].queryset.values("pk")))
+        super()._save_m2m()
+        for name, objs in hidden.items():
+            if objs:
+                getattr(self.instance, name).add(*objs)
+
+    LINK_FIELDS = ("url_checks", "domains")
 
     # field groups for the template
     GROUPS = [
@@ -203,6 +224,13 @@ class SoftwareForm(forms.ModelForm):
             qs = qs.filter(site__in=sites)
         self.fields["installs"].queryset = qs.order_by("name")
         self.fields["installs"].required = False
+        if user is not None and self.instance.pk and not services.can_manage(user, "operate", "All Sites"):
+            # the title is shared by every site: only the installs on the user's own sites may change
+            for name in self.DETAIL_FIELDS:
+                self.fields[name].disabled = True
+            self.fields["name"].help_text = "Only users who manage all sites can change the software details."
+
+    DETAIL_FIELDS = ("name", "vendor", "version", "category", "description")
 
     def clean(self):
         data = super().clean()

@@ -3,14 +3,15 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from core.access import can, require, scope_by_site
 from probes import runner
 
 from . import stats
@@ -18,8 +19,26 @@ from .forms import UrlCheckForm
 from .models import Status, UrlCheck, UrlResult
 
 
+GLOBAL_SITES = ("", "All Sites")
+
+
 def _scope(request):
-    return UrlCheck.objects.filter(tenant_key=settings.LINKEDEYE_TENANT)
+    """Checks of this tenant on the sites the user may see ("All Sites" checks stay visible)."""
+    return scope_by_site(UrlCheck.objects.filter(tenant_key=settings.LINKEDEYE_TENANT), request.user)
+
+
+def can_on(user, perm, site):
+    """`perm` on one check's site. 'All Sites' checks need `perm` on any site (as Domain Monitor does);
+    a site check needs it on that site, so an operator of site A who only views site B cannot change B."""
+    return can(user, perm, None if (site or "") in GLOBAL_SITES else site)
+
+
+def mark_allowed(user, items):
+    """Set c.can_op / c.can_admin so templates show per-row actions only where the user may use them."""
+    for c in items:
+        c.can_op = can_on(user, "operate", c.site)
+        c.can_admin = can_on(user, "admin", c.site)
+    return items
 
 
 def _filtered(request):
@@ -57,21 +76,31 @@ def index(request, pk=None):
 
     editing = get_object_or_404(scope, pk=pk) if pk else None
     if request.method == "POST":
-        if not request.user.is_staff:
+        if not can(request.user, "operate") or (editing and not can_on(request.user, "operate", editing.site)):
             messages.error(request, "Only operators can add or change URL checks.")
             return redirect("urlchecker:index")
         form = UrlCheckForm(request.POST, instance=editing)
+        if form.is_valid() and not can_on(request.user, "operate", form.cleaned_data["site"]):
+            form.add_error("site", "You do not have operator rights on this site.")
         if form.is_valid():
             obj = form.save(commit=False)
             obj.tenant_key = settings.LINKEDEYE_TENANT
-            obj.save()
-            runner.run_url_checks([obj])
-            messages.success(request, f"Saved “{obj.name}” and ran its first check.")
-            return redirect("urlchecker:index")
+            try:
+                with transaction.atomic():
+                    obj.save()
+            except IntegrityError:  # a concurrent save took the name after validation
+                form.add_error("name", "A URL check with this name already exists.")
+            else:
+                runner.run_url_checks([obj])
+                messages.success(request, f"Saved “{obj.name}” and ran its first check.")
+                return redirect("urlchecker:index")
     else:
+        if editing and not can_on(request.user, "operate", editing.site):
+            editing = None
         form = UrlCheckForm(instance=editing)
 
     page = Paginator(_filtered(request), _per_page(request)).get_page(request.GET.get("page"))
+    mark_allowed(request.user, page)
     up24 = stats.uptime_map([c.pk for c in page], 24)
     for c in page:
         c.uptime24 = up24.get(c.pk)
@@ -95,29 +124,37 @@ def index(request, pk=None):
             {"label": "Unknown", "value": counts["unknown"], "color": "#d6cfc1"}],
             "center": {"value": str(total), "label": "Total URLs"}},
         "trend": stats.response_trend(checks), "history": history, "all_events": all_events,
-        "events": UrlResult.objects.filter(url_check__tenant_key=settings.LINKEDEYE_TENANT).select_related("url_check")[:50 if all_events else 6],
+        "events": UrlResult.objects.filter(url_check__in=scope).select_related("url_check")[:50 if all_events else 6],
         "sites": scope.order_by().values_list("site", flat=True).distinct(),
         "statuses": Status.choices, "types": UrlCheck.TYPES,
-        "query": request.GET.copy(),
+        "query": request.GET.copy(), "can_operate": can(request.user, "operate"),
     }
     ctx["query"].pop("page", None)
     return render(request, "urlchecker/index.html", ctx)
 
 
-@staff_member_required
 @require_POST
+@require("operate")
 def run_now(request, pk=None):
     qs = _scope(request).filter(enabled=True)
-    items = [get_object_or_404(qs, pk=pk)] if pk else list(qs)
+    if pk:
+        items = [get_object_or_404(qs, pk=pk)]
+        if not can_on(request.user, "operate", items[0].site):
+            return JsonResponse({"error": f"'operate' permission required on {items[0].site}"}, status=403)
+    else:
+        items = [c for c in qs if can_on(request.user, "operate", c.site)]
     results = runner.run_url_checks(items)
     summary = ", ".join(f"{c.name}: {s}" for c, s in zip(items, results)) if pk else f"Checked {len(items)} URL(s)"
     return JsonResponse({"checked": len(items), "summary": summary})
 
 
-@staff_member_required
 @require_POST
+@require("admin")
 def delete(request, pk):
     obj = get_object_or_404(_scope(request), pk=pk)
+    if not can_on(request.user, "admin", obj.site):
+        messages.error(request, f"You do not have admin rights on {obj.site}.")
+        return redirect("urlchecker:index")
     obj.delete()
     messages.success(request, f"Deleted “{obj.name}”.")
     return redirect("urlchecker:index")
@@ -125,6 +162,7 @@ def delete(request, pk):
 
 def detail(request, pk):
     check = get_object_or_404(_scope(request), pk=pk)
+    mark_allowed(request.user, [check])
     results = check.results.all()[:200]
     return render(request, "urlchecker/detail.html", {
         "check": check, "results": results[:50],

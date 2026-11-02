@@ -6,7 +6,7 @@ import json
 from django.db import transaction
 
 from . import services
-from .forms import ENV_LOOKUP, MAX_IMPORT_ROWS, STATUS_LOOKUP, TYPE_LOOKUP, CIForm
+from .forms import ENV_LOOKUP, MAX_IMPORT_ROWS, STATUS_LOOKUP, TYPE_LOOKUP, CIForm, link_queryset
 from .models import ConfigurationItem
 
 COLUMNS = ["name", "type", "status", "environment", "site", "owner", "business_domain", "ip_address", "vendor", "model",
@@ -113,8 +113,9 @@ def import_cis(uploaded, user, update_existing=True):
         return result
     reader.fieldnames = headers
     tenant = settings.LINKEDEYE_TENANT
-    checks = {u.name.lower(): u.pk for u in UrlCheck.objects.filter(tenant_key=tenant)}
-    doms = {d.hostname.lower(): d.pk for d in Domain.objects.filter(tenant_key=tenant)}
+    # only checks and domains on the user's sites can be linked (as in CIForm); others read as unknown
+    checks = {u.name.lower(): u.pk for u in link_queryset(UrlCheck.objects.filter(tenant_key=tenant), user, "site")}
+    doms = {d.hostname.lower(): d.pk for d in link_queryset(Domain.objects.filter(tenant_key=tenant), user, "site_key")}
     existing = {c.name.lower(): c for c in ConfigurationItem.objects.filter(tenant_key=tenant)}
     seen = set()
     forms_ok = []
@@ -169,7 +170,9 @@ def import_cis(uploaded, user, update_existing=True):
                         ids.append(pk)
                 data[col] = ids
             elif inst is not None:
-                data[col] = list(getattr(inst, attr).values_list("pk", flat=True))
+                # links the user cannot see are kept by CIForm.save()
+                visible = set(lookup.values())
+                data[col] = [pk for pk in getattr(inst, attr).values_list("pk", flat=True) if pk in visible]
         form = CIForm(data, instance=inst, user=user)
         # the form offers known sites only; an import may introduce a new site name
         if data["site"] not in dict(form.fields["site"].choices):

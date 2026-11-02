@@ -24,7 +24,7 @@ from core.audit import audit
 from . import services, sla, stats
 from . import workflow as wf
 from .forms import (DEFAULT_CATEGORIES, MAX_PK, MAX_USER_PK, CatalogItemForm, CommentForm, RequestForm, SlaPolicyForm,
-                    TicketForm, assignable_users, parse_pk, user_label)
+                    TicketForm, assignable_users, operable, parse_pk, user_label)
 from .models import CatalogItem, SlaPolicy, Ticket, TicketCI
 
 LIST_URL = {"incident": "servicedesk:incidents", "problem": "servicedesk:problems", "change": "servicedesk:changes",
@@ -135,14 +135,16 @@ def _sites():
     return sorted(set(names) | set(used) | {"All Sites"})
 
 
-def _ci_names():
-    """CI names for autocompletion: the CMDB when installed, otherwise names already used on tickets."""
-    names = set(Ticket.objects.for_tenant().exclude(ci_name="").values_list("ci_name", flat=True).distinct()[:300])
-    names |= set(TicketCI.objects.filter(ticket__tenant_key=_tenant()).values_list("ci_name", flat=True).distinct()[:300])
+def _ci_names(request):
+    """CI names for autocompletion: the CMDB when installed, otherwise names already used on tickets (both limited
+    to this tenant and the user's sites)."""
+    visible = _visible(request)
+    names = set(visible.exclude(ci_name="").values_list("ci_name", flat=True).distinct()[:300])
+    names |= set(TicketCI.objects.filter(ticket__in=visible).values_list("ci_name", flat=True).distinct()[:300])
     try:
         from django.apps import apps
         CI = apps.get_model("cmdb", "ConfigurationItem")
-        names |= set(CI.objects.values_list("name", flat=True)[:500])
+        names |= set(scope_by_site(CI.objects.filter(tenant_key=_tenant()), request.user).values_list("name", flat=True)[:500])
     except Exception:  # cmdb absent or not migrated
         pass
     return sorted(names)[:600]
@@ -413,15 +415,16 @@ def catalog_request(request, pk):
             messages.success(request, f"Request {t.number} raised for “{item.name}”. Target: {item.fulfilment_hours} h.")
             return redirect(t)
     return render(request, "servicedesk/catalog_request.html", {
-        "form": form, "item": item, "sites": _sites(), "clients": _choices(Ticket.objects.for_tenant(), "client")})
+        "form": form, "item": item, "sites": _sites(), "clients": _choices(_visible(request), "client")})
 
 
 # ---------------------------------------------------------------- create / edit
-def _form_ctx(form, kind, ticket=None):
+def _form_ctx(request, form, kind, ticket=None):
+    visible = _visible(request)
     return {"form": form, "kind": kind, "kind_label": wf.KIND_LABELS[kind], "ticket": ticket, "kinds": wf.KINDS,
-            "sites": _sites(), "clients": _choices(Ticket.objects.for_tenant(), "client"),
-            "categories": sorted(set(DEFAULT_CATEGORIES) | set(_choices(Ticket.objects.for_tenant(), "category"))),
-            "cis": _ci_names()}
+            "sites": _sites(), "clients": _choices(visible, "client"),
+            "categories": sorted(set(DEFAULT_CATEGORIES) | set(_choices(visible, "category"))),
+            "cis": _ci_names(request)}
 
 
 @require("operate")
@@ -447,7 +450,7 @@ def create(request):
         audit(request, "create", t, number=t.number, kind=kind, priority=t.priority)
         messages.success(request, f"{t.get_kind_display()} {t.number} created.")
         return redirect(t)
-    return render(request, "servicedesk/form.html", _form_ctx(form, kind))
+    return render(request, "servicedesk/form.html", _form_ctx(request, form, kind))
 
 
 @require("operate")
@@ -457,6 +460,7 @@ def edit(request, number):
     if denied:
         return denied
     old = {"priority": ticket.priority, "assignee": ticket.assignee, "problem": ticket.problem}
+    approved = services.approval_snapshot(ticket)
     form = TicketForm(request.POST or None, instance=ticket, user=request.user, problems=_visible(request))
     if request.method == "POST" and form.is_valid():
         changed = [form.fields[f].label or f for f in form.changed_data if f not in ("priority", "assignee", "problem")]
@@ -472,13 +476,24 @@ def edit(request, number):
         if "problem" in form.fields and (new_problem.pk if new_problem else None) != (old["problem"].pk if old["problem"] else None):
             services.link_problem(obj, new_problem, user=request.user)
         services.record_edit(obj, [str(c) for c in changed], user=request.user)
+        if services.withdraw_approval(obj, approved, user=request.user):
+            messages.warning(request, f"{obj.number} changed after approval: it is back to Submitted and needs a new approval.")
         audit(request, "update", obj, number=obj.number, fields=list(form.changed_data))
         messages.success(request, f"{obj.number} updated." if form.changed_data else "No changes to save.")
         return redirect(obj)
-    return render(request, "servicedesk/form.html", _form_ctx(form, ticket.kind, ticket))
+    return render(request, "servicedesk/form.html", _form_ctx(request, form, ticket.kind, ticket))
 
 
 # ---------------------------------------------------------------- detail
+def _transitions(request, t):
+    """Workflow buttons; no Approve for the requester of a change unless they may approve it themselves."""
+    moves = t.transitions()
+    if (t.kind == "change" and t.status == "submitted" and t.reporter_id == request.user.pk
+            and not services.can_on(request.user, "admin", t.site_scope)):
+        moves = [m for m in moves if m[0] != "approved"]
+    return moves
+
+
 def detail(request, number, section=None):
     t = _ticket(request, number)
     if section is not None and section != wf.SECTION[t.kind]:
@@ -496,7 +511,7 @@ def detail(request, number, section=None):
     steps = [{"key": s, "label": wf.STATUS_LABELS[s], "done": i < pos, "current": i == pos} for i, s in enumerate(happy)]
     ctx = {
         "t": t, "now": now, "timeline": timeline, "steps": steps,
-        "transitions": t.transitions() if can_op else [],
+        "transitions": _transitions(request, t) if can_op else [],
         "can_operate": can_op, "can_admin": can(request.user, "admin", site),
         "users": users, "priorities": wf.PRIORITIES,
         "response": sla.response_clock(t, now), "resolution": sla.resolution_clock(t, now), "sla_state": sla.overall(t, now),
@@ -507,8 +522,12 @@ def detail(request, number, section=None):
         "list_label": {"incident": "Incidents", "problem": "Problems", "change": "Changes", "request": "Tickets"}[t.kind],
     }
     if t.kind == "incident":
-        ctx["problem_choices"] = (_visible(request).filter(kind="problem").exclude(status="closed")
-                                  .order_by("-opened_at")[:200]) if can_op else []
+        # the linked problem may be on a site the user cannot see: show that it exists, never its title or status
+        ctx["problem_visible"] = bool(t.problem_id) and _visible(request).filter(pk=t.problem_id).exists()
+        # (re)linking writes to the old and the new problem, so it needs operate on their sites as well
+        ctx["can_relink"] = can_op and (not t.problem_id or can(request.user, "operate", t.problem.site_scope))
+        ctx["problem_choices"] = (operable(_visible(request).filter(kind="problem").exclude(status="closed"), request.user)
+                                  .order_by("-opened_at")[:200]) if ctx["can_relink"] else []
         ctx["related"] = (_visible(request).filter(kind="incident").exclude(pk=t.pk)
                           .filter(Q(fingerprint=t.fingerprint) if t.fingerprint else Q(pk__in=[]))
                           .order_by("-opened_at")[:5])
@@ -516,7 +535,7 @@ def detail(request, number, section=None):
         ctx["linked"] = (scope_by_site(t.incidents.all(), request.user).select_related("assignee").order_by("-opened_at"))
         ctx["hidden_linked"] = t.incidents.count() - len(ctx["linked"])
     if t.kind == "change":
-        ctx["ci_names"] = _ci_names() if can_op else []
+        ctx["ci_names"] = _ci_names(request) if can_op else []
         ctx["conflicts"] = []
         if t.planned_start and t.planned_end:
             ctx["conflicts"] = (_visible(request).filter(kind="change", status__in=["approved", "scheduled"])
@@ -621,6 +640,11 @@ def link(request, number):
             problem = _visible(request).filter(number=num, kind="problem").first() if num else None
             if num and problem is None:
                 raise services.WorkflowError(f"No problem {num} found.")
+            old = t.problem if t.problem_id else None
+            if (old.pk if old else None) != (problem.pk if problem else None):
+                for p in (old, problem):
+                    if p is not None and not can(request.user, "operate", p.site_scope):
+                        raise services.WorkflowError("You cannot change links of problems on that site.")
             services.link_problem(t, problem, user=request.user)
             audit(request, "link", t, number=t.number, problem=problem.number if problem else "")
             messages.success(request, f"{t.number} linked to {problem.number}." if problem else f"{t.number} unlinked from its problem.")
@@ -634,6 +658,8 @@ def link(request, number):
             unlink = request.POST.get("unlink") == "1"
             if unlink and inc.problem_id != t.pk:
                 raise services.WorkflowError(f"{inc.number} is not linked to {t.number}.")
+            if not unlink and inc.problem_id and inc.problem_id != t.pk and not can(request.user, "operate", inc.problem.site_scope):
+                raise services.WorkflowError(f"{inc.number} is linked to a problem on a site you cannot change.")
             services.link_problem(inc, None if unlink else t, user=request.user)
             audit(request, "link", inc, number=inc.number, problem="" if unlink else t.number)
             messages.success(request, f"{inc.number} {'unlinked from' if unlink else 'linked to'} {t.number}.")

@@ -91,7 +91,11 @@ class UrlCheckerPageTests(TestCase):
         self.assertIn('class="field full advanced" open', r.content.decode())
 
     def test_delete_from_row_menu(self):
+        # a legacy staff user without memberships is an operator; deletes need admin
         self.client.force_login(self.staff)
+        self.client.post(reverse("urlchecker:delete", args=[self.b.pk]))
+        self.assertTrue(UrlCheck.objects.filter(pk=self.b.pk).exists())
+        self.client.force_login(User.objects.create_superuser("root", password="x" * 14))
         r = self.client.post(reverse("urlchecker:delete", args=[self.b.pk]))
         self.assertEqual(r.status_code, 302)
         self.assertFalse(UrlCheck.objects.filter(pk=self.b.pk).exists())

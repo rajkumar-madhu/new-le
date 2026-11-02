@@ -9,7 +9,7 @@
   <div><h1>Licenses</h1><p>Entitlements, seat usage from recorded installations, and renewals</p></div>
   <div class="actions">
     <a class="btn" href="{% url 'cmdb:licenses_export' %}">{% icon "download" 17 %}Export CSV</a>
-    {% if can_operate %}<a class="btn primary" href="{% url 'cmdb:license_create' %}">{% icon "plus" 17 %}Add License</a>{% endif %}
+    {% if can_edit_global %}<a class="btn primary" href="{% url 'cmdb:license_create' %}">{% icon "plus" 17 %}Add License</a>{% endif %}
   </div>
 </div>
 {% with section="licenses" %}{% include "cmdb/_assets_nav.html" %}{% endwith %}
@@ -42,21 +42,21 @@
         <td>{% if l.expiry %}{{ l.expiry|date:"d M Y" }} <small class="{{ l.d_cls }}">{% include "cmdb/_days.html" with d=l.days_left %}</small>{% else %}<span class="t-mute">No expiry</span>{% endif %}</td>
         <td>{% if l.state == "expired" %}<span class="badge crit">{% ficon "x-circle" 13 %}Expired</span>{% elif l.state == "over" %}<span class="badge crit">{% ficon "alert" 13 %}Over-allocated</span>{% elif l.state == "expiring" %}<span class="badge warn">{% ficon "clock" 13 %}Expiring</span>{% else %}<span class="badge ok">{% ficon "check-circle" 13 %}Compliant</span>{% endif %}</td>
         <td><div class="row-actions">
-          {% if can_operate %}<a class="btn icon blue" href="{% url 'cmdb:license_edit' l.pk %}" title="Edit" aria-label="Edit {{ l.product }}">{% icon "edit" 15 %}</a>{% endif %}
-          {% if can_admin %}<form method="post" action="{% url 'cmdb:license_delete' l.pk %}" data-confirm="Delete license “{{ l.product }}”?">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ l.product }}">{% icon "trash" 15 %}</button></form>{% endif %}
+          {% if can_edit_global %}<a class="btn icon blue" href="{% url 'cmdb:license_edit' l.pk %}" title="Edit" aria-label="Edit {{ l.product }}">{% icon "edit" 15 %}</a>{% endif %}
+          {% if can_delete_global %}<form method="post" action="{% url 'cmdb:license_delete' l.pk %}" data-confirm="Delete license “{{ l.product }}”?">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ l.product }}">{% icon "trash" 15 %}</button></form>{% endif %}
         </div></td>
-      </tr>{% empty %}<tr><td colspan="8" class="empty">{% if filtered %}No licenses match.{% else %}No licenses recorded yet.{% if can_operate %} <a href="{% url 'cmdb:license_create' %}">Add one</a>.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+      </tr>{% empty %}<tr><td colspan="8" class="empty">{% if filtered %}No licenses match.{% else %}No licenses recorded yet.{% if can_edit_global %} <a href="{% url 'cmdb:license_create' %}">Add one</a>.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
     {% include "core/_pager.html" with pager_noun="licenses" %}
   </div>
   <div class="stack">
     <div class="panel">
       <div class="panel-h"><h2>Expiring Soon</h2><small>Next 90 days and overdue</small></div>
-      {% if expiring %}<ul class="cm-list">{% for l in expiring %}<li><a href="{% if can_operate %}{% url 'cmdb:license_edit' l.pk %}{% else %}?q={{ l.product|urlencode }}{% endif %}">{{ l.product }}</a> <span class="t-mute">{{ l.seats }} seat{{ l.seats|pluralize }}</span><small class="{% if l.expired %}t-crit{% else %}t-warn{% endif %}">{{ l.expiry|date:"d M Y" }} · {% include "cmdb/_days.html" with d=l.days_left %}</small></li>{% endfor %}</ul>
+      {% if expiring %}<ul class="cm-list">{% for l in expiring %}<li><a href="{% if can_edit_global %}{% url 'cmdb:license_edit' l.pk %}{% else %}?q={{ l.product|urlencode }}{% endif %}">{{ l.product }}</a> <span class="t-mute">{{ l.seats }} seat{{ l.seats|pluralize }}</span><small class="{% if l.expired %}t-crit{% else %}t-warn{% endif %}">{{ l.expiry|date:"d M Y" }} · {% include "cmdb/_days.html" with d=l.days_left %}</small></li>{% endfor %}</ul>
       {% else %}<p class="empty">Nothing expires in the next 90 days.</p>{% endif %}
     </div>
     <div class="panel">
       <div class="panel-h"><h2>Over-allocated</h2></div>
-      {% if over %}<ul class="cm-list">{% for l in over %}<li><a href="{% if can_operate %}{% url 'cmdb:license_edit' l.pk %}{% else %}?q={{ l.product|urlencode }}{% endif %}">{{ l.product }}</a><small class="t-crit">{{ l.used }} installs for {{ l.seats }} seats</small></li>{% endfor %}</ul>
+      {% if over %}<ul class="cm-list">{% for l in over %}<li><a href="{% if can_edit_global %}{% url 'cmdb:license_edit' l.pk %}{% else %}?q={{ l.product|urlencode }}{% endif %}">{{ l.product }}</a><small class="t-crit">{{ l.used }} installs for {{ l.seats }} seats</small></li>{% endfor %}</ul>
       {% else %}<p class="empty">No license has more installations than seats.</p>{% endif %}
     </div>
   </div>

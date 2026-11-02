@@ -277,6 +277,7 @@ after a change (compose: `docker compose up -d`; Kubernetes: `kubectl -n fs-link
 | `LINKEDEYE_DEBUG` | `false` | | `true` only for local development (also makes cookies non-Secure and e-mail print to the console). Never in production. |
 | `LINKEDEYE_ALLOWED_HOSTS` | `localhost,127.0.0.1` with DEBUG, else empty (**required**) | | Comma-separated host names the console answers to. Include the public name and the names health checks / Alertmanager use (`web` in compose, `linkedeye-web…` in Kubernetes). A leading dot matches subdomains. |
 | `LINKEDEYE_CSRF_TRUSTED_ORIGINS` | empty | | Comma-separated origins with scheme, e.g. `https://linkedeye.example.com`. Required behind HTTPS. |
+| `LINKEDEYE_TRUSTED_PROXIES` | empty | | Comma-separated reverse-proxy IPs or CIDRs whose `X-Forwarded-For` is believed for audit-log source IPs (the right-most hop that is not a listed proxy is recorded). Empty: the direct peer address is recorded and `X-Forwarded-For` is ignored. Usually the same peers as `GUNICORN_FORWARDED_ALLOW_IPS` (e.g. the Docker bridge gateway, or the ingress controller's pod CIDR); never `0.0.0.0/0`. |
 | `LINKEDEYE_DB_ENGINE` | `django.db.backends.sqlite3` | | `django.db.backends.postgresql` (compose and Kubernetes default) or `django.db.backends.mysql`. |
 | `LINKEDEYE_DB_NAME` | `<project>/db.sqlite3` | | Database name (file path for SQLite; use `/app/data/…` in the container). |
 | `LINKEDEYE_DB_USER` | empty | | Database user. |

@@ -113,7 +113,15 @@
       const x = (e.clientX - r.left) * (W / r.width);
       const i = Math.max(0, Math.min(n - 1, Math.round(kind === 'bars' ? (x - m.l - step / 2) / step : (x - m.l) / step)));
       cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.setAttribute('visibility', 'visible');
-      tip.innerHTML = `<b>${(d.tipLabels || d.labels)[i]}</b><br>` + d.series.map(s => `<span style="color:${s.color}">●</span> ${s.name}: ${fmt(s.values[i], d.unit)}`).join('<br>');
+      // built from text nodes only: series names and labels can carry scraped label values (never parse them as HTML)
+      const head = document.createElement('b');
+      head.textContent = String((d.tipLabels || d.labels)[i]);
+      tip.replaceChildren(head);
+      d.series.forEach(s => {
+        const dot = document.createElement('span');
+        dot.style.color = s.color; dot.textContent = '●';
+        tip.append(document.createElement('br'), dot, ` ${s.name}: ${fmt(s.values[i], d.unit)}`);
+      });
       tip.style.left = (X(i) / W) * r.width + 'px'; tip.style.top = '24px'; tip.hidden = false;
     });
     svg.addEventListener('mouseleave', () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); });

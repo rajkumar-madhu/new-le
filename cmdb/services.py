@@ -324,7 +324,8 @@ def as_pk(value):
     """`value` as a database id, or None when it is not a number or out of range (SQLite raises
     OverflowError and PostgreSQL a DataError for ids beyond a 64-bit integer)."""
     s = str(value or "").strip()
-    if not s.isdigit() or len(s) > 19:
+    # ASCII only: str.isdigit() is also true for characters such as "²" that int() rejects
+    if not (s.isascii() and s.isdigit()) or len(s) > 19:
         return None
     n = int(s)
     return n if 0 < n <= MAX_PK else None

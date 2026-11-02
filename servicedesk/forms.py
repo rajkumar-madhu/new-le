@@ -66,6 +66,18 @@ def assignable_users(site=None):
     return users
 
 
+def operable(qs, user):
+    """The tickets in `qs` on sites where `user` may operate (one permission check per distinct site)."""
+    if user is None:
+        return qs
+    sites = set(qs.order_by().values_list("site", flat=True).distinct())
+    return qs.filter(site__in=[s for s in sites if can(user, "operate", s if s not in ("", "All Sites") else None)])
+
+
+# Upper bound for SLA targets (90 days, as for catalog fulfilment): larger values overflow the due-date arithmetic.
+MAX_SLA_MINUTES = 90 * 24 * 60
+
+
 def user_label(u):
     return u.get_full_name() or u.get_username()
 
@@ -115,16 +127,29 @@ class TicketForm(forms.ModelForm):
             if name in self.fields:
                 self.fields[name].input_formats = [DT_FORMAT, "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"]
         tenant = settings.LINKEDEYE_TENANT
-        self.fields["assignee"] = UserChoiceField(queryset=get_user_model().objects.filter(
-            pk__in=[u.pk for u in assignable_users()]), required=False, label="Assignee", empty_label="Unassigned")
+        # the current assignee always stays a choice (even when inactive or no longer in the list), otherwise the
+        # select renders with nothing selected and saving any other field would silently unassign the ticket
+        pks = [u.pk for u in assignable_users()]
+        if self.instance.assignee_id:
+            pks.append(self.instance.assignee_id)
+        self.fields["assignee"] = UserChoiceField(queryset=get_user_model().objects.filter(pk__in=pks), required=False,
+                                                  label="Assignee", empty_label="Unassigned")
         if "problem" in self.fields:
-            # `problems`: the tickets the user may see (site-scoped); never offer problems from other sites
+            # `problems`: the tickets the user may see (site-scoped); never offer problems from other sites, and only
+            # offer those on sites the user may operate on (linking writes to the problem)
             base = problems if problems is not None else Ticket.objects.filter(tenant_key=tenant)
-            qs = base.filter(kind="problem").exclude(status="closed")
-            if self.instance.problem_id:
-                qs = qs | Ticket.objects.filter(pk=self.instance.problem_id)
+            qs = operable(base.filter(kind="problem").exclude(status="closed"), user)
+            current = self.instance.problem if self.instance.problem_id else None
+            hidden = current is not None and problems is not None and not problems.filter(pk=current.pk).exists()
+            if current is not None:
+                qs = qs | Ticket.objects.filter(pk=current.pk)
+                if user is not None and not can(user, "operate", current.site_scope):
+                    # the link writes to the current problem too: keep it as it is
+                    self.fields["problem"].disabled = True
+                    self.fields["problem"].help_text = "Linked to a problem on a site you cannot change."
             self.fields["problem"].queryset = qs.order_by("-opened_at")
-            self.fields["problem"].label_from_instance = lambda t: f"{t.number} · {t.title}"[:90]
+            self.fields["problem"].label_from_instance = (
+                lambda t: "Problem on a site you cannot see" if hidden and t.pk == current.pk else f"{t.number} · {t.title}"[:90])
             self.fields["problem"].empty_label = "Not linked"
         if "catalog_item" in self.fields:
             self.fields["catalog_item"].queryset = CatalogItem.objects.filter(tenant_key=tenant, active=True)
@@ -149,6 +174,10 @@ class TicketForm(forms.ModelForm):
             site = data["site"]
             if not can(assignee, "operate", site if site not in ("", "All Sites") else None):
                 self.add_error("assignee", f"{user_label(assignee)} cannot work tickets on this site.")
+        if "problem" in self.fields and "problem" in self.changed_data and self.user is not None:
+            new = data.get("problem")
+            if new is not None and not can(self.user, "operate", new.site_scope):
+                self.add_error("problem", "You cannot link incidents to problems on that site.")
         start, end = data.get("planned_start"), data.get("planned_end")
         if start and end and end <= start:
             self.add_error("planned_end", "The planned end must be after the planned start.")
@@ -208,4 +237,6 @@ class SlaPolicyForm(forms.ModelForm):
         for k in ("response_minutes", "resolution_minutes"):
             if data.get(k) is not None and data[k] < 1:
                 self.add_error(k, "Must be at least 1 minute.")
+            elif data.get(k) is not None and data[k] > MAX_SLA_MINUTES:
+                self.add_error(k, f"Must be at most {MAX_SLA_MINUTES} minutes (90 days).")
         return data

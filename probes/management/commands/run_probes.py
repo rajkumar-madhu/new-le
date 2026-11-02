@@ -30,6 +30,9 @@ class Command(BaseCommand):
                 urls, domains = runner.run_due()
                 if urls or domains:
                     self.stdout.write(f"checked {urls} URL(s), {domains} domain(s) in {time.monotonic() - started:.1f}s")
+            except Exception:  # a failed probe pass must not skip the jobs and pruning below
+                log.exception("probe pass failed")
+            try:
                 for name, summary in jobs.run_due().items():
                     if summary:
                         self.stdout.write(f"{name}: {summary}")
@@ -39,7 +42,7 @@ class Command(BaseCommand):
                     if removed:
                         self.stdout.write(f"pruned {removed} old result(s)")
             except Exception:  # keep the scheduler alive; the error is logged with traceback
-                log.exception("probe pass failed")
+                log.exception("jobs/prune pass failed")
             if once or stop["flag"]:
                 break
             while time.monotonic() - started < tick and not stop["flag"]:

@@ -1,8 +1,8 @@
 """Aggregations for the URL Checker dashboard (computed from stored results)."""
-from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Max, Min, Q
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from .models import Status, UrlResult
@@ -28,18 +28,24 @@ def response_trend(checks, hours=24, buckets=48):
     now = timezone.now()
     size = hours * 3600 / buckets
     start = now - timedelta(hours=hours)
-    acc = defaultdict(list)
-    for at, ms in UrlResult.objects.filter(url_check__in=checks, checked_at__gte=start, response_ms__isnull=False).values_list("checked_at", "response_ms"):
-        acc[int((at - start).total_seconds() // size)].append(ms)
+    # One aggregate query: avg/min/max per bucket [start + i*size, start + (i+1)*size), computed by the database.
+    edges = [start + timedelta(seconds=size * i) for i in range(buckets)] + [now]
+    aggs = {}
+    for i in range(buckets):
+        q = Q(checked_at__gte=edges[i], checked_at__lt=edges[i + 1])
+        aggs.update({f"a{i}": Avg("response_ms", filter=q), f"n{i}": Min("response_ms", filter=q),
+                     f"x{i}": Max("response_ms", filter=q)})
+    agg = UrlResult.objects.filter(url_check__in=checks, checked_at__gte=start, checked_at__lt=now,
+                                   response_ms__isnull=False).aggregate(**aggs)
     labels, tips, avg, mn, mx = [], [], [], [], []
     for i in range(buckets):
-        t = timezone.localtime(start + timedelta(seconds=size * i))
+        t = timezone.localtime(edges[i])
         labels.append(t.strftime("%H:%M"))
         tips.append(t.strftime("%d %b %H:%M"))
-        v = acc.get(i)
-        avg.append(round(sum(v) / len(v), 1) if v else None)
-        mn.append(min(v) if v else None)
-        mx.append(max(v) if v else None)
+        a = agg[f"a{i}"]
+        avg.append(round(a, 1) if a is not None else None)
+        mn.append(agg[f"n{i}"])
+        mx.append(agg[f"x{i}"])
     data = {"labels": labels, "tipLabels": tips, "unit": "ms", "series": [
         {"name": "Average", "color": "#2b4cff", "values": avg, "width": 2},
         {"name": "Minimum", "color": "#0f7a55", "values": mn},
@@ -66,18 +72,21 @@ def daily_history(checks, days=7):
     A check counts as Down for a day if >5% of its results were down, Degraded if >5% were degraded."""
     today = timezone.localdate()
     start = today - timedelta(days=days - 1)
-    per = defaultdict(lambda: defaultdict(lambda: [0, 0, 0]))  # day -> check -> [total, down, degraded]
-    for cid, at, st in UrlResult.objects.filter(url_check__in=checks, checked_at__date__gte=start).values_list("url_check_id", "checked_at", "status"):
-        c = per[timezone.localtime(at).date()][cid]
-        c[0] += 1
-        c[1] += st == Status.DOWN
-        c[2] += st == Status.DEGRADED
+    # Counts per (check, local day) are aggregated by the database; only those few rows reach Python.
+    rows = (UrlResult.objects.filter(url_check__in=checks, checked_at__gte=timezone.make_aware(datetime.combine(start, time.min)))
+            .annotate(day=TruncDate("checked_at", tzinfo=timezone.get_current_timezone()))
+            .values("url_check_id", "day").order_by()
+            .annotate(total=Count("id"), dn=Count("id", filter=Q(status=Status.DOWN)),
+                      dg=Count("id", filter=Q(status=Status.DEGRADED))))
+    per = {}  # day -> [(total, down, degraded) per check]
+    for r in rows:
+        per.setdefault(r["day"], []).append((r["total"], r["dn"], r["dg"]))
     labels, online, degraded, down = [], [], [], []
     for i in range(days):
         d = start + timedelta(days=i)
         labels.append(d.strftime("%b %d"))
         o = g = x = 0
-        for total, dn, dg in per[d].values():
+        for total, dn, dg in per.get(d, ()):
             if dn / total > 0.05:
                 x += 1
             elif dg / total > 0.05:

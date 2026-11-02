@@ -61,6 +61,22 @@ def _normalise_source(source):
     return "alert", source[:40]
 
 
+def can_on(user, perm, site):
+    """`perm` on a ticket's site (site_scope). Global tickets (site None) need the permission tenant-wide, so a
+    role held on one site never counts for another site or for every site."""
+    from core.access import PERMS, RANK, _memberships, can
+    if site:
+        return can(user, perm, site)
+    if not can(user, perm):
+        return False
+    if user.is_superuser:
+        return True
+    ms = _memberships(user)
+    if not ms:  # users without memberships hold their default role everywhere
+        return True
+    return any(m.site is None and RANK[m.role] >= PERMS[perm] for m in ms)
+
+
 # ---------------------------------------------------------------- creation
 def create_ticket(user=None, **fields):
     """Create a ticket (any kind), its 'opened' timeline entry and an event."""
@@ -100,9 +116,12 @@ def open_incident(title, description="", priority="P3", site="", source="", fing
                 old = existing.priority
                 existing.priority = priority
                 sla.apply_due_dates(existing)
-                existing.save(update_fields=["priority", "response_due", "resolution_due", "updated_at"])
+                cleared = sla.clear_stale_breaches(existing)   # a higher priority is not always a stricter target
+                existing.save(update_fields=["priority", "response_due", "resolution_due", "response_breached",
+                                             "resolution_breached", "updated_at"])
                 _note(existing, "priority", f"Priority raised from {old} to {priority} by a new alert.", author_name=origin or "alert",
                       old=old, new=priority)
+                _note_cleared(existing, cleared, author_name=origin or "alert")
                 changed.append("priority")
             if existing.status == "mitigated":   # the problem came back
                 existing.status = "investigating"
@@ -150,8 +169,7 @@ def transition(ticket, target, user=None, note="", actor_name="", force=False):
         raise WorkflowError(f"{ticket.get_kind_display()} {ticket.number} cannot move from "
                             f"{wf.STATUS_LABELS.get(old, old)} to {wf.STATUS_LABELS.get(target, target)}.")
     if ticket.kind == "change" and target == "approved" and old == "submitted" and user is not None:
-        from core.access import can
-        if ticket.reporter_id == user.pk and not can(user, "admin"):
+        if ticket.reporter_id == user.pk and not can_on(user, "admin", ticket.site_scope):
             raise WorkflowError("A change must be approved by someone other than its requester (or an admin).")
     if ticket.kind == "change" and target == "scheduled" and not (ticket.planned_start and ticket.planned_end):
         raise WorkflowError("Set the planned start and end of the change window before scheduling it.")
@@ -210,6 +228,15 @@ def assign(ticket, assignee, user=None):
     return ticket
 
 
+def _note_cleared(ticket, cleared, user=None, author_name=""):
+    """Timeline entries for the breach flags sla.clear_stale_breaches dropped after a priority change."""
+    for w in cleared:
+        due = ticket.response_due if w == "response" else ticket.resolution_due
+        _note(ticket, "sla", f"{w.title()} SLA breach cleared: "
+              + (f"the new target is {timezone.localtime(due):%d %b %H:%M}." if due else f"no SLA applies to {ticket.priority}."),
+              user, author_name=author_name, old=f"{w}_breached")
+
+
 def set_priority(ticket, priority, user=None):
     if priority not in wf.PRIORITY_LABELS:
         raise WorkflowError("Unknown priority.")
@@ -217,11 +244,15 @@ def set_priority(ticket, priority, user=None):
     if old == priority:
         return ticket
     ticket.priority = priority
+    cleared = []
     if ticket.kind in wf.SLA_KINDS:
         sla.apply_due_dates(ticket)
-    ticket.save(update_fields=["priority", "response_due", "resolution_due", "updated_at"])
+        cleared = sla.clear_stale_breaches(ticket)
+    ticket.save(update_fields=["priority", "response_due", "resolution_due", "response_breached", "resolution_breached",
+                               "updated_at"])
     _note(ticket, "priority", f"Priority changed from {old} ({wf.PRIORITY_LABELS[old]}) to {priority} ({wf.PRIORITY_LABELS[priority]}).",
           user, old=old, new=priority)
+    _note_cleared(ticket, cleared, user)
     sla.check(ticket)
     sev = "warning" if ticket.kind == "incident" and priority == "P1" and ticket.is_open else "info"
     _emit(ticket, f"priority {old} → {priority}", severity=sev, kind="ticket_priority", previous=old)
@@ -267,6 +298,36 @@ def remove_ci(link, user=None):
     ticket, name = link.ticket, link.ci_name
     link.delete()
     _note(ticket, "link", f"Configuration item {name} removed.", user, old=name)
+
+
+# Change fields an approval covers: editing any of them after approval needs a fresh approval.
+APPROVAL_FIELDS = ("risk", "planned_start", "planned_end", "implementation_plan", "backout_plan")
+
+
+def approval_snapshot(ticket):
+    """The values an approval covers, normalised the way the edit form returns them (text stripped, CRLF line ends
+    as LF, times to the minute), so that re-submitting an unchanged plan is not taken for an edit."""
+    def norm(v):
+        if isinstance(v, str):
+            return v.replace("\r\n", "\n").strip()
+        return v.replace(second=0, microsecond=0) if v else v
+    return {f: norm(getattr(ticket, f)) for f in APPROVAL_FIELDS}
+
+
+def withdraw_approval(ticket, before, user=None):
+    """After the plan, risk or window of an approved/scheduled change was edited (`before`: approval_snapshot taken
+    before the edit): back to Submitted, approval cleared, so someone other than the requester must approve what will
+    actually be done. Returns True when withdrawn."""
+    if ticket.kind != "change" or ticket.status not in ("approved", "scheduled") or approval_snapshot(ticket) == before:
+        return False
+    old = ticket.status
+    ticket.status, ticket.approved_by, ticket.approved_at = "submitted", None, None
+    with transaction.atomic():
+        ticket.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        _note(ticket, "status", "Approval withdrawn: the change plan, risk or window was edited after approval. "
+              "Back to Submitted for re-approval.", user, old=old, new="submitted")
+    _emit(ticket, f"approval withdrawn: {ticket.title}", severity="warning", kind="ticket_status", previous=old)
+    return True
 
 
 def record_edit(ticket, changed, user=None):

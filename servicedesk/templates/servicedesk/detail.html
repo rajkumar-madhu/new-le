@@ -46,10 +46,10 @@
 
   {% if t.kind == "incident" %}
   <div class="panel" id="linked"><div class="panel-h"><h2>Linked Items</h2></div>
-    <div class="sd-link-row"><span class="t-mute">Problem</span>{% if t.problem %}<a href="{{ t.problem.get_absolute_url }}">{{ t.problem.number }}</a> {{ t.problem.title|truncatechars:60 }} {% status_pill t.problem.status %}{% else %}<span class="t-mute">Not linked</span>{% endif %}</div>
+    <div class="sd-link-row"><span class="t-mute">Problem</span>{% if t.problem and problem_visible %}<a href="{{ t.problem.get_absolute_url }}">{{ t.problem.number }}</a> {{ t.problem.title|truncatechars:60 }} {% status_pill t.problem.status %}{% elif t.problem %}<span class="t-mute">Linked to a problem on a site you cannot see</span>{% else %}<span class="t-mute">Not linked</span>{% endif %}</div>
     {% if can_operate %}<form class="sd-inline-form" method="post" action="{% url 'servicedesk:link' t.number %}">{% csrf_token %}
-      <select name="problem" aria-label="Problem"><option value="">— Not linked —</option>{% for p in problem_choices %}<option value="{{ p.number }}"{% if t.problem_id == p.pk %} selected{% endif %}>{{ p.number }} · {{ p.title|truncatechars:50 }}</option>{% endfor %}</select>
-      <button class="btn sm" type="submit">{% icon "link" 14 %}Update link</button>
+      {% if can_relink %}<select name="problem" aria-label="Problem"><option value="">— Not linked —</option>{% for p in problem_choices %}<option value="{{ p.number }}"{% if t.problem_id == p.pk %} selected{% endif %}>{{ p.number }} · {{ p.title|truncatechars:50 }}</option>{% endfor %}</select>
+      <button class="btn sm" type="submit">{% icon "link" 14 %}Update link</button>{% endif %}
       <a class="btn sm ghost-primary" href="{% url 'servicedesk:create' %}?kind=problem&amp;title={{ t.title|urlencode }}&amp;category={{ t.category|urlencode }}&amp;ci_name={{ t.ci_name|urlencode }}">{% icon "plus" 14 %}New problem from this</a></form>{% endif %}
     {% if related %}<h3 class="sd-h3">Other incidents with the same fingerprint</h3><ul class="sd-feed">{% for r in related %}<li><a href="{{ r.get_absolute_url }}">{{ r.number }}</a><span>{{ r.title|truncatechars:50 }}</span>{% status_pill r.status %}<small>{{ r.opened_at|date:"M j, H:i" }}</small></li>{% endfor %}</ul>{% endif %}
   </div>

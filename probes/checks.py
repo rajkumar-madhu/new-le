@@ -8,8 +8,15 @@ DNS answer cannot change between the policy check and the connection.
 Policy:
   * link-local (incl. cloud metadata 169.254.169.254), multicast, unspecified
     and reserved ranges are always refused;
-  * loopback and private ranges are refused unless the address falls inside
+  * every other address that is not globally routable (loopback, private,
+    shared/CGNAT 100.64.0.0/10 incl. the 100.100.100.200 metadata service,
+    192.0.0.0/24, IPv6 site-local, NAT64 64:ff9b::/96 forms of such IPv4
+    addresses, ...) is refused unless it falls inside
     settings.PROBE_ALLOWED_PRIVATE_CIDRS (internal monitoring must be opted in).
+
+timeout is an overall deadline for a probe (connect, TLS, headers, body and
+redirects together), not just a per-socket-operation timeout, so a peer that
+trickles bytes cannot hold a probe worker (and the scheduler loop) open.
 
 Probes connect directly; they do not use HTTP(S)_PROXY.
 """
@@ -17,6 +24,7 @@ import http.client
 import ipaddress
 import socket
 import ssl
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -32,6 +40,9 @@ ALWAYS_BLOCKED = [ipaddress.ip_network(n) for n in (
     "0.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "240.0.0.0/4", "255.255.255.255/32",
     "::/128", "fe80::/10", "ff00::/8",
 )]
+# IPv6 prefixes that carry an IPv4 address in their last 32 bits (NAT64 well-known prefix, SIIT IPv4-translated);
+# Python calls these global, so the embedded IPv4 address is checked instead.
+EMBEDS_IPV4 = [ipaddress.ip_network(n) for n in ("64:ff9b::/96", "::ffff:0:0:0/96")]
 
 
 class ProbeBlocked(Exception):
@@ -46,9 +57,12 @@ def check_address(ip: str) -> None:
     addr = ipaddress.ip_address(ip)
     if addr.version == 6 and addr.ipv4_mapped:
         addr = addr.ipv4_mapped
+    elif addr.version == 6 and any(addr in n for n in EMBEDS_IPV4):
+        addr = ipaddress.IPv4Address(addr.packed[-4:])  # a NAT64/SIIT translator would connect to this IPv4 address
     if any(addr in n for n in ALWAYS_BLOCKED):
         raise ProbeBlocked(f"{ip} is in a blocked range")
-    if addr.is_loopback or addr.is_private or addr.is_reserved or addr.is_link_local:
+    # not is_global covers loopback/private/reserved and ranges Python does not call private, e.g. 100.64.0.0/10
+    if not addr.is_global or (addr.version == 6 and addr.is_site_local):
         if not any(addr in n for n in _allowed_private()):
             raise ProbeBlocked(f"{ip} is a private address not in PROBE_ALLOWED_PRIVATE_CIDRS")
 
@@ -82,7 +96,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self._ip = ip
 
     def connect(self):
-        self.sock = socket.create_connection((self._ip, self.port), self.timeout)
+        self.sock = self._probe_sock = socket.create_connection((self._ip, self.port), self.timeout)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
@@ -92,7 +106,32 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
     def connect(self):
         sock = socket.create_connection((self._ip, self.port), self.timeout)
-        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        self.sock = self._probe_sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _Deadline:
+    """Watchdog for one connection: once the time budget is spent it shuts the socket down,
+    which unblocks any pending recv. The socket timeout alone bounds each recv separately,
+    so a peer sending one byte per timeout window would otherwise never time out."""
+
+    def __init__(self, seconds, sock_of):
+        self.expired = False
+        self._sock_of = sock_of
+        self._timer = threading.Timer(max(seconds, 0), self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _fire(self):
+        self.expired = True  # set before reading the socket; callers re-check after connecting
+        sock = self._sock_of()
+        if sock is not None:
+            try:
+                socket.socket.shutdown(sock, socket.SHUT_RDWR)  # bypass SSLSocket.shutdown (not thread-safe)
+            except OSError:
+                pass
+
+    def cancel(self):
+        self._timer.cancel()
 
 
 def _cert_expiry(cert: dict):
@@ -118,6 +157,7 @@ def http_check(url, method="GET", timeout=None, follow_redirects=True, expected_
     timeout = timeout or settings.PROBE_TIMEOUT
     res = HttpResult()
     start = time.monotonic()
+    deadline = start + timeout
     current = url
     try:
         for hop in range(MAX_REDIRECTS + 1):
@@ -126,21 +166,34 @@ def http_check(url, method="GET", timeout=None, follow_redirects=True, expected_
                 raise ValueError(f"unsupported URL: {current}")
             port = parts.port or (443 if parts.scheme == "https" else 80)
             ip = resolve_allowed(parts.hostname, port)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise socket.timeout()
             if parts.scheme == "https":
-                conn = _PinnedHTTPSConnection(parts.hostname, ip, port, timeout, ssl.create_default_context())
+                conn = _PinnedHTTPSConnection(parts.hostname, ip, port, remaining, ssl.create_default_context())
             else:
-                conn = _PinnedHTTPConnection(parts.hostname, ip, port, timeout)
+                conn = _PinnedHTTPConnection(parts.hostname, ip, port, remaining)
             path = parts.path or "/"
             if parts.query:
                 path += "?" + parts.query
+            watchdog = _Deadline(remaining, lambda c=conn: getattr(c, "_probe_sock", None))
             try:
                 conn.request(method, path, headers={"User-Agent": USER_AGENT, "Accept": "*/*", "Connection": "close"})
+                if watchdog.expired:
+                    raise socket.timeout()
                 # read the certificate now: getresponse() closes the socket on "Connection: close"
                 if parts.scheme == "https" and conn.sock is not None:
                     res.tls_expires_at = _cert_expiry(conn.sock.getpeercert())
                 resp = conn.getresponse()
                 body = resp.read(MAX_BODY) if method != "HEAD" else b""
+                if watchdog.expired:
+                    raise socket.timeout()
+            except Exception:
+                if watchdog.expired:  # whatever the shutdown surfaced as, report it as the timeout it is
+                    raise socket.timeout() from None
+                raise
             finally:
+                watchdog.cancel()
                 conn.close()
             res.ip, res.status, res.final_url = ip, resp.status, current
             location = resp.getheader("Location")
@@ -152,7 +205,7 @@ def http_check(url, method="GET", timeout=None, follow_redirects=True, expected_
                 continue
             break
         res.ok = True
-        if expected_text:
+        if expected_text and method != "HEAD":  # a HEAD response has no body to match (None = not evaluated)
             res.body_matched = expected_text.encode() in body
     except ProbeBlocked as e:
         res.error = f"Blocked by probe policy: {e}"
@@ -210,6 +263,7 @@ def tls_check(hostname, port=443, timeout=None):
     try:
         ip = resolve_allowed(hostname, port)
         ctx = ssl.create_default_context()
+        # the handshake is bounded as a whole by the socket timeout (CPython applies it as a deadline)
         with socket.create_connection((ip, port), timeout) as raw:
             with ctx.wrap_socket(raw, server_hostname=hostname) as tls:
                 cert = tls.getpeercert()

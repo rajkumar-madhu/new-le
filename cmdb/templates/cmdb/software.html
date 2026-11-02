@@ -9,7 +9,7 @@
   <div><h1>Software</h1><p>Software titles, versions and where they are installed</p></div>
   <div class="actions">
     <a class="btn" href="{% url 'cmdb:software_export' %}">{% icon "download" 17 %}Export CSV</a>
-    {% if can_operate %}<a class="btn primary" href="{% url 'cmdb:software_create' %}">{% icon "plus" 17 %}Add Software</a>{% endif %}
+    {% if can_edit_global %}<a class="btn primary" href="{% url 'cmdb:software_create' %}">{% icon "plus" 17 %}Add Software</a>{% endif %}
   </div>
 </div>
 {% with section="software" %}{% include "cmdb/_assets_nav.html" %}{% endwith %}
@@ -43,9 +43,9 @@
       <td><div class="row-actions">
         <a class="btn icon" href="{% url 'cmdb:software_detail' s.pk %}" title="View" aria-label="View {{ s }}">{% icon "eye" 15 %}</a>
         {% if can_operate %}<a class="btn icon blue" href="{% url 'cmdb:software_edit' s.pk %}" title="Edit" aria-label="Edit {{ s }}">{% icon "edit" 15 %}</a>{% endif %}
-        {% if can_admin %}<form method="post" action="{% url 'cmdb:software_delete' s.pk %}" data-confirm="Delete software “{{ s }}”?">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ s }}">{% icon "trash" 15 %}</button></form>{% endif %}
+        {% if can_delete_global %}<form method="post" action="{% url 'cmdb:software_delete' s.pk %}" data-confirm="Delete software “{{ s }}”?">{% csrf_token %}<button class="btn icon red" type="submit" title="Delete" aria-label="Delete {{ s }}">{% icon "trash" 15 %}</button></form>{% endif %}
       </div></td>
-    </tr>{% empty %}<tr><td colspan="7" class="empty">{% if filtered %}No software matches.{% else %}No software recorded yet.{% if can_operate %} <a href="{% url 'cmdb:software_create' %}">Add a title</a>.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    </tr>{% empty %}<tr><td colspan="7" class="empty">{% if filtered %}No software matches.{% else %}No software recorded yet.{% if can_edit_global %} <a href="{% url 'cmdb:software_create' %}">Add a title</a>.{% endif %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   {% include "core/_pager.html" with pager_noun="titles" %}
 </div>
 </div>

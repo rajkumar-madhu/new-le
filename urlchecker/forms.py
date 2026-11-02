@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 
 from .models import UrlCheck
 
@@ -53,6 +54,14 @@ class UrlCheckForm(forms.ModelForm):
 
     def advanced_has_errors(self):
         return any(self[n].errors for n in ADVANCED_FIELDS + ["enabled"])
+
+    def clean_name(self):
+        # tenant_key is not a form field, so ModelForm skips the (tenant_key, name) unique constraint.
+        name = self.cleaned_data["name"]
+        tenant = self.instance.tenant_key if self.instance.pk else settings.LINKEDEYE_TENANT
+        if UrlCheck.objects.filter(tenant_key=tenant, name=name).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("A URL check with this name already exists.")
+        return name
 
     def clean_url(self):
         url = self.cleaned_data["url"]

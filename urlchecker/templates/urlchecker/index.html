@@ -44,7 +44,7 @@
   <div class="panel urls-panel">
     <div class="panel-h"><h2>Monitored URLs ({{ page.paginator.count }})</h2>
       <div class="right">
-        {% if user.is_staff %}<button class="btn primary sm" data-post="{% url 'urlchecker:run_all' %}" data-busy="Checking…">{% icon "radar" 15 %}Run Check Now</button>{% endif %}
+        {% if can_operate %}<button class="btn primary sm" data-post="{% url 'urlchecker:run_all' %}" data-busy="Checking…">{% icon "radar" 15 %}Run Check Now</button>{% endif %}
         <a class="btn sm ghost-primary" href="{% url 'urlchecker:export' %}?{{ query.urlencode }}">{% icon "download" 15 %}Export</a>
       </div></div>
     <form class="toolbar compact" method="get">
@@ -71,7 +71,7 @@
           <td class="{% if c.uptime24 is None %}t-mute{% elif c.uptime24 < 99 %}t-crit{% else %}t-ok{% endif %}">{% if c.uptime24 is None %}–{% else %}{{ c.uptime24|pct }}{% endif %}</td>
           <td>{{ c.last_checked_at|short_dt }}</td>
           <td><div class="row-actions">
-            {% if user.is_staff %}
+            {% if c.can_op %}
             <button class="btn icon blue" data-post="{% url 'urlchecker:run' c.pk %}" title="Run check now" aria-label="Run check now for {{ c.name }}">{% icon "play" 14 %}</button>
             <a class="btn icon blue" href="{% url 'urlchecker:edit' c.pk %}#form" title="Edit" aria-label="Edit {{ c.name }}">{% icon "edit" 15 %}</a>
             {% endif %}
@@ -79,12 +79,12 @@
               <div class="menu-pop">
                 <a href="{% url 'urlchecker:detail' c.pk %}">{% icon "eye" 14 %}View details</a>
                 <a href="{{ c.url }}" target="_blank" rel="noopener">{% icon "external" 14 %}Open URL</a>
-                {% if user.is_staff %}<form method="post" action="{% url 'urlchecker:delete' c.pk %}" data-confirm="Delete the check “{{ c.name }}” and its history?">{% csrf_token %}<button class="danger" type="submit" aria-label="Delete {{ c.name }}">{% icon "trash" 14 %}Delete</button></form>{% endif %}
+                {% if c.can_admin %}<form method="post" action="{% url 'urlchecker:delete' c.pk %}" data-confirm="Delete the check “{{ c.name }}” and its history?">{% csrf_token %}<button class="danger" type="submit" aria-label="Delete {{ c.name }}">{% icon "trash" 14 %}Delete</button></form>{% endif %}
               </div></details>
           </div></td>
         </tr>
       {% empty %}
-        <tr><td colspan="11" class="empty">No URL checks match. {% if user.is_staff %}Add one with the form on the right.{% endif %}</td></tr>
+        <tr><td colspan="11" class="empty">No URL checks match. {% if can_operate %}Add one with the form on the right.{% endif %}</td></tr>
       {% endfor %}
       </tbody></table></div>
     {% include "core/_pager.html" with pager_noun="URLs" %}
@@ -93,7 +93,7 @@
   <div class="stack">
     <div class="panel" id="form">
       <div class="panel-h"><h2>{% if editing %}Edit “{{ editing.name }}”{% else %}Add / Edit URL Check{% endif %}</h2>{% if editing %}<div class="right"><a href="{% url 'urlchecker:index' %}">Cancel</a></div>{% endif %}</div>
-      {% if user.is_staff %}
+      {% if can_operate %}
       <form class="url-form" method="post" action="{% if editing %}{% url 'urlchecker:edit' editing.pk %}{% else %}{% url 'urlchecker:index' %}{% endif %}">{% csrf_token %}
         {% for e in form.non_field_errors %}<p class="err">{{ e }}</p>{% endfor %}
         <div class="form-grid">

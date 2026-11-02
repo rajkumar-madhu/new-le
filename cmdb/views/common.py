@@ -36,7 +36,10 @@ def csv_response(filename):
 
 def perms(request):
     u = request.user
-    return {"can_operate": can(u, "operate"), "can_admin": can(u, "admin")}
+    # tenant-wide records (software titles, licenses) need the role on every site
+    return {"can_operate": can(u, "operate"), "can_admin": can(u, "admin"),
+            "can_edit_global": services.can_manage(u, "operate", "All Sites"),
+            "can_delete_global": services.can_manage(u, "admin", "All Sites")}
 
 
 def site_checker(request, perm):

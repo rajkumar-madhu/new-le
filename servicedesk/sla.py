@@ -41,12 +41,39 @@ def apply_due_dates(ticket):
         return ticket
     policy = policy_for(ticket)
     opened = ticket.opened_at or timezone.now()
-    ticket.response_due = opened + timedelta(minutes=policy.response_minutes) if policy else None
-    ticket.resolution_due = opened + timedelta(minutes=policy.resolution_minutes) if policy else None
+    ticket.response_due = _after(opened, minutes=policy.response_minutes) if policy else None
+    ticket.resolution_due = _after(opened, minutes=policy.resolution_minutes) if policy else None
     item = ticket.catalog_item if ticket.catalog_item_id else None
     if ticket.kind == "request" and item and item.fulfilment_hours:
-        ticket.resolution_due = opened + timedelta(hours=item.fulfilment_hours)
+        ticket.resolution_due = _after(opened, hours=item.fulfilment_hours)
     return ticket
+
+
+def _after(start, **delta):
+    """start + delta, or None when the target is beyond the calendar (a bad policy must never block ticket creation)."""
+    try:
+        return start + timedelta(**delta)
+    except OverflowError:
+        log.warning("SLA target %s from %s is out of range; no due date set", delta, start)
+        return None
+
+
+def _late(due, done_at, status, now):
+    return bool(due) and ((done_at is not None and done_at > due) or (done_at is None and status not in wf.DONE and now > due))
+
+
+def clear_stale_breaches(ticket, now=None):
+    """After the due dates were recomputed (priority change): drop breach flags that no longer hold under the new
+    targets. Sets the attributes only (the caller saves); returns the clocks cleared."""
+    now = now or timezone.now()
+    cleared = []
+    if ticket.response_breached and not _late(ticket.response_due, ticket.acknowledged_at, ticket.status, now):
+        ticket.response_breached = False
+        cleared.append("response")
+    if ticket.resolution_breached and not _late(ticket.resolution_due, ticket.resolved_at, ticket.status, now):
+        ticket.resolution_breached = False
+        cleared.append("resolution")
+    return cleared
 
 
 def fmt_minutes(minutes):
@@ -148,7 +175,7 @@ def flag_breaches(now=None):
     """Periodic job: flag every open ticket whose response or resolution target has passed."""
     from .models import Ticket
     now = now or timezone.now()
-    due = (Ticket.objects.exclude(status__in=wf.DONE)
+    due = (Ticket.objects.for_tenant().exclude(status__in=wf.DONE)
            .filter(Q(response_due__lt=now, response_breached=False, acknowledged_at__isnull=True)
                    | Q(resolution_due__lt=now, resolution_breached=False, resolved_at__isnull=True))
            .order_by("resolution_due")[:JOB_BATCH])

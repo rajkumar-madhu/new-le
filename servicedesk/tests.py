@@ -945,3 +945,311 @@ class ReviewRegressionTests(Base):
         self.assertEqual(rows["P1"]["open"], 1)
         rows = {row["p"].priority: row for row in self.login(self.admin).get(reverse("servicedesk:sla")).context["rows"]}
         self.assertEqual(rows["P1"]["open"], 2)
+
+
+# ------------------------------------------------------------------ regressions found by the security/correctness audit
+class AuditFixTests(Base):
+    """One test (or more) per audited defect."""
+
+    DT = "%Y-%m-%dT%H:%M"
+
+    def setUp(self):
+        super().setUp()
+        self.mum = Site.objects.create(name="Mumbai", code="mum")
+        self.dr = Site.objects.create(name="DR", code="dr")
+        self.mum_op = User.objects.create_user("mum-op", password="x")
+        Membership.objects.create(user=self.mum_op, site=self.mum, role="operator")
+
+    def _edit_data(self, t, **over):
+        """POST body for the edit form that re-submits the ticket's current values."""
+        def dt(v):
+            return timezone.localtime(v).strftime(self.DT) if v else ""
+        data = {"title": t.title, "description": t.description, "priority": t.priority, "category": t.category,
+                "client": t.client, "site": t.site, "assignee": t.assignee_id or "", "ci_name": t.ci_name,
+                "resolution": t.resolution}
+        if t.kind == "change":
+            data.update(risk=t.risk, planned_start=dt(t.planned_start), planned_end=dt(t.planned_end),
+                        implementation_plan=t.implementation_plan, backout_plan=t.backout_plan)
+        if t.kind == "incident":
+            data["problem"] = t.problem_id or ""
+        data.update(over)
+        return data
+
+    # -- four-eyes control on changes
+    def _approved_change(self):
+        start = timezone.now().replace(second=0, microsecond=0) + timedelta(days=1)
+        chg = self.incident(kind="change", title="Restart node", user=self.op, implementation_plan="restart one node",
+                            backout_plan="start it again", risk="low", planned_start=start, planned_end=start + timedelta(hours=1))
+        services.transition(chg, "submitted", user=self.op)
+        services.transition(chg, "approved", user=self.op2)
+        chg.refresh_from_db()
+        self.assertEqual((chg.status, chg.approved_by), ("approved", self.op2))
+        return chg
+
+    def test_editing_plan_of_approved_change_withdraws_the_approval(self):
+        chg = self._approved_change()
+        later = chg.planned_start + timedelta(days=30)
+        r = self.login(self.op).post(reverse("servicedesk:edit", args=[chg.number]), self._edit_data(
+            chg, implementation_plan="wipe the cluster", risk="high", planned_start=timezone.localtime(later).strftime(self.DT),
+            planned_end=timezone.localtime(later + timedelta(hours=1)).strftime(self.DT)))
+        self.assertEqual(r.status_code, 302)
+        chg.refresh_from_db()
+        self.assertEqual(chg.implementation_plan, "wipe the cluster")
+        self.assertEqual(chg.status, "submitted")
+        self.assertIsNone(chg.approved_by)
+        self.assertIsNone(chg.approved_at)
+        self.assertTrue(chg.timeline.filter(kind="status", body__startswith="Approval withdrawn").exists())
+        with self.assertRaises(services.WorkflowError):
+            services.transition(chg, "scheduled", user=self.op)
+        with self.assertRaises(services.WorkflowError):   # and the requester still cannot approve it alone
+            services.transition(chg, "approved", user=self.op)
+
+    def test_editing_scheduled_change_window_withdraws_the_approval(self):
+        chg = self._approved_change()
+        services.transition(chg, "scheduled", user=self.op)
+        self.login(self.op).post(reverse("servicedesk:edit", args=[chg.number]), self._edit_data(
+            chg, backout_plan="none"))
+        chg.refresh_from_db()
+        self.assertEqual((chg.status, chg.approved_by), ("submitted", None))
+
+    def test_editing_only_the_title_of_an_approved_change_keeps_the_approval(self):
+        chg = self._approved_change()
+        r = self.login(self.op).post(reverse("servicedesk:edit", args=[chg.number]), self._edit_data(chg, title="Restart node 3"))
+        self.assertEqual(r.status_code, 302)
+        chg.refresh_from_db()
+        self.assertEqual((chg.title, chg.status, chg.approved_by), ("Restart node 3", "approved", self.op2))
+
+    # -- edit form keeps the current assignee
+    def test_edit_form_keeps_an_inactive_assignee(self):
+        inc = self.incident(assignee=self.op2)
+        self.op2.is_active = False
+        self.op2.save()
+        c = self.login(self.op)
+        r = c.get(reverse("servicedesk:edit", args=[inc.number]))
+        self.assertContains(r, f'<option value="{self.op2.pk}" selected>')
+        r = c.post(reverse("servicedesk:edit", args=[inc.number]), self._edit_data(inc, title="Website down (EU)"))
+        self.assertEqual(r.status_code, 302)
+        inc.refresh_from_db()
+        self.assertEqual((inc.title, inc.assignee), ("Website down (EU)", self.op2))
+        self.assertFalse(inc.timeline.filter(kind="assignment", body="Unassigned.").exists())
+
+    # -- SLA job is tenant-scoped
+    def test_sla_job_ignores_tickets_of_other_tenants(self):
+        past = timezone.now() - timedelta(hours=1)
+        mine = self.incident(title="Mine")
+        foreign = self.incident(title="Payroll DB down for ClientX")
+        Ticket.objects.filter(pk__in=[mine.pk, foreign.pk]).update(response_due=past)
+        Ticket.objects.filter(pk=foreign.pk).update(tenant_key="other-tenant")
+        sla.flag_breaches()
+        foreign.refresh_from_db()
+        mine.refresh_from_db()
+        self.assertTrue(mine.response_breached)
+        self.assertFalse(foreign.response_breached)
+        self.assertFalse(Event.objects.filter(title__contains="Payroll DB down").filter(kind="sla_breach").exists())
+
+    # -- linked problem on an invisible site
+    def test_incident_page_and_edit_form_hide_a_linked_problem_on_an_invisible_site(self):
+        prb = self.incident(kind="problem", title="DR SECRET root cause", site="DR")
+        inc = self.incident(title="Mumbai outage", site="Mumbai")
+        services.link_problem(inc, prb, user=self.admin)
+        c = self.login(self.mum_op)
+        self.assertEqual(c.get(prb.get_absolute_url()).status_code, 404)
+        r = c.get(inc.get_absolute_url())
+        self.assertNotContains(r, "DR SECRET")
+        self.assertContains(r, "Linked to a problem on a site you cannot see")
+        self.assertNotContains(r, "Update link")   # cannot change a link that writes to the hidden problem
+        r = c.get(reverse("servicedesk:edit", args=[inc.number]))
+        self.assertNotContains(r, "DR SECRET")
+        # saving the edit form keeps the link (the field is read-only for this user)
+        r = c.post(reverse("servicedesk:edit", args=[inc.number]), self._edit_data(inc, title="Mumbai outage 2", problem=""))
+        self.assertEqual(r.status_code, 302)
+        inc.refresh_from_db()
+        self.assertEqual((inc.title, inc.problem), ("Mumbai outage 2", prb))
+        # the admin still sees it
+        self.assertContains(self.login(self.admin).get(inc.get_absolute_url()), "DR SECRET root cause")
+
+    # -- datalists scoped to visible tickets
+    def test_form_autocomplete_lists_only_values_from_visible_tickets(self):
+        dr = self.incident(title="DR outage", site="DR", client="SecretClientDR", category="SecretCategoryDR", ci_name="dr-secret-ci")
+        chg = self.incident(kind="change", title="DR patch", site="DR")
+        TicketCI.objects.create(ticket=chg, ci_name="dr-secret-linked-ci")
+        self.incident(title="Mumbai outage", site="Mumbai", client="MumClient", ci_name="mum-ci")
+        item = CatalogItem.objects.create(name="Laptop")
+        c = self.login(self.mum_op)
+        for url in (reverse("servicedesk:create"), reverse("servicedesk:edit", args=["INC-1002"]),
+                    reverse("servicedesk:catalog_request", args=[item.pk])):
+            r = c.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            for secret in ("SecretClientDR", "SecretCategoryDR", "dr-secret-ci", "dr-secret-linked-ci"):
+                self.assertNotContains(r, secret, msg_prefix=url)
+            self.assertContains(r, "MumClient", msg_prefix=url)
+        r = self.login(self.admin).get(reverse("servicedesk:create"))
+        for value in ("SecretClientDR", "SecretCategoryDR", "dr-secret-ci", "dr-secret-linked-ci"):
+            self.assertContains(r, value)
+        self.assertTrue(dr.pk)
+
+    # -- priority downgrade clears stale breach flags
+    def test_lowering_priority_clears_breach_flags_that_no_longer_apply(self):
+        t = self.incident(priority="P1", opened_at=timezone.now() - timedelta(minutes=20))
+        sla.flag_breaches()
+        t.refresh_from_db()
+        self.assertTrue(t.response_breached)
+        services.set_priority(t, "P4", user=self.op)
+        t.refresh_from_db()
+        self.assertFalse(t.response_breached)
+        self.assertFalse(t.resolution_breached)
+        self.assertEqual(sla.overall(t), "on_track")
+        self.assertTrue(t.timeline.filter(kind="sla", body__startswith="Response SLA breach cleared").exists())
+        self.assertNotIn(t, list(Ticket.objects.filter(response_breached=True)))
+
+    def test_lowering_priority_keeps_breach_flags_that_still_apply(self):
+        t = self.incident(priority="P1", opened_at=timezone.now() - timedelta(hours=10))
+        sla.flag_breaches()
+        services.set_priority(t, "P2", user=self.op)   # 30 min / 8 h: both still late
+        t.refresh_from_db()
+        self.assertTrue(t.response_breached and t.resolution_breached)
+        self.assertFalse(t.timeline.filter(kind="sla", body__contains="cleared").exists())
+
+    # -- segregation of duties is per site
+    def test_admin_on_another_site_cannot_approve_own_change(self):
+        u = User.objects.create_user("mixed-admin", password="x")
+        Membership.objects.create(user=u, site=self.dr, role="admin")
+        Membership.objects.create(user=u, site=self.mum, role="operator")
+        for site in ("Mumbai", "All Sites", ""):
+            chg = self.incident(kind="change", title=f"Patch {site}", site=site, user=u)
+            services.transition(chg, "submitted", user=u)
+            with self.assertRaises(services.WorkflowError, msg=site):
+                services.transition(chg, "approved", user=u)
+        own = self.incident(kind="change", title="DR patch", site="DR", user=u)
+        services.transition(own, "submitted", user=u)
+        services.transition(own, "approved", user=u)   # admin of that site: exempt
+        self.assertEqual(own.status, "approved")
+        tenant_admin = User.objects.create_user("tenant-admin", password="x")
+        Membership.objects.create(user=tenant_admin, site=None, role="admin")
+        glob = self.incident(kind="change", title="Global patch", site="All Sites", user=tenant_admin)
+        services.transition(glob, "submitted", user=tenant_admin)
+        services.transition(glob, "approved", user=tenant_admin)
+        self.assertEqual(glob.status, "approved")
+
+    # -- SLA targets are bounded
+    def test_sla_policy_rejects_targets_beyond_90_days(self):
+        p = SlaPolicy.objects.get(priority="P3")
+        data = {"pk": p.pk, f"p{p.pk}-name": "Medium", f"p{p.pk}-response_minutes": 240,
+                f"p{p.pk}-resolution_minutes": 100000000000, f"p{p.pk}-active": "on"}
+        r = self.login(self.admin).post(reverse("servicedesk:sla"), data)
+        self.assertContains(r, "Must be at most")
+        p.refresh_from_db()
+        self.assertEqual(p.resolution_minutes, 1440)
+        data[f"p{p.pk}-resolution_minutes"] = 90 * 24 * 60
+        self.assertRedirects(self.login(self.admin).post(reverse("servicedesk:sla"), data), reverse("servicedesk:sla"))
+
+    def test_out_of_range_sla_target_does_not_block_ticket_creation(self):
+        # A target beyond the calendar (storable on SQLite, not on PostgreSQL's integer column) is handed to the
+        # due-date code directly, so the test does not depend on the database's integer range.
+        from servicedesk import sla
+        bad = SlaPolicy(priority="P3", name="Medium", response_minutes=240, resolution_minutes=100000000000)
+        with mock.patch.object(sla, "policy_for", return_value=bad), \
+                self.assertLogs("linkedeye.servicedesk", level="WARNING"):
+            t = self.incident(priority="P3")
+        self.assertIsNone(t.resolution_due)
+        self.assertEqual(t.response_due - t.opened_at, timedelta(minutes=240))
+
+    # -- linking writes to the problem: operate needed on its site
+    def test_incident_side_link_needs_operate_on_the_problem_site(self):
+        u = User.objects.create_user("mum-op-dr-viewer", password="x")
+        Membership.objects.create(user=u, site=self.mum, role="operator")
+        Membership.objects.create(user=u, site=self.dr, role="viewer")
+        dr_prb = self.incident(kind="problem", title="DR cause", site="DR")
+        mum_prb = self.incident(kind="problem", title="Mumbai cause", site="Mumbai")
+        inc = self.incident(title="Mumbai outage", site="Mumbai")
+        c = self.login(u)
+        r = c.get(inc.get_absolute_url())
+        self.assertNotIn(dr_prb, list(r.context["problem_choices"]))
+        self.assertIn(mum_prb, list(r.context["problem_choices"]))
+        c.post(reverse("servicedesk:link", args=[inc.number]), {"problem": dr_prb.number})
+        inc.refresh_from_db()
+        self.assertIsNone(inc.problem)
+        self.assertFalse(dr_prb.timeline.filter(kind="link").exists())
+        r = c.post(reverse("servicedesk:create"), {"kind": "incident", "title": "x", "priority": "P3", "site": "Mumbai",
+                                                    "problem": dr_prb.pk})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(Ticket.objects.filter(title="x").exists())
+        r = c.post(reverse("servicedesk:edit", args=[inc.number]), self._edit_data(inc, problem=dr_prb.pk))
+        self.assertEqual(r.status_code, 200)
+        inc.refresh_from_db()
+        self.assertIsNone(inc.problem)
+        # an existing link to the DR problem cannot be removed or moved by this user either
+        services.link_problem(inc, dr_prb, user=self.admin)
+        r = c.get(inc.get_absolute_url())
+        self.assertNotContains(r, "Update link")
+        for value in ("", mum_prb.number):
+            c.post(reverse("servicedesk:link", args=[inc.number]), {"problem": value})
+            inc.refresh_from_db()
+            self.assertEqual(inc.problem, dr_prb, value)
+        # nor from the problem side (moving the incident away from the DR problem writes to it)
+        c.post(reverse("servicedesk:link", args=[mum_prb.number]), {"incident": inc.number})
+        inc.refresh_from_db()
+        self.assertEqual(inc.problem, dr_prb)
+        # linking a Mumbai problem works
+        other = self.incident(title="Mumbai outage 2", site="Mumbai")
+        c.post(reverse("servicedesk:link", args=[other.number]), {"problem": mum_prb.number})
+        other.refresh_from_db()
+        self.assertEqual(other.problem, mum_prb)
+
+
+class AuditFixReviewTests(Base):
+    """Follow-ups found while reviewing the audit fixes."""
+
+    DT = AuditFixTests.DT
+    _edit_data = AuditFixTests._edit_data
+    _approved_change = AuditFixTests._approved_change
+
+    def test_browser_resubmitting_an_unchanged_plan_keeps_the_approval(self):
+        # plans written outside the form (seed data, imports) use "\n"; a browser posts textareas back with "\r\n"
+        # and the form strips surrounding whitespace: neither is an edit of the approved plan
+        chg = self._approved_change()
+        Ticket.objects.filter(pk=chg.pk).update(implementation_plan="1. backup\n2. restart one node\n",
+                                                backout_plan="  start it again")
+        chg.refresh_from_db()
+        r = self.login(self.op).post(reverse("servicedesk:edit", args=[chg.number]), self._edit_data(
+            chg, title="Restart node 3", implementation_plan="1. backup\r\n2. restart one node", backout_plan="start it again"))
+        self.assertEqual(r.status_code, 302)
+        chg.refresh_from_db()
+        self.assertEqual((chg.title, chg.status, chg.approved_by), ("Restart node 3", "approved", self.op2))
+        # a real edit of the plan still withdraws it
+        self.login(self.op).post(reverse("servicedesk:edit", args=[chg.number]), self._edit_data(
+            chg, implementation_plan="1. backup\r\n2. restart every node"))
+        chg.refresh_from_db()
+        self.assertEqual((chg.status, chg.approved_by), ("submitted", None))
+
+    def test_re_alert_escalation_clears_breach_flags_that_no_longer_apply(self):
+        # a higher priority is not always a stricter target (a policy can be inactive or configured longer)
+        t = services.open_incident("Disk full", priority="P3", fingerprint="fp-disk")
+        Ticket.objects.filter(pk=t.pk).update(opened_at=timezone.now() - timedelta(hours=5))
+        t.refresh_from_db()
+        sla.apply_due_dates(t)
+        t.save()
+        sla.flag_breaches()
+        t.refresh_from_db()
+        self.assertTrue(t.response_breached)
+        SlaPolicy.objects.filter(priority="P2").update(active=False)
+        services.open_incident("Disk full", priority="P2", fingerprint="fp-disk")
+        t.refresh_from_db()
+        self.assertEqual(t.priority, "P2")
+        self.assertIsNone(t.response_due)
+        self.assertFalse(t.response_breached)
+        self.assertTrue(t.timeline.filter(kind="sla", body__startswith="Response SLA breach cleared").exists())
+
+    def test_approve_button_hidden_from_a_requester_who_cannot_approve_their_own_change(self):
+        u = User.objects.create_user("mixed-admin", password="x")
+        Membership.objects.create(user=u, site=Site.objects.create(name="DR", code="dr"), role="admin")
+        Membership.objects.create(user=u, site=Site.objects.create(name="Mumbai", code="mum"), role="operator")
+        mine = self.incident(kind="change", title="Patch Mumbai", site="Mumbai", user=u)
+        services.transition(mine, "submitted", user=u)
+        moves = [m[0] for m in self.login(u).get(mine.get_absolute_url()).context["transitions"]]
+        self.assertNotIn("approved", moves)
+        self.assertIn("rejected", moves)
+        self.assertIn("approved", [m[0] for m in self.login(self.op2).get(mine.get_absolute_url()).context["transitions"]])
+        dr = self.incident(kind="change", title="Patch DR", site="DR", user=u)
+        services.transition(dr, "submitted", user=u)
+        self.assertIn("approved", [m[0] for m in self.login(u).get(dr.get_absolute_url()).context["transitions"]])

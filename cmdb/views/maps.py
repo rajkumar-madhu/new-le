@@ -28,7 +28,7 @@ def topology_view(request):
     edges = [e for e in services.edges_for() if e[1] in ci_map and e[2] in ci_map]
     domain = request.GET.get("domain", "").strip()
     root_id = request.GET.get("root", "")
-    root = ci_map.get(int(root_id)) if root_id.isdigit() else None
+    root = ci_map.get(services.as_pk(root_id))
     note = ""
     if root is not None:
         keep = topology.neighbourhood(root.pk, edges)

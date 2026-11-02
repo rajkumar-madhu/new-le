@@ -17,7 +17,8 @@ from core.audit import audit
 from .. import csvio, services
 from ..forms import LicenseForm, SoftwareForm
 from ..models import HARDWARE_TYPES, CIStatus, CIType, ConfigurationItem, Environment, License, Software
-from .common import csv_response, days_class, mark_row_perms, paginate, perms, query_without_page, safe_next, site_checker
+from .common import (csv_response, days_class, mark_row_perms, need_site, paginate, perms, query_without_page, safe_next,
+                     site_checker)
 from .items import filter_items
 
 HW_CHOICES = [(v, l) for v, l in CIType.choices if v in HARDWARE_TYPES]
@@ -147,6 +148,8 @@ def software_detail(request, pk):
 @require("operate")
 def software_form(request, pk=None):
     sw = get_object_or_404(_software(request), pk=pk) if pk else None
+    if sw is None:
+        need_site(request, "operate", "All Sites")   # a new title is shared by every site
     if request.method == "POST":
         form = SoftwareForm(request.POST, instance=sw, user=request.user)
         if form.is_valid():
@@ -196,6 +199,7 @@ def software_installs(request, pk):
 @require("admin")
 def software_delete(request, pk):
     sw = get_object_or_404(_software(request), pk=pk)
+    need_site(request, "admin", "All Sites")   # also drops the installs on every site
     name = str(sw)
     audit(request, "delete", sw, name=sw.name, version=sw.version, installs=sw.installs.count())
     sw.delete()
@@ -263,6 +267,7 @@ def licenses(request):
 @require("operate")
 def license_form(request, pk=None):
     lic = get_object_or_404(License.objects.filter(tenant_key=settings.LINKEDEYE_TENANT), pk=pk) if pk else None
+    need_site(request, "operate", "All Sites")   # licenses are tenant-wide
     if request.method == "POST":
         form = LicenseForm(request.POST, instance=lic)
         if form.is_valid():
@@ -289,6 +294,7 @@ def license_form(request, pk=None):
 @require("admin")
 def license_delete(request, pk):
     lic = get_object_or_404(License.objects.filter(tenant_key=settings.LINKEDEYE_TENANT), pk=pk)
+    need_site(request, "admin", "All Sites")
     name = lic.product
     audit(request, "delete", lic, product=lic.product, seats=lic.seats)
     lic.delete()
@@ -315,7 +321,7 @@ WINDOWS = [("30", "Next 30 days", 0, 30), ("90", "31–90 days", 31, 90), ("180"
 def lifecycle_events(request, include_licenses=True):
     """Every dated lifecycle milestone: warranty end and EOL of CIs, license expiry."""
     today = timezone.localdate()
-    can_edit_lic = can(request.user, "operate")
+    can_edit_lic = services.can_manage(request.user, "operate", "All Sites")
     out = []
     for c in services.ci_queryset(request.user).exclude(status="retired").filter(
             Q(warranty_end__isnull=False) | Q(eol_date__isnull=False)).order_by("name"):

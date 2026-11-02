@@ -7,7 +7,7 @@
 <div class="head">
   <div class="glyph bg-info" style="border-radius:50%">{% icon "link" 26 %}</div>
   <div><h1>{{ check.name }} {% badge check.last_status %}</h1><p><a href="{{ check.url }}" rel="noopener" target="_blank">{{ check.url }}</a> · {{ check.site }} · every {{ check.get_interval_seconds_display }}</p></div>
-  <div class="actions">{% if user.is_staff %}
+  <div class="actions">{% if check.can_op %}
     <button class="btn primary" data-post="{% url 'urlchecker:run' check.pk %}" data-busy="Checking…">{% icon "play" 15 %}Run check now</button>
     <a class="btn" href="{% url 'urlchecker:edit' check.pk %}#form">{% icon "edit" 15 %}Edit</a>{% endif %}</div>
 </div>

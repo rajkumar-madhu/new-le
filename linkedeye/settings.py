@@ -23,6 +23,8 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1" if DEBUG else "")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+# Reverse proxies (IPs or CIDRs) whose X-Forwarded-For is believed for audit source IPs; empty = use the peer.
+TRUSTED_PROXIES = env_list("TRUSTED_PROXIES")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
