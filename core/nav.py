@@ -3,14 +3,6 @@ an item whose URL name does not resolve yet opens the "not built yet" page."""
 
 NAV = [
     {"label": "Dashboard", "icon": "home", "url": "dashboard"},
-    {"label": "Service Desk", "icon": "headset", "children": [
-        {"label": "Tickets", "url": "servicedesk:tickets"},
-        {"label": "Incidents", "url": "servicedesk:incidents"},
-        {"label": "Problems", "url": "servicedesk:problems"},
-        {"label": "Changes", "url": "servicedesk:changes"},
-        {"label": "Service Catalog", "url": "servicedesk:catalog"},
-        {"label": "SLA Policies", "url": "servicedesk:sla"},
-    ]},
     {"label": "Assets", "icon": "box", "children": [
         {"label": "IT Assets", "url": "cmdb:assets"}, {"label": "Software", "url": "cmdb:software"},
         {"label": "Licenses", "url": "cmdb:licenses"}, {"label": "Lifecycle", "url": "cmdb:lifecycle"},
@@ -62,4 +54,12 @@ NAV = [
     {"label": "Analytics", "icon": "analytics", "url": "reports:analytics", "chev": True},
     {"label": "Reports", "icon": "clipboard", "url": "reports:index", "chev": True},
     {"label": "Administration", "icon": "settings", "url": "administration:index", "chev": True},
+    {"label": "Service Desk", "icon": "headset", "children": [
+        {"label": "Tickets", "url": "servicedesk:tickets"},
+        {"label": "Incidents", "url": "servicedesk:incidents"},
+        {"label": "Problems", "url": "servicedesk:problems"},
+        {"label": "Changes", "url": "servicedesk:changes"},
+        {"label": "Service Catalog", "url": "servicedesk:catalog"},
+        {"label": "SLA Policies", "url": "servicedesk:sla"},
+    ]},
 ]

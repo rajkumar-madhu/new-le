@@ -163,6 +163,20 @@ class RunDueTenantTests(TestCase):
 
 
 # ------------------------------------------------------------ 4. check deleted while its probe is in flight
+def _worker(fn):
+    """Wrap a fake probe that touches the DB. The runner calls probes on thread-pool workers, and each worker opens
+    its own DB connection; close it when the fake returns, or the open session can make the test-database teardown
+    fail on PostgreSQL ("database ... is being accessed by other users")."""
+    from django.db import connection
+
+    def run(*args):
+        try:
+            return fn(*args)
+        finally:
+            connection.close()
+    return run
+
+
 class DeletedDuringProbeTests(TransactionTestCase):
     def test_deleted_url_check_does_not_abort_the_batch(self):
         a = UrlCheck.objects.create(name="a", url="https://a.example/")
@@ -173,7 +187,7 @@ class DeletedDuringProbeTests(TransactionTestCase):
                 UrlCheck.objects.filter(pk=a.pk).delete()
             return fake_http()
 
-        with mock.patch.object(runner, "_probe_url", side_effect=probe), \
+        with mock.patch.object(runner, "_probe_url", side_effect=_worker(probe)), \
              mock.patch.object(runner.settings, "PROBE_WORKERS", 1):
             statuses = runner.run_url_checks([a, b])
         self.assertEqual(statuses, [None, "online"])
@@ -192,7 +206,7 @@ class DeletedDuringProbeTests(TransactionTestCase):
                 Domain.objects.filter(pk=a.pk).delete()
             return ok
 
-        with mock.patch.object(runner, "_probe_domain", side_effect=probe), \
+        with mock.patch.object(runner, "_probe_domain", side_effect=_worker(probe)), \
              mock.patch.object(runner.settings, "PROBE_WORKERS", 1):
             statuses = runner.run_domain_checks([a, b])
         self.assertEqual(statuses, [None, "up"])
@@ -201,7 +215,7 @@ class DeletedDuringProbeTests(TransactionTestCase):
 
     def test_run_due_still_reaches_domain_checks(self):
         a = UrlCheck.objects.create(name="a", url="https://a.example/")
-        with mock.patch.object(runner, "_probe_url", side_effect=lambda c: (UrlCheck.objects.filter(pk=a.pk).delete(), fake_http())[1]), \
+        with mock.patch.object(runner, "_probe_url", side_effect=_worker(lambda c: (UrlCheck.objects.filter(pk=a.pk).delete(), fake_http())[1])), \
              mock.patch.object(runner, "run_domain_checks") as doms:
             runner.run_due()
         doms.assert_called_once()

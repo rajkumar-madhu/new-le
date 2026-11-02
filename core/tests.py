@@ -136,6 +136,16 @@ class OverviewTests(TestCase):
         self.assertContains(resp, '<td class="wrap ev"><span class="t-mute small">bodeod · ')
         self.assertContains(resp, "BOD validation completed with warnings</td>")
 
+    def test_service_desk_is_the_last_sidebar_section(self):
+        from core.nav import NAV
+        labels = [item["label"] for item in NAV]
+        self.assertEqual(labels[-1], "Service Desk")
+        self.assertEqual(labels[0], "Dashboard")
+        self.client.force_login(self.admin)
+        html = self.client.get(reverse("dashboard")).content.decode()
+        side = html[html.index('class="nav"'):html.index("</nav>")]
+        self.assertGreater(side.index("Service Desk"), side.index("Administration"))
+
     def test_search_covers_devices_and_respects_sites(self):
         self.client.force_login(self.viewer)
         resp = self.client.get(reverse("search"), {"q": "SN-777"})
