@@ -18,7 +18,7 @@
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last Checked</div><div class="value">{{ check.last_checked_at|ago }}</div></div></div><div class="sub" title="{{ check.last_error }}">{{ check.last_error|default:"No errors" }}</div></div>
 </section>
 <div class="panel"><div class="panel-h nowrap"><h2>Response Time Trend (Last 24 Hours)</h2>
-  <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Minimum</span><span><i style="background:#dc2626"></i>Maximum</span></div></div><div class="chart" data-chart="line" data-src="d-trend" style="height:220px"></div></div>
+  <div class="right legend"><span><i style="background:#2b4cff"></i>Average</span><span><i style="background:#0f7a55"></i>Minimum</span><span><i style="background:#ff5b2e"></i>Maximum</span></div></div><div class="chart" data-chart="line" data-src="d-trend" style="height:220px"></div></div>
 <div class="panel"><div class="panel-h"><h2>Check History</h2><small>latest 50</small></div>
   <div class="table-wrap dense check-history"><table><thead><tr><th>Time</th><th>Status</th><th>HTTP</th><th>Response</th><th>TLS expires</th><th>Message</th></tr></thead><tbody>
   {% for r in results %}<tr><td>{{ r.checked_at|short_dt }}</td><td>{% badge r.status %}</td><td>{{ r.http_status|default:"–" }}</td><td class="{% if r.status != 'online' %}t-{{ r.status|tone }}{% endif %}">{{ r.response_ms|ms }}</td><td>{{ r.tls_expires_at|date:"d M Y"|default:"–" }}</td><td class="wrap">{{ r.message }}</td></tr>

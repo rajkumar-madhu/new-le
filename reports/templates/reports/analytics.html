@@ -32,13 +32,13 @@
 
 <section class="grid g-2">
   <div class="panel"><div class="panel-h"><h2>Incidents opened vs resolved</h2>
-      <div class="right legend square"><span><i style="background:#1565f0"></i>Opened</span><span><i style="background:#16a34a"></i>Resolved</span></div></div>
+      <div class="right legend square"><span><i style="background:#ff5b2e"></i>Opened</span><span><i style="background:#0f7a55"></i>Resolved</span></div></div>
     {% if sd.error %}<p class="empty">{{ sd.error }}</p>
     {% elif not sd.has_data %}<p class="empty">No incidents in this period.</p>
     {% else %}{{ sd.trend|json_script:"d-sd-trend" }}<div class="chart" data-chart="bars" data-src="d-sd-trend" style="height:220px"></div>{% endif %}
   </div>
   <div class="panel"><div class="panel-h"><h2>Daily availability</h2>
-      <div class="right legend"><span><i style="background:#1565f0"></i>URL checks</span><span><i style="background:#7c3aed"></i>Domains</span></div></div>
+      <div class="right legend"><span><i style="background:#ff5b2e"></i>URL checks</span><span><i style="background:#2b4cff"></i>Domains</span></div></div>
     {% if av.error %}<p class="empty">{{ av.error }}</p>
     {% elif not av.has_data %}<p class="empty">No check results in this period. Checks run with <code>manage.py run_probes</code>.</p>
     {% else %}{{ av.chart|json_script:"d-av" }}<div class="chart" data-chart="line" data-src="d-av" style="height:220px"></div>{% endif %}
@@ -59,7 +59,7 @@
   </div>
 
   <div class="panel"><div class="panel-h"><h2>Events ({{ ev.total|default:0 }})</h2>
-      <div class="right legend square"><span><i style="background:#ef4444"></i>Critical</span><span><i style="background:#f5b400"></i>Warning</span></div></div>
+      <div class="right legend square"><span><i style="background:#d92d20"></i>Critical</span><span><i style="background:#e08a00"></i>Warning</span></div></div>
     {% if ev.error %}<p class="empty">{{ ev.error }}</p>
     {% elif not ev.has_data %}<p class="empty">No events in this period.</p>
     {% else %}
@@ -67,7 +67,7 @@
     <h3 class="rp-sub">By severity</h3>
     <div class="hbar">{% for s in ev.by_severity %}<span>{{ s.severity|title }}</span><span class="track"><i style="width:{{ s.n|share:ev.total }}%;background:{{ s.color }}"></i></span><b>{{ s.n }}</b>{% endfor %}</div>
     <h3 class="rp-sub">Top sources</h3>
-    <div class="hbar">{% for s in ev.by_source %}<span>{{ s.source }}</span><span class="track"><i style="width:{{ s.n|share:ev.total }}%;background:#1d7cf2"></i></span><b>{{ s.n }}</b>{% endfor %}</div>
+    <div class="hbar">{% for s in ev.by_source %}<span>{{ s.source }}</span><span class="track"><i style="width:{{ s.n|share:ev.total }}%;background:var(--accent-blue)"></i></span><b>{{ s.n }}</b>{% endfor %}</div>
     {% endif %}
   </div>
 
@@ -75,9 +75,9 @@
     {% if av.error %}<p class="empty">{{ av.error }}</p>
     {% elif not av.least %}<p class="empty">No check results in this period.</p>
     {% else %}
-    <div class="table-wrap dense"><table><thead><tr><th>Name</th><th>Type</th><th>Site</th><th>Uptime</th></tr></thead><tbody>
-      {% for r in av.least %}<tr><td>{% if r.kind == "URL" %}<a href="{% url 'urlchecker:detail' r.pk %}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td><td>{{ r.kind }}</td><td>{{ r.site }}</td>
-        <td class="{% if r.pct < 99 %}t-crit{% else %}t-ok{% endif %}" title="{{ r.samples }} samples">{{ r.pct|pct }}</td></tr>{% endfor %}
+    <div class="table-wrap dense rp-least"><table><thead><tr><th>Name</th><th>Type</th><th>Site</th><th class="num">Uptime</th></tr></thead><tbody>
+      {% for r in av.least %}<tr><td title="{{ r.name }}">{% if r.kind == "URL" %}<a href="{% url 'urlchecker:detail' r.pk %}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td><td>{{ r.kind }}</td><td>{{ r.site }}</td>
+        <td class="num {% if r.pct < 99 %}t-crit{% else %}t-ok{% endif %}" title="{{ r.samples }} samples">{{ r.pct|pct }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% endif %}
   </div>
@@ -87,7 +87,7 @@
   <div class="panel"><div class="panel-h"><h2>CIs with the most incidents</h2></div>
     {% if sd.error %}<p class="empty">{{ sd.error }}</p>
     {% elif not sd.top_cis %}<p class="empty">No incidents linked to a configuration item in this period.</p>
-    {% else %}<div class="hbar">{% for c in sd.top_cis %}<span title="{{ c.ci_name }}">{{ c.ci_name|truncatechars:22 }}</span><span class="track"><i style="width:{{ c.n|share:sd.top_cis.0.n }}%;background:#7c3aed"></i></span><b>{{ c.n }}</b>{% endfor %}</div>{% endif %}
+    {% else %}<div class="hbar">{% for c in sd.top_cis %}<span title="{{ c.ci_name }}">{{ c.ci_name|truncatechars:22 }}</span><span class="track"><i style="width:{{ c.n|share:sd.top_cis.0.n }}%;background:var(--brand)"></i></span><b>{{ c.n }}</b>{% endfor %}</div>{% endif %}
   </div>
   <div class="panel"><div class="panel-h"><h2>Estate snapshot</h2></div>
     {% if inv.error %}<p class="empty">{{ inv.error }}</p>

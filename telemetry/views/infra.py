@@ -4,7 +4,7 @@ from django.shortcuts import render
 from core import prometheus
 from core.access import require, scope_by_site, visible_sites
 
-from .. import hosts as svc
+from .. import hosts as svc, palette as pal
 from ..fmt import finite, human_duration, human_rate
 from ..models import Alert
 from .common import csv_response, matches, paginate, perms, prom_context, query_without_page
@@ -68,8 +68,8 @@ def infrastructure(request):
     page = paginate(request, rows)
     for i, h in enumerate(page):
         vals = sparks.get(h["instance"]) or []
-        h["spark"] = {"values": vals, "color": "#dc2626" if h["health"] in ("critical", "down") else
-                      "#f59e0b" if h["health"] == "warning" else "#1565f0"} if len(vals) >= 2 else None
+        h["spark"] = {"values": vals, "color": pal.CRIT if h["health"] in ("critical", "down") else
+                      pal.WARN if h["health"] == "warning" else pal.BLUE} if len(vals) >= 2 else None
         h["spark_id"] = f"spark-{i}"
         h["rx_text"], h["tx_text"], h["uptime_text"] = human_rate(h.get("rx")), human_rate(h.get("tx")), human_duration(h.get("uptime"))
     c = summary["counts"]
@@ -77,11 +77,11 @@ def infrastructure(request):
         "summary": summary, "page": page, "jobs": jobs, "health_choices": HEALTH_CHOICES,
         "query": query_without_page(request, "refresh"), "filtered": bool(q or health or job),
         "donut": {"segments": [
-            {"label": "Healthy", "value": c["healthy"], "color": "#16a34a"},
-            {"label": "Warning", "value": c["warning"], "color": "#f59e0b"},
-            {"label": "Critical", "value": c["critical"], "color": "#dc2626"},
-            {"label": "Down", "value": c["down"], "color": "#7f1d1d"},
-            {"label": "No data", "value": c["unknown"], "color": "#cbd5e1"}],
+            {"label": "Healthy", "value": c["healthy"], "color": pal.OK},
+            {"label": "Warning", "value": c["warning"], "color": pal.WARN},
+            {"label": "Critical", "value": c["critical"], "color": pal.CRIT},
+            {"label": "Down", "value": c["down"], "color": pal.DOWN},
+            {"label": "No data", "value": c["unknown"], "color": pal.STONE_LIGHT}],
             "center": {"value": str(summary["total"]), "label": "Hosts"}},
         "top_cpu": svc.top(hosts, "cpu"), "top_memory": svc.top(hosts, "memory"), "top_disk": svc.top(hosts, "disk"),
         "thresholds": svc.thresholds(),

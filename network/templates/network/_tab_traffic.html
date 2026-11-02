@@ -4,7 +4,7 @@
     <nav class="seg right" aria-label="Range"><a href="?tab=traffic&amp;range=24h" class="{% if traffic_range == '24h' %}on{% endif %}">24 hours</a><a href="?tab=traffic&amp;range=7d" class="{% if traffic_range == '7d' %}on{% endif %}">7 days</a></nav></div>
   {% if traffic %}
     <div class="chart" data-chart="line" data-src="nw-traffic" style="height:260px"></div>
-    <div class="legend nw-legend"><span><i style="background:#1565f0"></i>Inbound now <b>{{ total_in|mbps }}</b></span><span><i style="background:#f97316"></i>Outbound now <b>{{ total_out|mbps }}</b></span><span class="t-mute">Sum of all interfaces (rate over 5 min) from Prometheus</span></div>
+    <div class="legend nw-legend"><span><i class="sw-in"></i>Inbound now <b>{{ total_in|mbps }}</b></span><span><i class="sw-out"></i>Outbound now <b>{{ total_out|mbps }}</b></span><span class="t-mute">Sum of all interfaces (rate over 5 min) from Prometheus</span></div>
   {% else %}<div class="nw-empty">{% icon "activity" 28 %}<p>{{ traffic_msg }}</p></div>{% endif %}
 </section>
 <section class="grid g-2">

@@ -18,8 +18,8 @@ from core.access import scope_by_site
 RANGES = [(7, "Last 7 days"), (30, "Last 30 days"), (90, "Last 90 days")]
 DEFAULT_RANGE = 30
 MIN_BASE = 5
-PRIORITY_COLORS = {"P1": "#ef4444", "P2": "#f97316", "P3": "#f5b400", "P4": "#1d7cf2"}
-SEVERITY_COLORS = {"critical": "#ef4444", "warning": "#f5b400", "info": "#1d7cf2", "ok": "#16a34a"}
+PRIORITY_COLORS = {"P1": "#d92d20", "P2": "#ff5b2e", "P3": "#e08a00", "P4": "#2b4cff"}
+SEVERITY_COLORS = {"critical": "#d92d20", "warning": "#e08a00", "info": "#2b4cff", "ok": "#0f7a55"}
 
 
 def parse_range(value):
@@ -114,8 +114,8 @@ def service_desk(user, w, site=""):
     opened_by_day = _daily(cur, "opened_at", w, n=Count("id"))
     resolved_by_day = _daily(resolved_in_window, "resolved_at", w, n=Count("id"))
     trend = {"labels": w.labels, "xLabelEvery": w.x_every, "stacked": False, "series": [
-        {"name": "Opened", "color": "#1565f0", "values": [opened_by_day.get(d, {}).get("n", 0) for d in w.dates]},
-        {"name": "Resolved", "color": "#16a34a", "values": [resolved_by_day.get(d, {}).get("n", 0) for d in w.dates]},
+        {"name": "Opened", "color": "#ff5b2e", "values": [opened_by_day.get(d, {}).get("n", 0) for d in w.dates]},
+        {"name": "Resolved", "color": "#0f7a55", "values": [resolved_by_day.get(d, {}).get("n", 0) for d in w.dates]},
     ]}
     by_priority = dict(cur.values_list("priority").annotate(n=Count("id")))
     donut = {"segments": [{"label": p, "value": by_priority.get(p, 0), "color": c} for p, c in PRIORITY_COLORS.items()],
@@ -156,7 +156,7 @@ def availability(user, w, site=""):
         out["url_prev"] = url_pct(res.filter(checked_at__gte=w.prev_start, checked_at__lt=w.start))
         out["url_checks"] = checks.count()
         daily = _daily(cur, "checked_at", w, t=Count("id"), up=Count("id", filter=~Q(status="down")))
-        out["series"].append({"name": "URL checks", "color": "#1565f0", "endDot": True, "values": [
+        out["series"].append({"name": "URL checks", "color": "#ff5b2e", "endDot": True, "values": [
             round(100.0 * daily[d]["up"] / daily[d]["t"], 2) if d in daily and daily[d]["t"] else None for d in w.dates]})
         least = (cur.values("url_check_id", "url_check__name", "url_check__site")
                  .annotate(t=Count("id"), up=Count("id", filter=~Q(status="down"))).filter(t__gt=0))
@@ -178,7 +178,7 @@ def availability(user, w, site=""):
         out["domain_prev"] = dom_pct(res.filter(checked_at__gte=w.prev_start, checked_at__lt=w.start))
         out["domains"] = doms.count()
         daily = _daily(cur, "checked_at", w, t=Count("id"), up=Count("id", filter=Q(up=True)))
-        out["series"].append({"name": "Domains", "color": "#7c3aed", "dash": "5 4", "endDot": True, "values": [
+        out["series"].append({"name": "Domains", "color": "#2b4cff", "dash": "5 4", "endDot": True, "values": [
             round(100.0 * daily[d]["up"] / daily[d]["t"], 2) if d in daily and daily[d]["t"] else None for d in w.dates]})
         least = (cur.values("domain_id", "domain__hostname", "domain__site_key")
                  .annotate(t=Count("id"), up=Count("id", filter=Q(up=True))).filter(t__gt=0))

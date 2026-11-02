@@ -33,7 +33,7 @@
 </section>
 
 <section class="grid inc-charts">
-  <div class="panel inc-trend"><div class="panel-h nowrap"><h2>Incident Trend</h2><div class="right legend"><span><i style="background:#1d7cf2"></i>Created</span><span><i class="fill-ok"></i>Resolved</span></div></div>
+  <div class="panel inc-trend"><div class="panel-h nowrap"><h2>Incident Trend</h2><div class="right legend"><span><i style="background:var(--accent-blue)"></i>Created</span><span><i class="fill-ok"></i>Resolved</span></div></div>
     <div class="chart" data-chart="line" data-src="d-trend" data-smooth="1" style="height:168px"></div></div>
   <div class="panel"><div class="panel-h"><h2>Incidents by Status</h2></div><div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-status" data-gap="1"></div>
     <div class="donut-legend">{% for s in d.by_status.segments %}<span><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</span><b>{{ s.value }}</b>{% endfor %}</div></div></div>
@@ -60,7 +60,7 @@
       <td><span class="ip {{ r.s_tone }}">{% if r.s_dot %}<i></i>{% endif %}{{ r.status }}</span></td>
       <td>{{ r.client }}</td><td>{{ r.category }}</td>
       <td>{% if r.unassigned %}<span class="who t-mute"><span class="av inc-av none">{% icon "user" 13 %}</span>Unassigned</span>{% else %}<span class="who"><span class="av inc-av" style="background:{{ r.av_color }}">{{ r.initials }}</span>{{ r.assignee }}</span>{% endif %}</td>
-      <td>{{ r.created }}</td>
+      <td class="created">{{ r.created }}</td>
       <td class="sla">{% if r.done %}{% icon "check-circle" 15 "t-ok" %} <span class="t-mute">—</span>{% else %}<span class="tn-{{ r.sla_tone }}">{% icon "clock" 15 %} {{ r.sla }}</span>{% endif %}</td>
       <td class="act"><button class="btn icon" type="button" aria-label="Actions for {{ r.id }}">{% icon "more" 16 %}</button></td></tr>{% endfor %}
     <tr class="inc-none" hidden><td colspan="11" class="empty">No incidents match the selected filters.</td></tr>
@@ -112,7 +112,7 @@
       } else if (path.getAttribute('fill') === 'none' && path.getAttribute('stroke')) {
         var q = pts(d); if (q.length < 2) return;
         path.setAttribute('d', curve(q));
-        q.forEach(function (c) { mk('circle', { cx: c[0], cy: c[1], r: 3.4, fill: path.getAttribute('stroke'), stroke: '#fff', 'stroke-width': 1.4 }, svg, path.nextSibling); });
+        q.forEach(function (c) { mk('circle', { cx: c[0], cy: c[1], r: 3.4, fill: path.getAttribute('stroke'), stroke: '#fffcf7', 'stroke-width': 1.4 }, svg, path.nextSibling); });
       }
     });
   }
@@ -123,7 +123,7 @@
       var p = pts(path.getAttribute('d') || ''); if (!p.length) return;
       var w = +path.getAttribute('stroke-width'), dx = p[0][0] - c, dy = p[0][1] - c, R = Math.hypot(dx, dy), ux = dx / R, uy = dy / R;
       var r0 = R - w / 2 - 1, r1 = R + w / 2 + 1;
-      mk('line', { x1: c + ux * r0, y1: c + uy * r0, x2: c + ux * r1, y2: c + uy * r1, stroke: '#fff', 'stroke-width': 2.5 }, svg);
+      mk('line', { x1: c + ux * r0, y1: c + uy * r0, x2: c + ux * r1, y2: c + uy * r1, stroke: '#fffcf7', 'stroke-width': 2.5 }, svg);
     });
   }
   function polish(host) {

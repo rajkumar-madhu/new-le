@@ -23,7 +23,7 @@
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warning</div><div class="value">{{ kpis.warning }}</div></div></div><div class="sub">severity warning</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "user" 22 %}</div><div class="kpi-body"><div class="label">Needs Ack</div><div class="value">{{ kpis.unacked }}</div></div></div><div class="sub">Firing, nobody on it yet</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Resolved 24h</div><div class="value">{{ kpis.resolved24 }}</div></div></div><div class="sub">Recovered alerts</div></div>
-  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last Received</div><div class="value" style="font-size:20px">{{ kpis.last|since }}</div></div></div><div class="sub">{% if kpis.last %}{{ kpis.last|short_dt }}{% else %}Nothing received yet{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Last Alert</div><div class="value tm-ago">{{ kpis.last|since|unit_small }}</div></div></div><div class="sub">{% if kpis.last %}{{ kpis.last|short_dt }}{% else %}Nothing received yet{% endif %}</div></div>
 </section>
 
 <section class="grid g-main">

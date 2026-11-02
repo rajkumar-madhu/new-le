@@ -1,4 +1,5 @@
 from django import template
+from django.utils.html import format_html
 
 from .. import fmt
 from ..hosts import HEALTH_LABEL, HEALTH_TONE, grade as _grade
@@ -59,6 +60,16 @@ def pct1(v):
 @register.filter
 def ms_from_s(v):
     return "–" if not fmt.finite(v) else (f"{v * 1000:.0f} ms" if v < 10 else f"{v:.1f} s")
+
+
+@register.filter
+def unit_small(text):
+    """'915 ms' -> '915<small> ms</small>' so a KPI number keeps the large serif and its unit stays quiet."""
+    s = str(text if text is not None else "")
+    num, sep, rest = s.partition(" ")
+    if not sep or not num[:1].isdigit():
+        return s
+    return format_html("{}<small> {}</small>", num, rest)
 
 
 @register.filter

@@ -14,9 +14,15 @@ from . import workflow as wf
 
 RANGES = [(7, "Last 7 days"), (15, "Last 15 days"), (30, "Last 30 days"), (90, "Last 90 days")]
 DEFAULT_RANGE = 15
-CATEGORY_COLORS = ["#1565f0", "#6366f1", "#818cf8", "#10b981", "#f59e0b", "#ef4444", "#94a3b8", "#0ea5e9"]
-AVATAR_COLORS = ["#1565f0", "#7c3aed", "#0f766e", "#b45309", "#db2777", "#4f46e5", "#0369a1", "#15803d", "#be123c"]
-SLA_COLORS = {"met": "#16a34a", "on_track": "#1d7cf2", "at_risk": "#f5b400", "breached": "#ef4444"}
+# Theme palette (see core/static/linkedeye/app.css): coral, blue, green, amber, purple, teal, stone, light stone.
+# Red is left out so a category bar never reads as "critical".
+CATEGORY_COLORS = ["#ff5b2e", "#2b4cff", "#0f7a55", "#e08a00", "#7a4fd6", "#0e8a7a", "#a8a398", "#d6cfc1"]
+# Avatar backgrounds carry white initials, so every one is dark enough for 4.5:1 contrast.
+AVATAR_COLORS = ["#cc4216", "#2b4cff", "#0f7a55", "#7a4fd6", "#0e7266", "#9a4a06", "#3d3a35", "#b42318", "#2338c9"]
+SLA_COLORS = {"met": "#0f7a55", "on_track": "#2b4cff", "at_risk": "#e08a00", "breached": "#d92d20"}
+TREND_COLORS = {"created": "#ff5b2e", "resolved": "#0f7a55"}
+UNASSIGNED_COLOR = "#d6cfc1"
+GAUGE_TRACK = "#ebe5d9"
 PRIORITY_KPI = {  # glyph, tile tone
     "P1": ("flame", "crit"), "P2": ("info", "orange"), "P3": ("info", "amber"), "P4": ("info", "blue"),
 }
@@ -46,7 +52,7 @@ def pct_change(now, before):
 
 def avatar_color(user):
     key = user.get_username() if user is not None else ""
-    return AVATAR_COLORS[sum(map(ord, key)) % len(AVATAR_COLORS)] if key else "#d5dbe4"
+    return AVATAR_COLORS[sum(map(ord, key)) % len(AVATAR_COLORS)] if key else UNASSIGNED_COLOR
 
 
 def initials(user):
@@ -96,8 +102,8 @@ def overview(qs, days, now=None):
     every = max(1, math.ceil(days / 8))
     trend = {"labels": [d.strftime("%b %-d") for d in day_list], "tipLabels": [d.strftime("%a, %b %-d") for d in day_list],
              "unit": "", "yMin": 0, "yMax": nice_max(max(c_vals + r_vals + [0])), "yTicks": 4, "xLabelEvery": every,
-             "series": [{"name": "Created", "color": "#1d7cf2", "values": c_vals, "area": True, "areaOpacity": 0.2, "width": 2},
-                        {"name": "Resolved", "color": "#16a34a", "values": r_vals, "area": True, "areaOpacity": 0.2, "width": 2}]}
+             "series": [{"name": "Created", "color": TREND_COLORS["created"], "values": c_vals, "area": True, "areaOpacity": 0.2, "width": 2},
+                        {"name": "Resolved", "color": TREND_COLORS["resolved"], "values": r_vals, "area": True, "areaOpacity": 0.2, "width": 2}]}
 
     # ---- status donut
     by_status = dict(cur.values_list("status").annotate(n=Count("pk")).order_by())
@@ -118,8 +124,8 @@ def overview(qs, days, now=None):
     pct = round(100 * compliant / sla_total) if sla_total else None
     sla_legend = [{"key": k, "label": label, "value": counts[k], "color": SLA_COLORS[k]}
                   for k, label in (("met", "Met"), ("on_track", "On Track"), ("at_risk", "At Risk"), ("breached", "Breached"))]
-    sla_chart = {"segments": [{"label": "Within SLA", "value": compliant, "color": "#16a34a"},
-                              {"label": "Breached", "value": counts["breached"], "color": "#e5e9f0"}],
+    sla_chart = {"segments": [{"label": "Within SLA", "value": compliant, "color": SLA_COLORS["met"]},
+                              {"label": "Breached", "value": counts["breached"], "color": GAUGE_TRACK}],
                  "center": {"value": f"{pct}%" if pct is not None else "–"}, "thickness": 18}
 
     # ---- categories
@@ -130,7 +136,7 @@ def overview(qs, days, now=None):
     return {
         "start": start, "end": end, "prev_start": prev_start, "days": days,
         "range_label": f"{timezone.localdate(start):%b %-d, %Y} – {timezone.localdate(end):%b %-d, %Y}",
-        "kpis": kpis, "trend": trend, "status": status, "status_segments": segments, "total": total,
+        "kpis": kpis, "trend": trend, "trend_colors": TREND_COLORS, "status": status, "status_segments": segments, "total": total,
         "sla": sla_chart, "sla_legend": sla_legend, "sla_pct": pct, "sla_total": sla_total,
         "categories": categories, "cat_max": max([c["value"] for c in categories] + [1]),
     }

@@ -1,6 +1,6 @@
 {% extends "core/base.html" %}{% load le static %}
 {% block title %}Domains{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/domains.css' %}"><link rel="stylesheet" href="{% static 'domainmonitor/page.css' %}">{% endblock %}
 {% block content %}
 <div class="pg-domains dm-ov">
 {% include "domainmonitor/_head.html" %}
@@ -30,12 +30,12 @@
       <form class="right" method="get">{% for k, v in query.items %}{% if k != 'resp_range' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
         <select name="resp_range" class="dm-sel" data-autosubmit aria-label="Response time period">{% for k, label in resp_ranges %}<option value="{{ k }}"{% if k == resp_range %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
     <div class="chart" data-chart="line" data-src="d-resp" style="height:150px"></div>
-    <div class="legend dm-legend"><span><i style="background:#1565f0"></i>Average Response Time</span></div></div>
+    <div class="legend dm-legend"><span><i style="background:#ff5b2e"></i>Average Response Time</span></div></div>
   <div class="panel" id="uptime"><div class="panel-h nowrap"><h2>Uptime (All Domains)</h2>
       <form class="right" method="get">{% for k, v in query.items %}{% if k != 'up_range' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
         <select name="up_range" class="dm-sel" data-autosubmit aria-label="Uptime period">{% for k, label in up_ranges %}<option value="{{ k }}"{% if k == up_range %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
     <div class="chart" data-chart="line" data-src="d-up" style="height:150px"></div>
-    <div class="legend dm-legend"><span><i style="background:#16a34a"></i>Overall Uptime</span></div></div>
+    <div class="legend dm-legend"><span><i style="background:#0f7a55"></i>Overall Uptime</span></div></div>
 </section>
 
 <section class="panel" id="domains">

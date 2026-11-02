@@ -40,7 +40,7 @@
     <div class="hm-heat-scroll">
     <table class="heat hm-heat">
       <colgroup><col class="hm-namecol">{% for c in d.columns %}<col>{% endfor %}</colgroup>
-      <thead><tr><th>Domain / Service</th>{% for c in d.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      <thead><tr><th>Domain / Service</th>{% for c in d.columns %}<th title="{{ c }}">{% if c == "Availability" %}Avail.{% else %}{{ c }}{% endif %}</th>{% endfor %}</tr></thead>
       {% for g in d.rows %}<tbody data-group="{{ g.group }}">
         <tr class="grp"><td><button type="button" class="hm-toggle" aria-expanded="true" title="Collapse {{ g.group }}">{% icon "chevron-down" 14 %}</button><a class="hm-nm" href="?domain={{ g.group|urlencode }}&amp;window={{ d.window }}" title="{{ g.group }}">{{ g.group }}</a></td>{% for c in g.cells %}<td><div class="cell c-{{ c.cls }}" title="{{ g.group }} – {{ c.title }}"></div></td>{% endfor %}</tr>
         {% for s in g.services %}<tr class="svc"><td><a class="hm-nm" href="{{ s.ci.get_absolute_url }}" title="{{ s.name }}{% if s.instances %} · {{ s.instances|join:', ' }}{% endif %}">{{ s.name }}</a></td>{% for c in s.cells %}<td><div class="cell c-{{ c.cls }}" title="{{ s.name }} – {{ c.title }}"></div></td>{% endfor %}</tr>{% endfor %}

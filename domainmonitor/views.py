@@ -192,7 +192,7 @@ def overview(request):
     times = [timezone.localtime(start + timedelta(minutes=bucket * i)) for i in range(n)]
     resp = {"labels": [t.strftime(fmt) for t in times], "tipLabels": [t.strftime("%d %b %H:%M") for t in times],
             "unit": "ms", "xLabelEvery": every, "yTicks": 5,
-            "series": [{"name": "Average Response Time", "color": "#1565f0", "area": True, "areaOpacity": 0.14, "width": 1.6,
+            "series": [{"name": "Average Response Time", "color": "#ff5b2e", "area": True, "areaOpacity": 0.14, "width": 1.6,
                         "values": [round(sum(acc[i]) / len(acc[i]), 1) if acc.get(i) else None for i in range(n)]}]}
 
     # uptime per day
@@ -203,7 +203,7 @@ def overview(request):
     y_min = min(99.5, max(0.0, math.floor(2 * (min(known) - 0.5)) / 2)) if known else 95.0
     uptime_chart = {"labels": [d.strftime("%b %d") for d in days], "unit": "%", "yMin": y_min, "yMax": 100, "yTicks": 4,
                     "xLabelEvery": up_every,
-                    "series": [{"name": "Overall Uptime", "color": "#16a34a", "area": True, "areaOpacity": 0.3, "values": up_series, "width": 1.6}]}
+                    "series": [{"name": "Overall Uptime", "color": "#0f7a55", "area": True, "areaOpacity": 0.3, "values": up_series, "width": 1.6}]}
 
     # trends against the previous period, all from stored records
     week_ago = now - timedelta(days=7)
@@ -245,10 +245,10 @@ def overview(request):
             slices["healthy"] += 1
         else:
             slices["other"] += 1
-    legend = [("Healthy", "fill-ok", "#16a34a", slices["healthy"]), ("Down", "fill-crit", "#ef4444", slices["down"]),
-              ("SSL Expiring", "fill-warn", "#f59e0b", slices["expiring"]), ("Paused", "", "#94a3b8", slices["paused"])]
+    legend = [("Healthy", "fill-ok", "#0f7a55", slices["healthy"]), ("Down", "fill-crit", "#d92d20", slices["down"]),
+              ("SSL Expiring", "fill-warn", "#e08a00", slices["expiring"]), ("Paused", "", "#d6cfc1", slices["paused"])]
     if slices["other"]:
-        legend.append(("Other issues", "", "#64748b", slices["other"]))
+        legend.append(("Other issues", "", "#a8a398", slices["other"]))
     legend = [{"label": l, "cls": c, "color": col, "n": v, "pct": pct(v)} for l, c, col, v in legend]
     return _render(request, "domainmonitor/overview.html", {
         "tab": "overview", "page": page, "query": _query(request), "sort_query": _query(request, "sort"), "sort": sort,

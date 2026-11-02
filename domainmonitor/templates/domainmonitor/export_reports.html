@@ -53,7 +53,7 @@
         <td class="num {{ r.uptime_7d|uptime_tone }}">{{ r.uptime_7d|pct }}</td>
         <td class="num {{ r.uptime_30d|uptime_tone }}">{{ r.uptime_30d|pct }}</td>
         <td>{% grade_chip r.security_grade %}</td>
-        <td>{% if r.last_checked_at %}{{ r.last_checked_at|date:"j M Y H:i" }}{% else %}Never{% endif %}</td>
+        <td>{% if r.last_checked_at %}{{ r.last_checked_at|date:"j M Y" }} <span class="t-mute">{{ r.last_checked_at|date:"H:i" }}</span>{% else %}Never{% endif %}</td>
       </tr>
     {% empty %}<tr><td colspan="12" class="empty">No domains match these filters.</td></tr>{% endfor %}
     </tbody></table></div>

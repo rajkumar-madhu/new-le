@@ -59,7 +59,7 @@
     <div class="panel-h"><h2>Registered jobs</h2><small>run by <code>manage.py run_probes</code></small></div>
     <div class="table-wrap dense"><table>
       <thead><tr><th>Job</th><th>Interval</th><th>Function</th></tr></thead>
-      <tbody>{% for j in h.jobs %}<tr><td><code>{{ j.name }}</code></td><td>{{ j.interval_text }}</td><td class="t-mute adm-fn" title="{{ j.func }}">{{ j.func }}</td></tr>
+      <tbody>{% for j in h.jobs %}<tr><td><code>{{ j.name }}</code></td><td>{{ j.interval_text }}</td><td class="t-mute" title="{{ j.func }}"><span class="adm-fn">{{ j.func }}</span></td></tr>
       {% empty %}<tr><td colspan="3" class="empty">No periodic jobs are registered.</td></tr>{% endfor %}</tbody></table></div>
   </div>
 </section>

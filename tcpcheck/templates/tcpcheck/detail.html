@@ -30,7 +30,7 @@
 
 <section class="grid g-2 detail-charts">
   <div class="panel"><div class="panel-h nowrap"><h2>Connect Time (Last 24 Hours)</h2>
-    <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Min</span><span><i style="background:#dc2626"></i>Max</span></div></div>
+    <div class="right legend"><span><i class="fill-info"></i>Average</span><span><i class="fill-ok"></i>Min</span><span><i class="fill-crit"></i>Max</span></div></div>
     {% if avg24 is not None %}<div class="chart" data-chart="line" data-src="d-trend" style="height:200px"></div>
     {% else %}<div class="tc-empty">{% icon "activity" 28 %}<p>No successful connections in the last 24 hours.</p></div>{% endif %}</div>
   <div class="panel"><div class="panel-h"><h2>Daily Availability (Last 30 days)</h2></div>
@@ -48,7 +48,7 @@
     <div class="table-wrap dense history-table"><table>
       <thead><tr><th>Time</th><th>Status</th><th>Connect</th><th>Address</th><th>Banner</th><th>Message</th></tr></thead>
       <tbody>{% for r in page %}
-        <tr><td title="{{ r.checked_at|date:'d M Y H:i:s' }}">{{ r.checked_at|date:"d M H:i:s" }}</td><td>{% badge r.status %}</td>
+        <tr><td class="ts" title="{{ r.checked_at|date:'d M Y H:i:s' }}">{{ r.checked_at|date:"d M H:i:s" }}</td><td>{% badge r.status %}</td>
           <td class="{% if r.status != 'online' %}t-{{ r.status|tone }}{% endif %}">{{ r.response_ms|connect_ms }}</td>
           <td class="mono">{{ r.ip|default:"–" }}</td>
           <td class="mono banner" title="{{ r.banner }}">{{ r.banner|default:"–" }}</td>
@@ -77,7 +77,7 @@
       <ul class="tc-list">{% for r in related %}<li><span class="t-mute small">{{ r.kind }}</span>{% if r.url %}<a href="{{ r.url }}">{{ r.name }}</a>{% else %}<b>{{ r.name }}</b>{% endif %}{% if r.status %} {% badge r.status %}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
     <div class="panel"><div class="panel-h"><h2>Status Changes</h2></div>
       <ul class="tc-list events">{% for e in events %}
-        <li><span class="sev {{ e.severity }}"></span><div><b>{{ e.title }}</b><small>{{ e.occurred_at|date:"d M Y H:i:s" }}{% if e.message %} · {{ e.message|truncatechars:90 }}{% endif %}</small></div></li>
+        <li><span class="sev {{ e.severity }}"></span><div><b>{{ e.title }}</b><small><span class="ts">{{ e.occurred_at|date:"d M Y H:i:s" }}</span>{% if e.message %} · {{ e.message|truncatechars:90 }}{% endif %}</small></div></li>
       {% empty %}<li class="t-mute small">No status changes recorded.</li>{% endfor %}</ul>
     </div>
   </div>

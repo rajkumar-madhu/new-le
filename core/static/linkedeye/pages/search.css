@@ -1,0 +1,4 @@
+/* Global search results (core/search.html). Everything is scoped under .pg-search. */
+.pg-search .table-wrap td { white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.pg-search .table-wrap td:first-child { width: 55%; }
+.pg-search .table-wrap td + td { color: var(--muted); font-size: 13px; }

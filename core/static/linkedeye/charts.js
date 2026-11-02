@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const NS = 'http://www.w3.org/2000/svg';
-  const AXIS = '#94a3b8', GRID = '#e8edf4', TEXT = '#64748b';
+  const AXIS = '#b3ab9c', GRID = '#ebe5d9', TEXT = '#6f6a61';
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -124,7 +124,7 @@
     const S = host.clientWidth || 170, r = S / 2, w = d.thickness || S * 0.13, R = r - w / 2 - 1;
     const svg = el('svg', { viewBox: `0 0 ${S} ${S}`, height: S, role: 'img', 'aria-label': d.title || 'donut chart' });
     const total = d.segments.reduce((s, x) => s + x.value, 0);
-    el('circle', { cx: r, cy: r, r: R, fill: 'none', stroke: '#e8edf4', 'stroke-width': w }, svg);
+    el('circle', { cx: r, cy: r, r: R, fill: 'none', stroke: '#ebe5d9', 'stroke-width': w }, svg);
     let a0 = -Math.PI / 2;
     if (total > 0) d.segments.forEach(seg => {
       if (!seg.value) return;
@@ -137,8 +137,8 @@
       a0 = a1;
     });
     if (d.center) {
-      el('text', { x: r, y: r + (d.center.label ? 2 : 8), 'text-anchor': 'middle', 'font-size': S * 0.17, 'font-weight': 700, fill: '#0f1f3d' }, svg).textContent = d.center.value;
-      if (d.center.label) el('text', { x: r, y: r + S * 0.13, 'text-anchor': 'middle', 'font-size': S * 0.075, 'font-weight': 600, fill: '#33445f' }, svg).textContent = d.center.label;
+      el('text', { x: r, y: r + (d.center.label ? 2 : 8), 'text-anchor': 'middle', 'font-size': S * 0.17, 'font-weight': 600, 'font-family': 'Fraunces, Georgia, serif', fill: '#0e1116' }, svg).textContent = d.center.value;
+      if (d.center.label) el('text', { x: r, y: r + S * 0.13, 'text-anchor': 'middle', 'font-size': S * 0.075, 'font-weight': 600, fill: '#3d3a35' }, svg).textContent = d.center.label;
     }
     host.replaceChildren(svg);
   }
@@ -150,7 +150,7 @@
     const lo = Math.min(...vals), hi = Math.max(...vals) || 1;
     const X = i => (i / (d.values.length - 1)) * (W - 2) + 1, Y = v => H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 4);
     const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, height: H, 'aria-hidden': 'true' });
-    el('path', { d: d.values.map((v, i) => (i ? 'L' : 'M') + X(i) + ',' + Y(v)).join(''), fill: 'none', stroke: d.color || '#16a34a', 'stroke-width': 1.6 }, svg);
+    el('path', { d: d.values.map((v, i) => (i ? 'L' : 'M') + X(i) + ',' + Y(v)).join(''), fill: 'none', stroke: d.color || '#0f7a55', 'stroke-width': 1.6 }, svg);
     host.replaceChildren(svg);
   }
 

@@ -291,7 +291,7 @@ def detail(request, pk):
     daily, has_daily = uptime.daily_availability(srcs, days=30)
     for s in daily["series"]:
         if s["name"] == "TCP":
-            s.update({"name": "Availability", "color": "#16a34a", "width": 2, "area": True, "areaOpacity": 0.08})
+            s.update({"name": "Availability", "color": stats.COLORS["online"], "width": 2, "area": True, "areaOpacity": 0.08})
     daily["series"] = [s for s in daily["series"] if s["name"] != "Overall"]
     Event = apps.get_model("core", "Event")
     events = Event.objects.filter(fingerprint=f"tcp:{check.pk}").order_by("-occurred_at")[:8]
@@ -399,9 +399,9 @@ def uptime_view(request):
                     "d30": uptime.overall(targets, "30d")},
         "met_pct": 100.0 * sla_counts["met"] / with_data if with_data else None,
         "sla_donut": {"segments": [
-            {"label": "Met", "value": sla_counts["met"], "color": "#16a34a"},
-            {"label": "Breached", "value": sla_counts["breached"], "color": "#dc2626"},
-            {"label": "No data", "value": sla_counts["nodata"], "color": "#cbd5e1"}],
+            {"label": "Met", "value": sla_counts["met"], "color": stats.COLORS["online"]},
+            {"label": "Breached", "value": sla_counts["breached"], "color": stats.COLORS["down"]},
+            {"label": "No data", "value": sla_counts["nodata"], "color": stats.COLORS["unknown"]}],
             "center": {"value": str(total), "label": "Targets"}},
         "daily": daily, "has_daily": has_daily, "days": days,
         "kinds": uptime.KINDS, "kind_colors": uptime.KIND_COLOR, "sites": _sites(request), "statuses": Status.choices,

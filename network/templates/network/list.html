@@ -18,9 +18,9 @@
 
 <section class="kpis nw-kpis" aria-label="Summary">
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon icon 22 %}</div><div class="kpi-body"><div class="label">Total Devices</div><div class="value">{{ counts.total }}</div></div></div><div class="sub">{% if device_type %}{{ title }}{% else %}All device types{% endif %}</div></div>
-  <a class="kpi stacked kpi-link" href="?status=up"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Up</div><div class="value split">{{ counts.up }} {% if counts.total %}<span class="delta t-ok">{{ pct.up|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Answering on their check port</div></a>
-  <a class="kpi stacked kpi-link" href="?status=down"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value split">{{ counts.down }} {% if counts.total %}<span class="delta t-crit">{{ pct.down|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Not reachable</div></a>
-  <a class="kpi stacked kpi-link" href="?status=unknown"><div class="kpi-top"><div class="tile s-mute">{% icon "help" 24 %}</div><div class="kpi-body"><div class="label">Unknown</div><div class="value split">{{ counts.unknown }} {% if counts.total %}<span class="delta t-mute">{{ pct.unknown|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Not checked yet or not allowed by probe policy</div></a>
+  <a class="kpi stacked kpi-link" href="?status=up"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Up</div><div class="value">{{ counts.up }} {% if counts.total %}<span class="delta t-ok">{{ pct.up|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Answering on their check port</div></a>
+  <a class="kpi stacked kpi-link" href="?status=down"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value">{{ counts.down }} {% if counts.total %}<span class="delta t-crit">{{ pct.down|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Not reachable</div></a>
+  <a class="kpi stacked kpi-link" href="?status=unknown"><div class="kpi-top"><div class="tile s-mute">{% icon "help" 24 %}</div><div class="kpi-body"><div class="label">Unknown</div><div class="value">{{ counts.unknown }} {% if counts.total %}<span class="delta t-mute">{{ pct.unknown|floatformat:1 }}%</span>{% endif %}</div></div></div><div class="sub">Not checked yet or not allowed by probe policy</div></a>
 </section>
 
 <section class="grid g-3 nw-summary">
@@ -30,7 +30,7 @@
       <div class="donut-legend">
         <span><i class="dot fill-ok"></i>Up</span><b>{{ counts.up }} ({{ pct.up|floatformat:1 }}%)</b>
         <span><i class="dot fill-crit"></i>Down</span><b>{{ counts.down }} ({{ pct.down|floatformat:1 }}%)</b>
-        <span><i class="dot" style="background:#cbd5e1"></i>Unknown</span><b>{{ counts.unknown }} ({{ pct.unknown|floatformat:1 }}%)</b>
+        <span><i class="dot sw-unk"></i>Unknown</span><b>{{ counts.unknown }} ({{ pct.unknown|floatformat:1 }}%)</b>
       </div></div>
     {% else %}<p class="empty">No devices to summarise.</p>{% endif %}
   </div>

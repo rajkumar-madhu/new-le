@@ -26,10 +26,10 @@ class Category(models.TextChoices):
 
 # category -> (icon, colour) for the category strip and the table's Category column
 CATEGORY_STYLE = {
-    "Network": ("network", "#2563eb"), "Firewalls": ("brick", "#ef4444"), "Servers": ("server", "#7c3aed"),
-    "Virtualization": ("layers", "#9333ea"), "Storage": ("hdd", "#f59e0b"), "Databases": ("database", "#2563eb"),
-    "Applications": ("app", "#c026d3"), "Kubernetes": ("hexagon", "#0891b2"), "Wireless": ("wifi", "#16a34a"),
-    "Security": ("shield", "#f97316"), "Custom": ("settings", "#64748b"),
+    "Network": ("network", "#2b4cff"), "Firewalls": ("brick", "#d92d20"), "Servers": ("server", "#7a4fd6"),
+    "Virtualization": ("layers", "#a3479a"), "Storage": ("hdd", "#c27400"), "Databases": ("database", "#2338c9"),
+    "Applications": ("app", "#cc4216"), "Kubernetes": ("hexagon", "#0e8a7a"), "Wireless": ("wifi", "#0f7a55"),
+    "Security": ("shield", "#3d3a35"), "Custom": ("settings", "#6f6a61"),
 }
 
 # exporter types offered as suggestions in the form (free text is allowed)

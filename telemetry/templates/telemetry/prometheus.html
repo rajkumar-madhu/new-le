@@ -25,7 +25,7 @@
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "radar" 22 %}</div><div class="kpi-body"><div class="label">Targets</div><div class="value">{{ kpis.total }}</div></div></div><div class="sub">{{ kpis.jobs }} job{{ kpis.jobs|pluralize }}</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Up</div><div class="value">{{ kpis.up }}</div></div></div><div class="sub">Last scrape succeeded</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value{% if kpis.down %} t-crit{% endif %}">{{ kpis.down }}</div></div></div><div class="sub">{% if kpis.unknown %}{{ kpis.unknown }} not scraped yet{% else %}Last scrape failed{% endif %}</div></div>
-  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Avg Scrape</div><div class="value">{{ kpis.avg_duration|ms_from_s }}</div></div></div><div class="sub" title="{{ kpis.slowest.url }}">{% if kpis.slowest %}Slowest {{ kpis.slowest.duration|ms_from_s }} ({{ kpis.slowest.job }}){% else %}–{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Avg Scrape</div><div class="value">{{ kpis.avg_duration|ms_from_s|unit_small }}</div></div></div><div class="sub" title="{{ kpis.slowest.url }}">{% if kpis.slowest %}Slowest {{ kpis.slowest.duration|ms_from_s }} ({{ kpis.slowest.job }}){% else %}–{% endif %}</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Head Series</div><div class="value">{{ stats.head_series|hnum }}</div></div></div><div class="sub">{% if stats.ingest_rate is not None %}{{ stats.ingest_rate|hnum }} samples/s{% else %}Self-metrics not scraped{% endif %}</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "bell" 22 %}</div><div class="kpi-body"><div class="label">Rule Alerts</div><div class="value">{% if stats.rule_alerts_firing is None %}–{% else %}{{ stats.rule_alerts_firing }}{% endif %}</div></div></div><div class="sub">{% if stats.rule_alerts_pending %}{{ stats.rule_alerts_pending }} pending{% else %}Firing in Prometheus{% endif %}</div></div>
 </section>
@@ -38,7 +38,7 @@
       <div class="donut-legend">
         <span><i class="dot fill-ok"></i>Up</span><b>{{ kpis.up }}</b>
         <span><i class="dot fill-crit"></i>Down</span><b>{{ kpis.down }}</b>
-        <span><i class="dot" style="background:#cbd5e1"></i>Unknown</span><b>{{ kpis.unknown }}</b>
+        <span><i class="dot fill-nodata"></i>Unknown</span><b>{{ kpis.unknown }}</b>
       </div></div></div>
   <div class="panel"><div class="panel-h"><h2>Jobs</h2></div>
     <div class="table-wrap dense borderless tm-table"><table>

@@ -47,13 +47,13 @@
     <div class="panel" id="traffic"><div class="panel-h nowrap"><h2>Traffic Overview</h2><span class="right t-mute small">Last 24 hours</span></div>
       {% if traffic %}
       <div class="chart" data-chart="line" data-src="nw-traffic" style="height:132px"></div>
-      <div class="legend nw-legend"><span><i style="background:#1565f0"></i>Inbound <b>{{ total_in|mbps }}</b></span><span><i style="background:#f97316"></i>Outbound <b>{{ total_out|mbps }}</b></span></div>
+      <div class="legend nw-legend"><span><i class="sw-in"></i>Inbound <b>{{ total_in|mbps }}</b></span><span><i class="sw-out"></i>Outbound <b>{{ total_out|mbps }}</b></span></div>
       {% else %}<div class="nw-empty sm">{% icon "activity" 24 %}<p>{{ traffic_msg }}</p></div>{% endif %}
     </div>
     <div class="panel"><div class="panel-h nowrap"><h2>Availability</h2><span class="right t-mute small">Checks per hour, last 24 hours</span></div>
       {% if avail_chart %}
       <div class="chart" data-chart="bars" data-src="nw-avail" style="height:112px"></div>
-      <div class="legend nw-legend"><span><i style="background:#16a34a"></i>Up</span><span><i style="background:#dc2626"></i>Down</span><span><i style="background:#cbd5e1"></i>Not checked</span><span>24h <b class="{{ avail24|avail_tone }}">{{ avail24|percent:2 }}</b></span></div>
+      <div class="legend nw-legend"><span><i class="sw-up"></i>Up</span><span><i class="sw-down"></i>Down</span><span><i class="sw-none"></i>Not checked</span><span>24h <b class="{{ avail24|avail_tone }}">{{ avail24|percent:2 }}</b></span></div>
       {% else %}<div class="nw-empty sm">{% icon "heartbeat" 24 %}<p>No checks recorded yet. Checks run every minute while <code>manage.py run_probes</code> is running{% if can_operate %}, or use Check now{% endif %}.</p></div>{% endif %}
     </div>
   </div>

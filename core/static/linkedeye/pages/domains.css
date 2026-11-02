@@ -18,7 +18,7 @@
 .pg-domains .dm-dd > summary::-webkit-details-marker { display: none; }
 .pg-domains .dm-dd > summary.btn .ic:last-child { margin-left: 2px; }
 .pg-domains .dm-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 190px; padding: 6px; display: grid; gap: 1px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 31, 61, .12); }
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
 .pg-domains .dm-menu > a, .pg-domains .dm-menu > button { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border: 0; background: none;
   font: inherit; font-size: 13.5px; font-weight: 400; color: var(--ink); border-radius: 6px; cursor: pointer; text-align: left; text-decoration: none; white-space: nowrap; }
 .pg-domains .dm-menu > a:hover, .pg-domains .dm-menu > button:hover { background: var(--line-soft); }
@@ -70,7 +70,7 @@
 .pg-domains .dm-search { height: 36px; flex: 1 1 220px; max-width: 340px; font-size: 13px; }
 .pg-domains .dm-tbar .dm-search { margin-right: auto; }
 .pg-domains .dm-tbar .dm-sel { width: 150px; }
-.pg-domains .dm-export { border-color: #bfd3fb; }
+.pg-domains .dm-export { border-color: #f0cdbd; }
 .pg-domains .dm-table td a { font-weight: 400; }
 .pg-domains .dm-table th.dm-act, .pg-domains .dm-table td.dm-act { text-align: right; }
 .pg-domains .dm-table td.dm-act .row-actions { justify-content: flex-end; }
@@ -89,7 +89,7 @@
 .pg-domains .dm-list-panel .dm-sel { width: 112px; }
 .pg-domains .dm-list-panel .dm-sel[name=site] { width: 122px; }
 .pg-domains .dm-list-panel .dm-sel[name=type] { width: 128px; }
-.pg-domains .dm-more { margin-left: auto; border-color: #bfd3fb; }
+.pg-domains .dm-more { margin-left: auto; border-color: #f0cdbd; }
 .pg-domains .dm-more-row { flex-basis: 100%; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .pg-domains .dm-more-row[hidden] { display: none; }
 
@@ -113,9 +113,9 @@
 
 /* domain type chips */
 .pg-domains .chip.dm-type-application { background: var(--purple-bg); color: var(--purple); }
-.pg-domains .chip.dm-type-api { background: #e3f2fd; color: #0369a1; }
+.pg-domains .chip.dm-type-api { background: var(--info-bg); color: var(--info-ink); }
 .pg-domains .chip.dm-type-monitoring { background: var(--ok-bg); color: var(--ok-ink); }
-.pg-domains .chip.dm-type-backup { background: #fdf0c4; color: #a16207; }
+.pg-domains .chip.dm-type-backup { background: var(--warn-bg); color: var(--warn-ink); }
 .pg-domains .chip.dm-type-vpn { background: var(--crit-bg); color: var(--crit-ink); }
 .pg-domains .chip.dm-type-mail, .pg-domains .chip.dm-type-test { background: var(--mute-bg); color: var(--ink-2); }
 
@@ -149,7 +149,7 @@
 .pg-domains .dm-h3 { font-size: 15px; font-weight: 700; margin: 18px 0 10px; }
 .pg-domains .dm-qa { display: flex; flex-wrap: wrap; gap: 5px; }
 .pg-domains .dm-qa > * { flex: 1 1 auto; }
-.pg-domains .dm-qa .btn { border-color: #bfd3fb; font-size: 11.5px; padding: 0 6px; gap: 4px; justify-content: center; white-space: nowrap; }
+.pg-domains .dm-qa .btn { border-color: #f0cdbd; font-size: 11.5px; padding: 0 6px; gap: 4px; justify-content: center; white-space: nowrap; }
 .pg-domains .dm-qa .btn .ic { width: 13px; height: 13px; }
 .pg-domains .dm-qa .dm-disabled .btn { width: 100%; }
 .pg-domains .dm-qa .btn[disabled] { cursor: not-allowed; opacity: .55; }
@@ -182,5 +182,5 @@
   .pg-domains .dm-kv { grid-template-columns: 120px minmax(0, 1fr); }
 }
 /* keep pale chips readable on the highlighted (selected) row */
-.pg-domains tr.sel .chip { box-shadow: inset 0 0 0 1px rgba(21, 101, 240, .22); }
-.pg-domains tr.sel .chip.dm-type-production { background: #fff; }
+.pg-domains tr.sel .chip { box-shadow: inset 0 0 0 1px rgb(204 66 22 / 22%); }
+.pg-domains tr.sel .chip.dm-type-production { background: var(--panel); }

@@ -429,9 +429,9 @@ def logs_trend(qs, now=None, hours=24):
     extra = {"yMax": 4} if peak < 4 else {}   # whole-number ticks for tiny volumes
     return {**extra, "labels": labels, "tipLabels": [f"{s:%d %b %H}:00–{(s + timedelta(hours=1)):%H}:00" for s in starts],
             "unit": "", "xLabelEvery": 4, "yTicks": 4, "total": sum(sum(v) for v in series.values()), "peak": peak,
-            "series": [{"name": "Info", "color": "#1565f0", "values": series["i"]},
-                       {"name": "Warn", "color": "#f59e0b", "values": series["w"]},
-                       {"name": "Error", "color": "#dc2626", "values": series["e"]}]}
+            "series": [{"name": "Info", "color": "#2b4cff", "values": series["i"]},
+                       {"name": "Warn", "color": "#e08a00", "values": series["w"]},
+                       {"name": "Error", "color": "#d92d20", "values": series["e"]}]}
 
 
 def change_pct(now_value, before_value):

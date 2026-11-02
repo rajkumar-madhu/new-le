@@ -16,13 +16,13 @@
 {% include "bodeod/_tabs.html" with tab="status" %}
 {% include "bodeod/_banner.html" %}
 
-<section class="kpis" aria-label="Today">
+<section class="kpis six" aria-label="Today">
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "layers" 22 %}</div><div class="kpi-body"><div class="label">Enabled Modes</div><div class="value">{{ kpi.modes }}<small class="t-mute">/ {{ kpi.modes_total }}</small></div></div></div><div class="sub">BOD · EOD · ADP</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "play" 22 %}</div><div class="kpi-body"><div class="label">Runs Today</div><div class="value">{{ kpi.today_runs }}</div></div></div><div class="sub">{{ today|date:"d M Y" }} (IST)</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">Passed</div><div class="value">{{ kpi.passed }}</div></div></div><div class="sub">Latest run passed</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warnings</div><div class="value">{{ kpi.warned }}</div></div></div><div class="sub">Warn, unknown or pending</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 24 %}</div><div class="kpi-body"><div class="label">Failed</div><div class="value">{{ kpi.failed }}</div></div></div><div class="sub">Critical item failed</div></div>
-  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "edit" 22 %}</div><div class="kpi-body"><div class="label">Pending Sign-offs</div><div class="value {% if kpi.pending %}t-info{% endif %}">{{ kpi.pending }}</div></div></div><div class="sub">{% if kpi.next %}Next run {{ kpi.next|ist:"%a %H:%M" }} IST{% else %}No automatic run due{% endif %}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile bg-info">{% icon "edit" 22 %}</div><div class="kpi-body"><div class="label">Sign&#8209;offs Due</div><div class="value {% if kpi.pending %}t-info{% endif %}">{{ kpi.pending }}</div></div></div><div class="sub">{% if kpi.next %}Next run {{ kpi.next|ist:"%a %H:%M" }} IST{% else %}No automatic run due{% endif %}</div></div>
 </section>
 
 {% if cards %}

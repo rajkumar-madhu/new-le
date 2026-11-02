@@ -22,7 +22,7 @@
 </section>
 
 <nav class="panel cat-strip" aria-label="Categories">
-  <a href="?{{ d.strip_query.urlencode }}"{% if not d.filters.category %} class="on" aria-current="true"{% endif %}><span class="ci" style="color:#2563eb">{% icon "database" 22 %}</span><span>All</span><b>{{ d.total }}</b></a>
+  <a href="?{{ d.strip_query.urlencode }}"{% if not d.filters.category %} class="on" aria-current="true"{% endif %}><span class="ci" style="color:var(--accent-blue)">{% icon "database" 22 %}</span><span>All</span><b>{{ d.total }}</b></a>
   {% for c in d.cats %}<a href="?{% if d.strip_query %}{{ d.strip_query.urlencode }}&amp;{% endif %}category={{ c.name|urlencode }}"{% if d.filters.category == c.name %} class="on" aria-current="true"{% endif %}><span class="ci" style="color:{{ c.color }}">{% icon c.icon 22 %}</span><span>{{ c.name }}</span><b>{{ c.count }}</b></a>{% endfor %}
 </nav>
 
@@ -59,7 +59,7 @@
   <div class="panel"><div class="panel-h"><h2>Exporter Health Status</h2></div>
     <div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-donut"></div>
       <div class="donut-legend ex-legend">{% for s in d.legend %}<span><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</span><b>{{ s.n }} ({{ s.pct }}%)</b>{% endfor %}</div></div></div>
-  <div class="panel"><div class="panel-h ex-trend-h"><h2>Logs Trend (Last 24 Hours)</h2><div class="right legend sq"><span><i style="background:#1565f0"></i>Info</span><span><i class="fill-warn"></i>Warn</span><span><i class="fill-crit"></i>Error</span></div></div>
+  <div class="panel"><div class="panel-h ex-trend-h"><h2>Logs Trend (Last 24 Hours)</h2><div class="right legend sq"><span><i class="fill-info"></i>Info</span><span><i class="fill-warn"></i>Warn</span><span><i class="fill-crit"></i>Error</span></div></div>
     <div class="chart" data-chart="bars" data-src="d-trend" style="height:200px"></div></div>
   <div class="panel"><div class="panel-h"><h2>Top Log Sources (24h)</h2></div>
     <div class="hbar ex-hbar">{% for r in d.top %}<span>{{ r.name }}</span><span class="track"><i style="width:{% widthratio r.logs d.top_max 100 %}%"></i></span><span>{{ r.logs|floatformat:"0g" }}</span>{% endfor %}</div></div>

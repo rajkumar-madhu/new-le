@@ -203,6 +203,6 @@ def traffic_range(device, seconds=86400):
     def vals(k):
         return [None if lookup[k].get(t) is None else round(lookup[k][t], 2) for t in stamps]
     chart = {"labels": labels, "tipLabels": tips, "unit": "Mbps", "xLabelEvery": max(1, len(stamps) // 6),
-             "series": [{"name": "Inbound", "color": "#1565f0", "area": True, "areaOpacity": 0.12, "width": 1.4, "values": vals("in")},
-                        {"name": "Outbound", "color": "#f97316", "area": True, "areaOpacity": 0.13, "width": 1.4, "values": vals("out")}]}
+             "series": [{"name": "Inbound", "color": "#2b4cff", "area": True, "areaOpacity": 0.12, "width": 1.4, "values": vals("in")},
+                        {"name": "Outbound", "color": "#ff5b2e", "area": True, "areaOpacity": 0.13, "width": 1.4, "values": vals("out")}]}
     return chart, ""

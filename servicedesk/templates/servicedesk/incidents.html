@@ -32,7 +32,7 @@
 </section>
 
 <section class="grid sd-charts">
-  <div class="panel sd-trend"><div class="panel-h nowrap"><h2>Incident Trend</h2><div class="right legend"><span><i style="background:#1d7cf2"></i>Created</span><span><i class="fill-ok"></i>Resolved</span></div></div>
+  <div class="panel sd-trend"><div class="panel-h nowrap"><h2>Incident Trend</h2><div class="right legend"><span><i style="background:{{ d.trend_colors.created }}"></i>Created</span><span><i style="background:{{ d.trend_colors.resolved }}"></i>Resolved</span></div></div>
     <div class="chart" data-chart="line" data-src="d-trend" data-smooth="1" style="height:168px"></div></div>
   <div class="panel"><div class="panel-h"><h2>Incidents by Status</h2></div><div class="donut-wrap"><div class="chart" data-chart="donut" data-src="d-status" data-gap="1"></div>
     <div class="donut-legend">{% for s in d.status_segments %}<a href="?tab=all&amp;range={{ days }}&amp;status={{ s.key }}{% if request.GET.client %}&amp;client={{ request.GET.client|urlencode }}{% endif %}"><i class="dot" style="background:{{ s.color }}"></i>{{ s.label }}</a><b>{{ s.value }}</b>{% endfor %}</div></div></div>

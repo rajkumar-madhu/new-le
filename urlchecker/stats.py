@@ -41,9 +41,9 @@ def response_trend(checks, hours=24, buckets=48):
         mn.append(min(v) if v else None)
         mx.append(max(v) if v else None)
     data = {"labels": labels, "tipLabels": tips, "unit": "ms", "series": [
-        {"name": "Average", "color": "#1565f0", "values": avg, "width": 2},
-        {"name": "Minimum", "color": "#16a34a", "values": mn},
-        {"name": "Maximum", "color": "#dc2626", "values": mx, "area": True, "areaOpacity": 0.08},
+        {"name": "Average", "color": "#2b4cff", "values": avg, "width": 2},
+        {"name": "Minimum", "color": "#0f7a55", "values": mn},
+        {"name": "Maximum", "color": "#ff5b2e", "values": mx, "area": True, "areaOpacity": 0.08},
     ]}
     data.update(axis_scale(max((v for v in mx if v is not None), default=0)))
     return data
@@ -88,9 +88,9 @@ def daily_history(checks, days=7):
         degraded.append(g or None)
         down.append(x or None)
     return {"labels": labels, "series": [
-        {"name": "Online", "color": "#16a34a", "values": online},
-        {"name": "Down", "color": "#dc2626", "values": down},
-        {"name": "Degraded", "color": "#f59e0b", "values": degraded},
+        {"name": "Online", "color": "#0f7a55", "values": online},
+        {"name": "Down", "color": "#d92d20", "values": down},
+        {"name": "Degraded", "color": "#e08a00", "values": degraded},
     ]}
 
 

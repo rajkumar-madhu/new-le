@@ -38,7 +38,7 @@
       <dt>Added</dt><dd>{{ exp.created_at|short_dt }}</dd>
       {% if exp.description %}<dt>Description</dt><dd>{{ exp.description|linebreaksbr }}</dd>{% endif %}
     </dl></div>
-  <div class="panel"><div class="panel-h ex-trend-h"><h2>Logs Trend (Last 24 Hours)</h2><div class="right legend sq"><span><i style="background:#1565f0"></i>Info</span><span><i class="fill-warn"></i>Warn</span><span><i class="fill-crit"></i>Error</span></div></div>
+  <div class="panel"><div class="panel-h ex-trend-h"><h2>Logs Trend (Last 24 Hours)</h2><div class="right legend sq"><span><i class="fill-info"></i>Info</span><span><i class="fill-warn"></i>Warn</span><span><i class="fill-crit"></i>Error</span></div></div>
     {% if trend.total %}<div class="chart" data-chart="bars" data-src="d-trend" style="height:200px"></div>{% else %}<p class="empty">No log lines from {{ exp.name }} in the last 24 hours.</p>{% endif %}</div>
 </section>
 

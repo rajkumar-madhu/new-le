@@ -83,9 +83,9 @@ def availability_chart(device, hours=24):
         return None
     labels = [s.strftime("%H:%M") for s in starts]
     return {"labels": labels, "tipLabels": [s.strftime("%d %b %H:00") for s in starts], "xLabelEvery": max(1, hours // 6), "yTicks": 2,
-            "series": [{"name": "Up", "color": "#16a34a", "values": up},
-                       {"name": "Down", "color": "#dc2626", "values": down},
-                       {"name": "Not checked (policy)", "color": "#cbd5e1", "values": unk}]}
+            "series": [{"name": "Up", "color": "#0f7a55", "values": up},
+                       {"name": "Down", "color": "#d92d20", "values": down},
+                       {"name": "Not checked (policy)", "color": "#d6cfc1", "values": unk}]}
 
 
 def latency_chart(device, hours=24):
@@ -102,14 +102,14 @@ def latency_chart(device, hours=24):
     vals = [round(sums[i] / counts[i], 1) if counts[i] else None for i in range(hours)]
     return {"labels": [s.strftime("%H:%M") for s in starts], "tipLabels": [s.strftime("%d %b %H:00") for s in starts],
             "unit": "ms", "xLabelEvery": max(1, hours // 6),
-            "series": [{"name": "Latency", "color": "#7c3aed", "area": True, "areaOpacity": 0.1, "width": 1.6, "values": vals, "endDot": True}]}
+            "series": [{"name": "Latency", "color": "#7a4fd6", "area": True, "areaOpacity": 0.1, "width": 1.6, "values": vals, "endDot": True}]}
 
 
 def latency_spark(device, n=40):
     vals = list(DevicePoll.objects.filter(device=device, latency_ms__isnull=False).values_list("latency_ms", flat=True)[:n])
     if len(vals) < 2:
         return None
-    return {"values": list(reversed(vals)), "color": "#7c3aed"}
+    return {"values": list(reversed(vals)), "color": "#7a4fd6"}
 
 
 def avg_latency(device, hours=24):

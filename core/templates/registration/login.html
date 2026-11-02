@@ -1,15 +1,31 @@
 {% load static %}<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · LinkedEye</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="{% static 'linkedeye/app.css' %}"></head>
-<body><div class="login"><form class="card" method="post">{% csrf_token %}
-  <div class="brand"><svg class="eye" viewBox="0 0 48 30" aria-hidden="true"><path d="M2 15C8 5 16 1 24 1s16 4 22 14c-6 10-14 14-22 14S8 25 2 15z" fill="none" stroke="#3b9cff" stroke-width="3"/><circle cx="24" cy="15" r="8" fill="#1565f0"/><circle cx="24" cy="15" r="3.5" fill="#fff"/></svg>
-  <div><b>Linked<span>Eye</span></b><small>ITSM &amp; Monitoring Platform</small></div></div>
-  <h1 style="font-size:20px">Sign in</h1>
-  {% if form.errors %}<ul class="messages"><li class="error">Your username and password didn't match. Try again.</li></ul>{% endif %}
-  <div class="field"><label for="id_username">Username</label><input type="text" name="username" id="id_username" autocomplete="username" required autofocus></div>
-  <div class="field"><label for="id_password">Password</label><input type="password" name="password" id="id_password" autocomplete="current-password" required></div>
-  <input type="hidden" name="next" value="{{ next }}">
-  <button class="btn primary" type="submit" style="justify-content:center">Sign in</button>
-</form></div></body></html>
+<body><div class="login">
+  <section class="intro" aria-hidden="true">
+    <div class="brand"><span class="logo"><svg viewBox="0 0 48 30" aria-hidden="true"><path d="M2 15C8 5 16 1 24 1s16 4 22 14c-6 10-14 14-22 14S8 25 2 15z" fill="none" stroke="#fff" stroke-width="3.2"/><circle cx="24" cy="15" r="7.5" fill="#fff"/><circle cx="24" cy="15" r="3.2" fill="#ff5b2e"/></svg></span><div><b>Linked<span>Eye</span></b><small>ITSM · Monitoring</small></div></div>
+    <div class="eyebrow" style="color:var(--brand)">Operations console</div>
+    <h2>One view of every service.<br><em>Act on evidence, not alerts.</em></h2>
+    <p>Service desk, monitoring, CMDB and automation for your sites in one place, scoped to the sites you work on.</p>
+    <ul>
+      <li><i>&#9673;</i><div><b>Live service posture</b><span>URLs, domains, devices, TCP ports and alerts on one screen.</span></div></li>
+      <li><i>&#9636;</i><div><b>Incidents with SLAs</b><span>Tickets open from alerts and track response and resolution targets.</span></div></li>
+      <li><i>&#9741;</i><div><b>Site-scoped access</b><span>Viewer, operator and admin roles per site, with a full audit trail.</span></div></li>
+    </ul>
+    <div class="foot">Service desk · Monitoring · CMDB · Automation</div>
+  </section>
+  <form class="card" method="post">{% csrf_token %}
+    <div class="eyebrow">Sign in</div>
+    <h1>Welcome back</h1>
+    <p class="lead">Use your LinkedEye account.</p>
+    {% if form.errors %}<ul class="messages"><li class="error">Your username and password didn't match. Try again.</li></ul>{% endif %}
+    <div class="field"><label for="id_username">Username</label><input type="text" name="username" id="id_username" autocomplete="username" required autofocus></div>
+    <div class="field"><label for="id_password">Password</label><input type="password" name="password" id="id_password" autocomplete="current-password" required></div>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn primary" type="submit">Sign in</button>
+  </form>
+</div></body></html>

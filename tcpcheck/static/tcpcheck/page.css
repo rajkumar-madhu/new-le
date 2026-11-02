@@ -4,81 +4,88 @@
 .pg-tcpcheck .mono { font-family: var(--mono); font-size: .92em; }
 .pg-tcpcheck .small { font-size: 12.5px; }
 .pg-tcpcheck code { font: 12px var(--mono); background: var(--line-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
-.pg-tcpcheck .fill-mute { background: #cbd5e1; }
+.pg-tcpcheck .fill-mute { background: #a8a398; }
 .pg-tcpcheck .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .pg-tcpcheck .head .actions form { margin: 0; }
-.pg-tcpcheck .btn.danger-outline { color: var(--crit-ink); border-color: #f5c2c2; }
+.pg-tcpcheck .btn.danger-outline { color: var(--crit-ink); border-color: #f6c5bf; }
 .pg-tcpcheck .btn.danger-outline:hover { background: var(--crit-bg); }
 
-/* KPI row (matches the URL Checker design) */
-.pg-tcpcheck .kpis { gap: 12px; }
-.pg-tcpcheck .kpi { padding: 12px 12px 12px 14px; gap: 6px; }
-.pg-tcpcheck .kpi .tile { width: 42px; height: 42px; }
-.pg-tcpcheck .kpi .label { font-size: 12.5px; }
-.pg-tcpcheck .kpi .value { font-size: 20px; gap: 4px; flex-wrap: nowrap; margin: 1px 0 0; white-space: nowrap; }
-.pg-tcpcheck .kpi-top { gap: 11px; }
-.pg-tcpcheck .kpi .value .delta, .pg-tcpcheck .kpi .value .chip { font-size: 12px; padding: 2px 5px; flex: none; }
-.pg-tcpcheck .kpi .sub { font-size: 13px; color: var(--ink-2); }
-.pg-tcpcheck .kpi .sub .delta { font-size: 12.5px; color: var(--ok-ink); }
+/* KPI row: small uppercase label, serif number, sans sub line (theme conventions), sized so six fit a row at 1440 px */
+.pg-tcpcheck .kpis { gap: 12px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+.pg-tcpcheck .kpi { padding: 13px 10px 12px 12px; gap: 8px; }
+.pg-tcpcheck .kpi .tile { width: 36px; height: 36px; border-radius: 10px; }
+.pg-tcpcheck .kpi .tile .ic { width: 20px; height: 20px; }
+.pg-tcpcheck .kpi .label { font-size: 10px; letter-spacing: .06em; }
+.pg-tcpcheck .kpi .value { font-size: 23px; gap: 2px 6px; flex-wrap: wrap; margin: 3px 0 0; white-space: nowrap; align-items: center; }
+.pg-tcpcheck .kpi-top { gap: 9px; }
+.pg-tcpcheck .kpi .value .delta, .pg-tcpcheck .kpi .value .chip { font: 600 10.5px/1.3 var(--mono); padding: 2px 5px; flex: none; border-radius: 999px; letter-spacing: 0; }
+.pg-tcpcheck .kpi .value .chip { font-family: var(--font); border: 0; }
+.pg-tcpcheck .kpi .sub { font-size: 12.5px; color: var(--muted); }
+.pg-tcpcheck .kpi .sub .delta { font: 500 10.5px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ok-ink);
+  padding: 2px 7px; border-radius: 999px; }
 
 /* empty / alert states */
 .pg-tcpcheck .tc-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center;
-  color: var(--muted); min-height: 130px; padding: 16px; border: 1px dashed var(--line); border-radius: 8px; background: #fafbfd; }
+  color: var(--muted); min-height: 130px; padding: 16px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel-2); }
 .pg-tcpcheck .tc-empty p { margin: 0; font-size: 13px; }
-.pg-tcpcheck .tc-empty .ic { color: #9aa8bb; }
-.pg-tcpcheck .tc-alert { display: flex; gap: 8px; align-items: flex-start; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+.pg-tcpcheck .tc-empty .ic { color: #a8a398; }
+.pg-tcpcheck .tc-alert { display: flex; gap: 8px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-size: 13px;
   border: 1px solid var(--line); background: var(--mute-bg); color: var(--ink-2); overflow-wrap: anywhere; }
 .pg-tcpcheck .tc-alert .ic { margin-top: 1px; }
-.pg-tcpcheck .tc-alert.crit { background: var(--crit-bg); border-color: #f5c2c2; color: var(--crit-ink); }
-.pg-tcpcheck .tc-alert.warn { background: var(--warn-bg); border-color: #f6d79a; color: var(--warn-ink); }
+.pg-tcpcheck .tc-alert.crit { background: var(--crit-bg); border-color: #f6c5bf; color: var(--crit-ink); }
+.pg-tcpcheck .tc-alert.warn { background: var(--warn-bg); border-color: #f2d6a6; color: var(--warn-ink); }
 
 /* chart row */
 .pg-tcpcheck .g-charts .panel { padding-bottom: 12px; }
 .pg-tcpcheck .g-charts .panel-h { margin-bottom: 8px; }
 @media (min-width: 1281px) { .pg-tcpcheck .g-charts { grid-template-columns: minmax(0, 1fr) minmax(0, 1.45fr) minmax(0, 1fr); } }
-.pg-tcpcheck .g-charts .panel-h h2, .pg-tcpcheck .detail-charts .panel-h h2 { font-size: 14.5px; white-space: nowrap; letter-spacing: -.01em; }
-.pg-tcpcheck .panel-h.nowrap { gap: 8px; }
-.pg-tcpcheck .panel-h.nowrap h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.pg-tcpcheck .panel-h.nowrap .legend { gap: 8px; flex: none; font-size: 12px; }
+.pg-tcpcheck .g-charts .panel-h h2, .pg-tcpcheck .detail-charts .panel-h h2 { font-size: 16px; white-space: nowrap; letter-spacing: -.005em; }
+.pg-tcpcheck .panel-h.nowrap { gap: 4px 8px; flex-wrap: wrap; }
+.pg-tcpcheck .panel-h.nowrap h2 { min-width: 0; }
+.pg-tcpcheck .panel-h.nowrap .legend { gap: 10px; flex: none; font-size: 12px; margin-left: auto; }
 .pg-tcpcheck .panel-h.nowrap .legend i { width: 9px; height: 9px; margin-right: 4px; }
 .pg-tcpcheck .donut-wrap { gap: 18px; }
-.pg-tcpcheck .donut-wrap .chart { width: 145px; }
-.pg-tcpcheck .donut-legend { font-size: 13px; gap: 12px 16px; white-space: nowrap; }
+.pg-tcpcheck .donut-wrap .chart { width: 132px; }
+.pg-tcpcheck .donut-legend { font-size: 13px; gap: 11px 14px; white-space: nowrap; }
+.pg-tcpcheck .donut-legend b { font: 500 12px/1.45 var(--mono); color: var(--ink-2); text-align: right; }
 .pg-tcpcheck .legend.square i { border-radius: 2px; }
 .pg-tcpcheck .history-chart svg text { font-size: 10.5px; }
+.pg-tcpcheck .legend span { white-space: nowrap; }
 .pg-tcpcheck .legend.stack-right { flex-basis: 100%; justify-content: flex-end; font-size: 12.5px; gap: 12px; }
 .pg-tcpcheck .chart-legend { font-size: 12px; gap: 10px; margin: -2px 0 4px; }
 .pg-tcpcheck .chart-legend i { width: 9px; height: 9px; margin-right: 4px; }
 .pg-tcpcheck .seg.sm { gap: 0; flex: none; flex-wrap: nowrap; }
 .pg-tcpcheck .seg.sm a { padding: 2px 9px; font-size: 12px; border-radius: 0; margin-left: -1px; }
-.pg-tcpcheck .seg.sm a:first-child { border-radius: 6px 0 0 6px; }
-.pg-tcpcheck .seg.sm a:last-child { border-radius: 0 6px 6px 0; }
+.pg-tcpcheck .seg.sm a:first-child { border-radius: 999px 0 0 999px; padding-left: 11px; }
+.pg-tcpcheck .seg.sm a:last-child { border-radius: 0 999px 999px 0; padding-right: 11px; }
+.pg-tcpcheck .seg.sm a { font-family: var(--mono); font-size: 11.5px; }
 .pg-tcpcheck .seg.sm a:hover { text-decoration: none; }
 
 /* lists: toolbar + dense tables */
-.pg-tcpcheck .g-main { grid-template-columns: minmax(0, 2.3fr) minmax(330px, 1fr); }
+.pg-tcpcheck .g-main { grid-template-columns: minmax(0, 2.5fr) minmax(320px, 1fr); }
 .pg-tcpcheck .toolbar.compact { margin-bottom: 12px; gap: 8px; }
-.pg-tcpcheck .toolbar.compact .search { height: 32px; max-width: 300px; font-size: 13px; }
-.pg-tcpcheck .toolbar.compact select { width: auto; min-width: 100px; height: 32px; font-size: 13px; padding-top: 0; padding-bottom: 0; }
+.pg-tcpcheck .toolbar.compact .search { height: 32px; max-width: 300px; flex: 1 1 170px; font-size: 13px; }
+.pg-tcpcheck .toolbar.compact select { width: auto; min-width: 100px; max-width: 186px; height: 32px; font-size: 13px; padding-top: 0; padding-bottom: 0; }
 .pg-tcpcheck .toolbar.compact .btn.icon { width: 32px; height: 32px; }
 .pg-tcpcheck .table-wrap.dense table { font-size: 12px; line-height: 1.35; }
-.pg-tcpcheck .table-wrap.dense th { padding: 7px 6px; font-size: 11.5px; white-space: nowrap; }
-.pg-tcpcheck .table-wrap.dense td { padding: 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pg-tcpcheck table .badge { min-width: 72px; font-size: 11.5px; line-height: 16px; padding: 1px 7px 1px 4px; }
+.pg-tcpcheck .table-wrap.dense th { padding: 8px 6px; font-size: 10px; letter-spacing: .06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-tcpcheck .table-wrap.dense td { padding: 5px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-tcpcheck td.ts { font: 11.5px var(--mono); color: var(--muted); }
+.pg-tcpcheck table .badge { min-width: 72px; font-size: 11.5px; line-height: 16px; padding: 1px 8px 1px 4px; }
 .pg-tcpcheck tr.off td { color: var(--muted); }
 .pg-tcpcheck tr.off td a { color: var(--ink-2); }
 
 /* Monitored ports table: fixed column plan; scrolls inside its wrap when narrower */
-.pg-tcpcheck .ports-table table { table-layout: fixed; min-width: 800px; }
-.pg-tcpcheck .ports-table th:nth-child(1) { width: 30px; }
-.pg-tcpcheck .ports-table th:nth-child(2) { width: 18%; }
-.pg-tcpcheck .ports-table th:nth-child(4) { width: 50px; }
-.pg-tcpcheck .ports-table th:nth-child(5) { width: 12%; }
-.pg-tcpcheck .ports-table th:nth-child(6) { width: 88px; }
-.pg-tcpcheck .ports-table th:nth-child(7) { width: 86px; }
-.pg-tcpcheck .ports-table th:nth-child(8) { width: 84px; }
+.pg-tcpcheck .ports-table table { table-layout: fixed; min-width: 790px; }
+.pg-tcpcheck .ports-table th:nth-child(1) { width: 28px; }
+.pg-tcpcheck .ports-table th:nth-child(2) { width: 17%; }
+.pg-tcpcheck .ports-table th:nth-child(4) { width: 48px; }
+.pg-tcpcheck .ports-table th:nth-child(5) { width: 8%; }
+.pg-tcpcheck .ports-table th:nth-child(6) { width: 92px; }
+.pg-tcpcheck .ports-table th:nth-child(7) { width: 76px; }
+.pg-tcpcheck .ports-table th:nth-child(8) { width: 88px; }
 .pg-tcpcheck .ports-table th:nth-child(9) { width: 100px; }
-.pg-tcpcheck .ports-table th:nth-child(10) { width: 74px; }
+.pg-tcpcheck .ports-table th:nth-child(10) { width: 76px; }
 .pg-tcpcheck .ports-table td:last-child { overflow: visible; }
 .pg-tcpcheck .row-actions { gap: 0; align-items: center; }
 .pg-tcpcheck .row-actions .btn.icon { border: 0; background: transparent; width: 22px; height: 20px; }
@@ -90,14 +97,14 @@
 .pg-tcpcheck .row-menu > summary { list-style: none; cursor: pointer; color: var(--ink); }
 .pg-tcpcheck .row-menu > summary::-webkit-details-marker { display: none; }
 .pg-tcpcheck .row-menu .menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 170px; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(15, 23, 42, .12); padding: 4px; }
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px -8px rgb(14 17 22 / 22%); padding: 4px; }
 .pg-tcpcheck .row-menu .menu-pop a, .pg-tcpcheck .row-menu .menu-pop button:not(.btn) { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px;
-  border: 0; background: none; border-radius: 6px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left; }
-.pg-tcpcheck .row-menu .menu-pop a:hover, .pg-tcpcheck .row-menu .menu-pop button:not(.btn):hover { background: var(--line-soft); text-decoration: none; }
-.pg-tcpcheck .row-menu .menu-pop .danger { color: var(--crit); }
+  border: 0; background: none; border-radius: 7px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left; }
+.pg-tcpcheck .row-menu .menu-pop a:hover, .pg-tcpcheck .row-menu .menu-pop button:not(.btn):hover { background: var(--panel-2); text-decoration: none; }
+.pg-tcpcheck .row-menu .menu-pop .danger, .pg-tcpcheck .row-menu .menu-pop button.danger:not(.btn) { color: var(--crit-ink); }
 .pg-tcpcheck .row-menu .menu-pop form { margin: 0; }
 .pg-tcpcheck .sla-pop { padding: 10px 12px !important; width: 240px; display: flex; flex-direction: column; gap: 6px; white-space: normal; }
-.pg-tcpcheck .sla-pop label { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.pg-tcpcheck .sla-pop label { font: 600 12.5px/1.35 var(--font); color: var(--ink-2); overflow-wrap: anywhere; }
 .pg-tcpcheck .sla-row { display: flex; align-items: center; gap: 6px; }
 .pg-tcpcheck .sla-row input { width: 100px; height: 30px; font-size: 13px; }
 .pg-tcpcheck .sla-row .btn { margin-left: auto; }
@@ -108,16 +115,17 @@
 .pg-tcpcheck .pager .per { height: 32px; }
 
 /* Add / Edit form */
-.pg-tcpcheck #form .form-grid { gap: 6px 14px; }
+.pg-tcpcheck #form .form-grid { gap: 6px 14px; align-items: end; }
 .pg-tcpcheck #form .field { gap: 4px; }
-.pg-tcpcheck #form .field label { font-size: 12.5px; line-height: 1.3; }
+.pg-tcpcheck #form .field label { font-size: 10px; line-height: 1.3; letter-spacing: .09em; }
 .pg-tcpcheck #form input:not([type=checkbox]), .pg-tcpcheck #form select { height: 28px; font-size: 13px; padding-top: 0; padding-bottom: 0; width: 100%; }
 .pg-tcpcheck #form .advanced { border-top: 1px dashed var(--line); padding-top: 5px; }
 .pg-tcpcheck #form .advanced > summary { cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
 .pg-tcpcheck #form .advanced[open] > summary { margin-bottom: 8px; }
+.pg-tcpcheck #form .advanced .form-grid { align-items: start; }
 .pg-tcpcheck #form .hint code { font-size: 11px; }
 .pg-tcpcheck #form .form-foot { flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; margin-top: 2px; }
-.pg-tcpcheck #form .form-foot .inline-check { font-size: 13px; }
+.pg-tcpcheck #form .form-foot .inline-check { font-size: 13px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--ink); }
 .pg-tcpcheck #form .form-foot .btn { padding: 0 22px; height: 32px; }
 .pg-tcpcheck #form .err { color: var(--crit-ink); font-size: 12.5px; }
 .pg-tcpcheck #form p.err { margin: 0 0 8px; }
@@ -127,11 +135,11 @@
 .pg-tcpcheck #events .panel-h { padding: 0 4px; }
 .pg-tcpcheck .table-wrap.borderless { border: 0; border-radius: 0; }
 .pg-tcpcheck .table-wrap.events-table table { font-size: 11.5px; table-layout: fixed; min-width: 330px; }
-.pg-tcpcheck .table-wrap.events-table th { padding: 5px 4px; font-size: 11.5px; }
+.pg-tcpcheck .table-wrap.events-table th { padding: 7px 4px; font-size: 9.5px; letter-spacing: .05em; }
 .pg-tcpcheck .table-wrap.events-table td { padding: 2px 4px; }
-.pg-tcpcheck .events-table th:nth-child(1) { width: 78px; }
+.pg-tcpcheck .events-table th:nth-child(1) { width: 84px; }
 .pg-tcpcheck .events-table th:nth-child(3) { width: 80px; }
-.pg-tcpcheck .events-table th:nth-child(4) { width: 56px; }
+.pg-tcpcheck .events-table th:nth-child(4) { width: 58px; }
 .pg-tcpcheck .events-table .badge { min-width: 0; font-size: 11px; line-height: 14px; padding: 1px 6px 1px 4px; }
 .pg-tcpcheck .events-table .badge .ic { width: 12px; height: 12px; }
 
@@ -142,60 +150,64 @@
 .pg-tcpcheck .tile-crit { background: var(--crit-bg); color: var(--crit); }
 .pg-tcpcheck .tile-mute { background: var(--mute-bg); color: var(--mute-ink); }
 .pg-tcpcheck .head-text { min-width: 0; }
-.pg-tcpcheck.detail .head h1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 26px; overflow-wrap: anywhere; }
-.pg-tcpcheck.detail .head h1 .badge { font-size: 13px; }
+.pg-tcpcheck.detail .head h1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 30px; overflow-wrap: anywhere; }
+.pg-tcpcheck.detail .head h1 .badge { font: 600 12.5px/1.4 var(--font); letter-spacing: 0; }
 .pg-tcpcheck.detail .head p { overflow-wrap: anywhere; }
 .pg-tcpcheck .history-table table { table-layout: fixed; min-width: 640px; }
-.pg-tcpcheck .history-table th:nth-child(1) { width: 112px; }
+.pg-tcpcheck .history-table th:nth-child(1) { width: 122px; }
 .pg-tcpcheck .history-table th:nth-child(2) { width: 90px; }
 .pg-tcpcheck .history-table th:nth-child(3) { width: 72px; }
 .pg-tcpcheck .history-table th:nth-child(4) { width: 110px; }
 .pg-tcpcheck .history-table th:nth-child(5) { width: 22%; }
 .pg-tcpcheck .history-table td.wrap { white-space: normal; min-width: 0; overflow-wrap: anywhere; }
 .pg-tcpcheck .inline-filter select { height: 30px; font-size: 13px; padding-top: 0; padding-bottom: 0; }
-.pg-tcpcheck dl.kv { grid-template-columns: 120px minmax(0, 1fr); font-size: 13px; gap: 8px 10px; }
+.pg-tcpcheck dl.kv { grid-template-columns: 120px minmax(0, 1fr); font-size: 13px; gap: 9px 10px; }
+.pg-tcpcheck dl.kv dt { font: 600 10px/1.9 var(--font); letter-spacing: .09em; text-transform: uppercase; }
 .pg-tcpcheck .tc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .pg-tcpcheck .tc-list li { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; min-width: 0; }
 .pg-tcpcheck .tc-list.events li { flex-wrap: nowrap; }
 .pg-tcpcheck .tc-list li > div { min-width: 0; }
 .pg-tcpcheck .tc-list b { display: block; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .pg-tcpcheck .tc-list small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.pg-tcpcheck .tc-list small .ts { font: 11px var(--mono); }
 .pg-tcpcheck .sev { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; background: var(--info); }
 .pg-tcpcheck .sev.critical { background: var(--crit); }
 .pg-tcpcheck .sev.warning { background: var(--warn); }
 .pg-tcpcheck .sev.ok { background: var(--ok); }
 
 /* Uptime page */
-.pg-tcpcheck .chip.kind-url { background: var(--info-bg); color: var(--info-ink); }
-.pg-tcpcheck .chip.kind-tcp { background: var(--purple-bg); color: var(--purple); }
-.pg-tcpcheck .chip.kind-domain { background: #e0f5f3; color: #0f766e; }
-.pg-tcpcheck .uptime-table table { table-layout: fixed; min-width: 1000px; }
-.pg-tcpcheck .uptime-table th:nth-child(1) { width: 15%; }
+.pg-tcpcheck .chip.kind-url { background: var(--info-bg); color: var(--info-ink); border-color: #c9d1ff; }
+.pg-tcpcheck .chip.kind-tcp { background: var(--purple-bg); color: #6a3fc4; border-color: #ddd0f5; }
+.pg-tcpcheck .chip.kind-domain { background: #e1f3ef; color: #0b6b5f; border-color: #c2e2d6; }
+.pg-tcpcheck .uptime-table table { table-layout: fixed; min-width: 1080px; }
+.pg-tcpcheck .uptime-table th:nth-child(1) { width: 16%; }
 .pg-tcpcheck .uptime-table th:nth-child(2) { width: 72px; }
 .pg-tcpcheck .uptime-table th:nth-child(4) { width: 11%; }
 .pg-tcpcheck .uptime-table th:nth-child(5) { width: 98px; }
 .pg-tcpcheck .uptime-table th:nth-child(6), .pg-tcpcheck .uptime-table th:nth-child(7), .pg-tcpcheck .uptime-table th:nth-child(8) { width: 78px; }
-.pg-tcpcheck .uptime-table th:nth-child(9) { width: 78px; }
-.pg-tcpcheck .uptime-table th:nth-child(10) { width: 86px; }
+.pg-tcpcheck .uptime-table th:nth-child(9) { width: 84px; }
+.pg-tcpcheck .uptime-table th:nth-child(10) { width: 82px; }
 .pg-tcpcheck .uptime-table th:nth-child(11) { width: 100px; }
 .pg-tcpcheck .uptime-table th:nth-child(12) { width: 40px; }
 .pg-tcpcheck .uptime-table td:last-child { overflow: visible; }
 .pg-tcpcheck .uptime-table .chip { font-size: 11.5px; padding: 1px 7px; }
 .pg-tcpcheck .uptime-table .row-menu > summary { border: 0; background: transparent; width: 24px; height: 22px; }
 .pg-tcpcheck .worst { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; font-size: 13px; }
-.pg-tcpcheck .worst li { display: grid; grid-template-columns: 58px minmax(0, 1fr) 70px 64px; gap: 8px; align-items: center; }
+.pg-tcpcheck .worst li { display: grid; grid-template-columns: 58px minmax(0, 1fr) 56px 62px; gap: 8px; align-items: center; }
 .pg-tcpcheck .worst li .chip { font-size: 11px; padding: 1px 6px; text-align: center; }
 .pg-tcpcheck .worst li a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.pg-tcpcheck .worst li b { text-align: right; font-weight: 600; font-size: 12.5px; }
+.pg-tcpcheck .worst li b { text-align: right; font: 600 12px/1.3 var(--mono); }
 .pg-tcpcheck .worst .bar { height: 7px; border-radius: 4px; background: var(--line-soft); overflow: hidden; }
 .pg-tcpcheck .worst .bar i { display: block; height: 100%; border-radius: 4px; }
-.pg-tcpcheck .foot-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+.pg-tcpcheck .foot-note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
 
 @media (max-width: 1080px) {
   .pg-tcpcheck .g-main { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
-  .pg-tcpcheck .kpi .value { font-size: 20px; }
+  .pg-tcpcheck .kpi .value { font-size: 22px; }
+  .pg-tcpcheck .kpi .label, .pg-tcpcheck .kpi .sub { white-space: normal; overflow-wrap: anywhere; }
+  .pg-tcpcheck .kpi .label { line-height: 1.25; }
   .pg-tcpcheck .kpi .value.split { flex-wrap: wrap; }
   .pg-tcpcheck .panel-h.nowrap { flex-wrap: wrap; }
   .pg-tcpcheck .g-charts .panel-h h2, .pg-tcpcheck .detail-charts .panel-h h2 { white-space: normal; }

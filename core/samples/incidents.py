@@ -31,12 +31,12 @@ PRIORITY_PILL = {"Critical": ("crit", True), "High": ("crit", False), "Medium": 
 STATUS_PILL = {"Open": ("crit", False), "In Progress": ("warn", True), "On Hold": ("purple", True),
                "Resolved": ("ok", True), "Closed": ("mute", True)}
 
-AVATAR_COLORS = {"Arul": "#1565f0", "Priya": "#7c3aed", "Karthik": "#0f766e", "Ravi": "#b45309",
-                 "Divya": "#db2777", "Mani": "#4f46e5"}
+AVATAR_COLORS = {"Arul": "#2b4cff", "Priya": "#7a4fd6", "Karthik": "#0f7a55", "Ravi": "#9a4a06",
+                 "Divya": "#cc4216", "Mani": "#3d3a35"}
 
-CATEGORIES = [("Network", 32, "#1565f0"), ("Server", 28, "#6366f1"), ("Application", 20, "#818cf8"),
-              ("Access Management", 16, "#10b981"), ("Email", 12, "#f59e0b"), ("Database", 8, "#ef4444"),
-              ("Hardware", 8, "#94a3b8")]
+CATEGORIES = [("Network", 32, "#2b4cff"), ("Server", 28, "#ff5b2e"), ("Application", 20, "#7a4fd6"),
+              ("Access Management", 16, "#0f7a55"), ("Email", 12, "#e08a00"), ("Database", 8, "#d92d20"),
+              ("Hardware", 8, "#a8a398")]
 
 # Shape of the 15-day trend (created / resolved per day), with a little seeded jitter.
 CREATED = [10, 8, 13, 9, 12, 23, 27, 20, 16, 19, 22, 24, 23, 28, 35]
@@ -63,7 +63,7 @@ def incidents():
         rows.append({
             "id": iid, "title": title, "priority": prio, "status": status, "client": client, "category": cat,
             "assignee": who, "unassigned": who == "Unassigned", "initials": _initials(who),
-            "av_color": AVATAR_COLORS.get(who, "#64748b"),
+            "av_color": AVATAR_COLORS.get(who, "#6f6a61"),
             "created": ts.strftime("%b %-d, %H:%M"), "sla": sla, "sla_tone": sla_tone, "done": sla == "—",
             "p_tone": p_tone, "p_dot": p_dot, "s_tone": s_tone, "s_dot": s_dot,
         })
@@ -71,12 +71,12 @@ def incidents():
     def kpi(label, value, sub, glyph, tone, change, rotate=False):
         return {"label": label, "value": value, "sub": sub, "glyph": glyph, "tone": tone, "delta": change, "rotate": rotate}
 
-    by_status = [{"label": "Open", "value": 48, "color": "#ef4444"}, {"label": "In Progress", "value": 24, "color": "#f5b400"},
-                 {"label": "On Hold", "value": 12, "color": "#4f46e5"}, {"label": "Resolved", "value": 76, "color": "#16a34a"},
-                 {"label": "Closed", "value": 36, "color": "#a3acb9"}]
-    sla_legend = [{"label": "Met", "value": 108, "color": "#16a34a", "link": True},
-                  {"label": "Breached", "value": 12, "color": "#ef4444"},
-                  {"label": "At Risk", "value": 4, "color": "#f5b400"}]
+    by_status = [{"label": "Open", "value": 48, "color": "#d92d20"}, {"label": "In Progress", "value": 24, "color": "#e08a00"},
+                 {"label": "On Hold", "value": 12, "color": "#7a4fd6"}, {"label": "Resolved", "value": 76, "color": "#0f7a55"},
+                 {"label": "Closed", "value": 36, "color": "#a8a398"}]
+    sla_legend = [{"label": "Met", "value": 108, "color": "#0f7a55", "link": True},
+                  {"label": "Breached", "value": 12, "color": "#d92d20"},
+                  {"label": "At Risk", "value": 4, "color": "#e08a00"}]
     met = sla_legend[0]["value"]
     sla_total = sum(s["value"] for s in sla_legend)
 
@@ -102,12 +102,12 @@ def incidents():
         "trend": {"labels": [d.strftime("%b %-d") for d in days],
                   "tipLabels": [d.strftime("%a, %b %-d") for d in days],
                   "unit": "", "yMax": 40, "yTicks": 4, "xLabelEvery": 2, "series": [
-                      {"name": "Created", "color": "#1d7cf2", "values": created, "area": True, "areaOpacity": 0.2, "width": 2},
-                      {"name": "Resolved", "color": "#16a34a", "values": resolved, "area": True, "areaOpacity": 0.2, "width": 2}]},
+                      {"name": "Created", "color": "#2b4cff", "values": created, "area": True, "areaOpacity": 0.2, "width": 2},
+                      {"name": "Resolved", "color": "#0f7a55", "values": resolved, "area": True, "areaOpacity": 0.2, "width": 2}]},
         "by_status": {"segments": by_status, "center": {"value": "124", "label": "Total"},
                       "thickness": 24},
-        "sla": {"segments": [{"label": "Met", "value": met, "color": "#16a34a"},
-                             {"label": "Not met", "value": sla_total - met, "color": "#e5e9f0"}],
+        "sla": {"segments": [{"label": "Met", "value": met, "color": "#0f7a55"},
+                             {"label": "Not met", "value": sla_total - met, "color": "#ebe5d9"}],
                 "center": {"value": f"{round(met * 100 / sla_total)}%"}, "thickness": 18},
         "sla_legend": sla_legend,
         "categories": CATEGORIES,

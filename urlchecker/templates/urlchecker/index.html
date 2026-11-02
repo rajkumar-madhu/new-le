@@ -30,10 +30,10 @@
         <span><i class="dot fill-ok"></i>Online</span><b>{{ counts.online }} ({{ pct.online|floatformat:1 }}%)</b>
         <span><i class="dot fill-crit"></i>Down</span><b>{{ counts.down }} ({{ pct.down|floatformat:1 }}%)</b>
         <span><i class="dot fill-warn"></i>Degraded</span><b>{{ counts.degraded }} ({{ pct.degraded|floatformat:1 }}%)</b>
-        {% if counts.unknown %}<span><i class="dot" style="background:#cbd5e1"></i>Not checked</span><b>{{ counts.unknown }} ({{ pct.unknown|floatformat:1 }}%)</b>{% endif %}
+        {% if counts.unknown %}<span><i class="dot" style="background:#d6cfc1"></i>Not checked</span><b>{{ counts.unknown }} ({{ pct.unknown|floatformat:1 }}%)</b>{% endif %}
       </div></div></div>
   <div class="panel"><div class="panel-h nowrap"><h2>Response Time Trend (Last 24 Hours)</h2>
-      <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Minimum</span><span><i style="background:#dc2626"></i>Maximum</span></div></div>
+      <div class="right legend"><span><i style="background:#2b4cff"></i>Average</span><span><i style="background:#0f7a55"></i>Minimum</span><span><i style="background:#ff5b2e"></i>Maximum</span></div></div>
     <div class="chart" data-chart="line" data-src="d-trend" style="height:162px"></div></div>
   <div class="panel"><div class="panel-h"><h2>URL Status History (Last 7 days)</h2>
       <div class="legend square stack-right"><span><i class="fill-ok"></i>Online</span><span><i class="fill-crit"></i>Down</span><span><i class="fill-warn"></i>Degraded</span></div></div>

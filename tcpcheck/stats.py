@@ -9,7 +9,8 @@ from urlchecker.stats import axis_scale
 
 from .models import Status, TcpResult
 
-COLORS = {"online": "#16a34a", "down": "#dc2626", "degraded": "#f59e0b", "unknown": "#cbd5e1"}
+# Theme palette (see core/static/linkedeye/app.css): ok green, crit red, warn amber, stone for "not checked".
+COLORS = {"online": "#0f7a55", "down": "#d92d20", "degraded": "#e08a00", "unknown": "#a8a398"}
 
 
 def _results(checks):
@@ -66,9 +67,9 @@ def response_trend(checks, hours=24, buckets=48):
         mn.append(min(v) if v else None)
         mx.append(max(v) if v else None)
     data = {"labels": labels, "tipLabels": tips, "unit": "ms", "series": [
-        {"name": "Average", "color": "#1565f0", "values": avg, "width": 2},
-        {"name": "Minimum", "color": "#16a34a", "values": mn},
-        {"name": "Maximum", "color": "#dc2626", "values": mx, "area": True, "areaOpacity": 0.08},
+        {"name": "Average", "color": "#2b4cff", "values": avg, "width": 2},
+        {"name": "Minimum", "color": COLORS["online"], "values": mn},
+        {"name": "Maximum", "color": COLORS["down"], "values": mx, "area": True, "areaOpacity": 0.08},
     ]}
     data.update(axis_scale(max((v for v in mx if v is not None), default=0)))
     return data

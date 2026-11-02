@@ -24,7 +24,8 @@ from .services import checks_for
 
 KINDS = [("url", "URL"), ("tcp", "TCP"), ("domain", "Domain")]
 KIND_LABEL = dict(KINDS)
-KIND_COLOR = {"url": "#1565f0", "tcp": "#7c3aed", "domain": "#0f9488"}
+KIND_COLOR = {"url": "#2b4cff", "tcp": "#7a4fd6", "domain": "#0e8a7a"}  # theme blue / purple / teal
+OVERALL_COLOR = "#ff5b2e"  # theme coral: the emphasis series
 STATUS_ORDER = {"down": 0, "degraded": 1, "unknown": 2, "online": 3}
 WINDOWS = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}
 
@@ -249,7 +250,7 @@ def daily_availability(srcs, days=30):
             all_vals += [v for v in vals if v is not None]
     overall_vals = [round(100.0 * totals[d][0] / totals[d][1], 3) if d in totals and totals[d][1] else None for d in dates]
     if len(series) > 1 and any(v is not None for v in overall_vals):
-        series.append({"name": "Overall", "color": "#0f1f3d", "values": overall_vals, "width": 2.4, "endDot": True})
+        series.append({"name": "Overall", "color": OVERALL_COLOR, "values": overall_vals, "width": 2.4, "endDot": True})
         all_vals += [v for v in overall_vals if v is not None]
     data = {"labels": labels, "tipLabels": tips, "unit": "%", "series": series,
             "xLabelEvery": 5 if days > 14 else 1 if days <= 7 else 2}

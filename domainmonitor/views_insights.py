@@ -32,7 +32,8 @@ PERF_WINDOWS = {
     "168": ("Last 7 days", timedelta(days=7), timedelta(hours=6), 4, "%b %d"),
     "720": ("Last 30 days", timedelta(days=30), timedelta(days=1), 5, "%b %d"),
 }
-GRADE_COLORS = {"A": "#16a34a", "B": "#65a30d", "C": "#eab308", "D": "#f59e0b", "E": "#ea580c", "F": "#dc2626"}
+# theme palette: green, teal, amber, coral, red, deep red
+GRADE_COLORS = {"A": "#0f7a55", "B": "#0e8a7a", "C": "#e08a00", "D": "#ff5b2e", "E": "#d92d20", "F": "#8f1d14"}
 GRADE_TONES = {"A": "ok", "B": "ok", "C": "warn", "D": "warn", "E": "crit", "F": "crit"}
 REGRESSION_PCT = 20.0
 MAX_REPORT_ROWS = 2000
@@ -113,7 +114,7 @@ def uptime(request):
     y_min = min(99.5, max(0.0, math.floor(2 * (min(known) - 0.5)) / 2)) if known else 95.0
     chart = {"labels": [d.strftime("%b %d") for d in dates], "tipLabels": [d.strftime("%a %d %b %Y") for d in dates],
              "unit": "%", "yMin": y_min, "yMax": 100, "yTicks": 4, "xLabelEvery": UPTIME_DAYS[key][1],
-             "series": [{"name": "Availability", "color": "#16a34a", "area": True, "areaOpacity": 0.25, "width": 1.8,
+             "series": [{"name": "Availability", "color": "#0f7a55", "area": True, "areaOpacity": 0.25, "width": 1.8,
                          "values": overall}]}
     resolved = [p["duration"] for p in periods if not p["ongoing"]]
     longest = max(periods, key=lambda p: p["duration"]) if periods else None
@@ -210,9 +211,9 @@ def performance(request):
     times = [timezone.localtime(start + bucket * i) for i in range(n)]
     chart = {"labels": [t.strftime(fmt) for t in times], "tipLabels": [t.strftime("%d %b %H:%M") for t in times],
              "unit": "ms", "xLabelEvery": every, "yTicks": 5,
-             "series": [{"name": "p95", "color": "#7c3aed", "values": p95, "width": 1.8},
-                        {"name": "p50", "color": "#1565f0", "values": p50, "area": True, "areaOpacity": 0.12, "width": 1.8},
-                        {"name": "p95 (previous window)", "color": "#94a3b8", "values": prev_p95, "dash": "4 3", "width": 1.4}]}
+             "series": [{"name": "p95", "color": "#7a4fd6", "values": p95, "width": 1.8},
+                        {"name": "p50", "color": "#2b4cff", "values": p50, "area": True, "areaOpacity": 0.12, "width": 1.8},
+                        {"name": "p95 (previous window)", "color": "#a8a398", "values": prev_p95, "dash": "4 3", "width": 1.4}]}
     ranked = [d for d in domains if d.cur["p95"] is not None]
     slowest = sorted(ranked, key=lambda d: -d.cur["p95"])[:5]
     top = slowest[0].cur["p95"] if slowest else 0
@@ -324,9 +325,9 @@ def security_page(request):
     mark_operable(request.user, list(page) + ([selected] if selected else []))
     legend = [{"label": f"Grade {g}", "grade": g, "color": GRADE_COLORS[g], "n": counts.get(g, 0)} for g in GRADES]
     if unscanned:
-        legend.append({"label": "Not scanned", "grade": "none", "color": "#cbd5e1", "n": unscanned})
+        legend.append({"label": "Not scanned", "grade": "none", "color": "#d6cfc1", "n": unscanned})
     if failed:
-        legend.append({"label": "Scan failed", "grade": "error", "color": "#64748b", "n": failed})
+        legend.append({"label": "Scan failed", "grade": "error", "color": "#6f6a61", "n": failed})
     total = len(domains)
     for x in legend:
         x["pct"] = 100.0 * x["n"] / total if total else 0

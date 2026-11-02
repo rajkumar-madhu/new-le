@@ -14,7 +14,7 @@
 </div>
 {% include "bodeod/_tabs.html" with tab="keys" %}
 
-<section class="kpis" aria-label="Item states">
+<section class="kpis six" aria-label="Item states">
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "list" 22 %}</div><div class="kpi-body"><div class="label">Enabled Items</div><div class="value">{{ totals.total }}</div></div></div><div class="sub">{% if code %}{{ code }} checklist{% else %}All modes{% endif %}</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 24 %}</div><div class="kpi-body"><div class="label">OK</div><div class="value">{{ totals.done }}</div></div></div><div class="sub">Code 0 (incl. signed off)</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warning</div><div class="value">{{ totals.warning }}</div></div></div><div class="sub">Code 1</div></div>

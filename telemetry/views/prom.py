@@ -3,7 +3,7 @@ from django.shortcuts import render
 from core import prometheus
 from core.access import require
 
-from .. import targets as svc
+from .. import palette as pal, targets as svc
 from .common import csv_response, matches, paginate, perms, prom_context, query_without_page
 
 HEALTHS = [("up", "Up"), ("down", "Down"), ("unknown", "Unknown")]
@@ -44,9 +44,9 @@ def prometheus_targets(request):
         "down_targets": [r for r in rows if r["health"] == "down"][:8],
         "query": query_without_page(request, "refresh"), "filtered": bool(q or health or job),
         "donut": {"segments": [
-            {"label": "Up", "value": kpis["up"], "color": "#16a34a"},
-            {"label": "Down", "value": kpis["down"], "color": "#dc2626"},
-            {"label": "Unknown", "value": kpis["unknown"], "color": "#cbd5e1"}],
+            {"label": "Up", "value": kpis["up"], "color": pal.OK},
+            {"label": "Down", "value": kpis["down"], "color": pal.CRIT},
+            {"label": "Unknown", "value": kpis["unknown"], "color": pal.STONE_LIGHT}],
             "center": {"value": str(kpis["total"]), "label": "Targets"}},
     })
     return render(request, "telemetry/prometheus.html", ctx)

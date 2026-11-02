@@ -2,11 +2,13 @@
 .pg-reports { display: flex; flex-direction: column; gap: 16px; }
 .pg-reports .small { font-size: 12.5px; }
 .pg-reports .rp-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.pg-reports .rp-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: #fff; }
-.pg-reports .rp-card.off { background: var(--line-soft); }
+.pg-reports .rp-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: var(--panel);
+  transition: border-color .15s, box-shadow .15s; }
+.pg-reports .rp-card:hover { border-color: #c9bfab; box-shadow: 0 10px 24px -18px rgb(14 17 22 / 30%); }
+.pg-reports .rp-card.off { background: var(--panel-2); }
 .pg-reports .rp-card-h { display: flex; gap: 12px; align-items: flex-start; }
 .pg-reports .rp-card-h .tile { flex: none; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; }
-.pg-reports .rp-card h3 { font-size: 15px; font-weight: 650; margin: 0 0 3px; }
+.pg-reports .rp-card h3 { font: 600 16px/1.25 var(--serif); letter-spacing: -.005em; margin: 0 0 4px; }
 .pg-reports .rp-card h3 a { color: var(--ink); }
 .pg-reports .rp-card p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
 .pg-reports .rp-run { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: auto; }
@@ -18,13 +20,30 @@
 .pg-reports .rp-recip { white-space: nowrap; }
 .pg-reports .toolbar .right { margin-left: auto; }
 .pg-reports .rp-preview { max-height: 70vh; overflow: auto; }
-.pg-reports .rp-preview th { position: sticky; top: 0; background: #fff; z-index: 1; white-space: nowrap; }
+.pg-reports .rp-preview th { position: sticky; top: 0; background: var(--panel-2); z-index: 1; white-space: nowrap; }
 .pg-reports .rp-preview td { white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
-.pg-reports .rp-sub { font-size: 13px; font-weight: 650; color: var(--ink-2); margin: 14px 0 8px; }
+.pg-reports .rp-sub { font: 600 10.5px/1.3 var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; }
 .pg-reports .rp-estate { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
-.pg-reports .rp-estate .label { color: var(--ink-2); font-size: 13px; }
-.pg-reports .rp-estate .value { font-size: 26px; font-weight: 700; margin: 2px 0; }
+.pg-reports .rp-estate .label { font: 600 10.5px/1.3 var(--font); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.pg-reports .rp-estate .value { font: 600 32px/1.15 var(--serif); letter-spacing: -.01em; margin: 6px 0 2px; }
 .pg-reports .rp-form { max-width: 900px; }
-.pg-reports .rp-form .form-foot { display: flex; justify-content: space-between; align-items: center; }
+.pg-reports .rp-form .form-foot { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pg-reports .rp-form .form-foot > span { display: flex; gap: 8px; }
+.pg-reports .field label.inline-check { font: 500 13.5px/1.3 var(--font); letter-spacing: 0; text-transform: none; color: var(--ink); }
 .pg-reports .head .actions form { display: flex; }
 @media (max-width: 720px) { .pg-reports .rp-btns { margin-left: 0; } }
+
+/* paper theme */
+.pg-reports .table-wrap.dense th { font-size: 9.5px; letter-spacing: .1em; }
+.pg-reports .table-wrap.dense th, .pg-reports .table-wrap.dense td { padding-left: 7px; padding-right: 7px; }
+.pg-reports .rp-preview td { font-size: 13px; }
+.pg-reports .toolbar .right.t-mute.small, .pg-reports .panel-h .right.t-mute.small { font: 500 11px/1.4 var(--mono); letter-spacing: .02em; }
+.pg-reports .rp-least table { table-layout: fixed; }
+.pg-reports .rp-least th:nth-child(2) { width: 62px; }
+.pg-reports .rp-least th:nth-child(3) { width: 32%; }
+.pg-reports .rp-least th:nth-child(4) { width: 66px; }
+.pg-reports .rp-least td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-reports .rp-least .num { text-align: right; }
+.pg-reports .rp-log td { white-space: normal; vertical-align: top; }
+.pg-reports .rp-log td.rp-when { white-space: nowrap; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+.pg-reports .rp-log .row-actions { flex-wrap: nowrap; }

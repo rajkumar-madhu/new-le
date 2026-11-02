@@ -19,7 +19,7 @@
       <form class="right" method="get">{% for key, v in query.items %}{% if key != 'days' %}<input type="hidden" name="{{ key }}" value="{{ v }}">{% endif %}{% endfor %}
         <select name="days" class="dm-sel" data-autosubmit aria-label="Availability period">{% for key, label in day_ranges %}<option value="{{ key }}"{% if key == days_key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></form></div>
     <div class="chart" data-chart="line" data-src="d-avail" style="height:190px"></div>
-    <div class="legend dm-legend"><span><i style="background:#16a34a"></i>Share of successful checks per day</span></div></div>
+    <div class="legend dm-legend"><span><i style="background:#0f7a55"></i>Share of successful checks per day</span></div></div>
   <div class="panel"><div class="panel-h"><h2>Recent Downtime</h2><a class="right view-all" href="#downtime">All periods</a></div>
     {% if periods %}<ul class="dm-feed">{% for p in periods|slice:":5" %}
       <li><span class="dm-feed-ic {% if p.ongoing %}crit{% else %}warn{% endif %}">{% if p.ongoing %}{% ficon "x-circle" 18 %}{% else %}{% ficon "clock" 18 %}{% endif %}</span>

@@ -374,9 +374,9 @@ def lifecycle(request):
             if 0 <= idx < 12:
                 series[e["kind"]][idx] += 1
     timeline = {"labels": labels, "xLabelEvery": 1, "series": [
-        {"name": "Warranty end", "color": "#f59e0b", "values": series["Warranty end"]},
-        {"name": "End of life", "color": "#dc2626", "values": series["End of life"]},
-        {"name": "License expiry", "color": "#7c3aed", "values": series["License expiry"]}]}
+        {"name": "Warranty end", "color": "#e08a00", "values": series["Warranty end"]},
+        {"name": "End of life", "color": "#d92d20", "values": series["End of life"]},
+        {"name": "License expiry", "color": "#7a4fd6", "values": series["License expiry"]}]}
     peak = max((sum(s["values"][i] for s in timeline["series"]) for i in range(12)), default=0)
     if 0 < peak <= 4:   # whole-number axis for small counts
         timeline.update({"yMax": peak, "yTicks": peak})

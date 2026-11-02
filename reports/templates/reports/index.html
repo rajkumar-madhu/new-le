@@ -46,7 +46,7 @@
   <div class="panel">
     <div class="panel-h"><h2>Scheduled reports ({{ schedules|length }})</h2>
       <div class="right t-mute small">E-mail backend: {{ email_backend }}</div></div>
-    <div class="table-wrap dense"><table>
+    <div class="table-wrap dense rp-log"><table>
       <thead><tr><th>Name</th><th>Report</th><th>When</th><th>Recipients</th><th>Next</th><th>Last</th><th>Actions</th></tr></thead>
       <tbody>
       {% for s in schedules %}
@@ -55,7 +55,7 @@
           <td>{{ s.report_title }}<div class="t-mute small">{{ s.window_days }} day{{ s.window_days|pluralize }}</div></td>
           <td>{{ s.get_frequency_display }} at {{ s.send_hour|stringformat:"02d" }}:00</td>
           <td class="rp-recip" title="{{ s.recipients }}">{{ s.recipient_list|length }} address{{ s.recipient_list|length|pluralize:"es" }}</td>
-          <td>{{ s.next_run_at|short_dt|default:"–" }}</td>
+          <td class="rp-when">{{ s.next_run_at|short_dt|default:"–" }}</td>
           <td>{% if s.last_status == "failed" %}<span class="chip crit" title="{{ s.last_error }}">Failed</span>{% elif s.last_status == "empty" %}<span class="chip mute">No rows</span>{% elif s.last_status %}<span class="chip ok">Sent</span>{% else %}<span class="t-mute">Never</span>{% endif %}
             {% if s.last_run_at %}<div class="t-mute small">{{ s.last_run_at|ago }}</div>{% endif %}</td>
           <td><div class="row-actions">{% if s.manageable %}
@@ -72,12 +72,12 @@
 
   <div class="panel">
     <div class="panel-h"><h2>Recent report runs</h2></div>
-    <div class="table-wrap dense"><table>
+    <div class="table-wrap dense rp-log"><table>
       <thead><tr><th>When</th><th>Report</th><th>Channel</th><th>By</th><th>Rows</th><th>Result</th></tr></thead>
       <tbody>
       {% for r in runs %}
         <tr>
-          <td>{{ r.created_at|short_dt }}</td>
+          <td class="rp-when">{{ r.created_at|short_dt }}</td>
           <td>{{ r.report_title }}{% if r.site %}<div class="t-mute small">{{ r.site }}</div>{% endif %}</td>
           <td>{{ r.get_channel_display }}{% if r.schedule %}<div class="t-mute small">{{ r.schedule.name }}</div>{% endif %}</td>
           <td>{{ r.requested_by_name }}</td>

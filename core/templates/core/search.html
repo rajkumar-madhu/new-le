@@ -1,6 +1,8 @@
-{% extends "core/base.html" %}{% load le %}
+{% extends "core/base.html" %}{% load le static %}
 {% block title %}Search{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="{% static 'linkedeye/pages/search.css' %}">{% endblock %}
 {% block content %}
+<div class="pg-search">
 <div class="head"><div><h1>Search</h1><p>{% if q %}{{ total }} result{{ total|pluralize }} for “{{ q }}” across every module you can see{% else %}Type in the search box above to search devices, domains, tickets, IPs, configuration items and runbooks.{% endif %}</p></div></div>
 {% if q %}<section class="grid g-2">
 {% for title, rows in groups %}
@@ -10,4 +12,5 @@
 </tbody></table></div></div>
 {% endfor %}
 </section>{% endif %}
+</div>
 {% endblock %}

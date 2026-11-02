@@ -35,7 +35,7 @@
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "memory" 22 %}</div><div class="kpi-body"><div class="label">Memory</div><div class="value t-{{ gm }}">{{ host.memory|pct1 }}</div></div></div><div class="sub">of {{ host.mem_total|hbytes }}</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "hdd" 22 %}</div><div class="kpi-body"><div class="label">Root Disk</div><div class="value t-{{ gd }}">{{ host.disk|pct1 }}</div></div></div><div class="sub">Used on /</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "gauge" 22 %}</div><div class="kpi-body"><div class="label">Load (1/5/15)</div><div class="value t-{{ gl }}">{{ host.load1|hnum }}</div></div></div><div class="sub">{{ host.load5|hnum }} · {{ host.load15|hnum }}</div></div>
-  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Uptime</div><div class="value">{{ host.uptime|hduration }}</div></div></div><div class="sub">Rx {{ host.rx|hrate }} · Tx {{ host.tx|hrate }}</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">Uptime</div><div class="value">{{ host.uptime|hduration }}</div></div></div><div class="sub tm-wrap">Rx {{ host.rx|hrate }} · Tx {{ host.tx|hrate }}</div></div>
 </section>
 
 <section class="grid g-2">
@@ -43,9 +43,9 @@
     {% if host.charts.has.cpu %}<div class="chart tm-chart" data-chart="line" data-src="c-cpu"></div>{% else %}<div class="no-data">No CPU samples in this range</div>{% endif %}</div>
   <div class="panel"><div class="panel-h"><h2>Memory Used</h2></div>
     {% if host.charts.has.memory %}<div class="chart tm-chart" data-chart="line" data-src="c-mem"></div>{% else %}<div class="no-data">No memory samples in this range</div>{% endif %}</div>
-  <div class="panel"><div class="panel-h"><h2>Load Average</h2><div class="right legend"><span><i style="background:#1565f0"></i>1m</span><span><i style="background:#16a34a"></i>5m</span><span><i style="background:#f59e0b"></i>15m</span></div></div>
+  <div class="panel"><div class="panel-h"><h2>Load Average</h2><div class="right legend">{% for s in host.charts.load.series %}<span><i style="background:{{ s.color }}"></i>{{ s.name }}</span>{% endfor %}</div></div>
     {% if host.charts.has.load %}<div class="chart tm-chart" data-chart="line" data-src="c-load"></div>{% else %}<div class="no-data">No load samples in this range</div>{% endif %}</div>
-  <div class="panel"><div class="panel-h"><h2>Network Throughput</h2><div class="right legend"><span><i style="background:#0891b2"></i>Receive</span><span><i style="background:#db2777"></i>Transmit</span></div></div>
+  <div class="panel"><div class="panel-h"><h2>Network Throughput</h2><div class="right legend">{% for s in host.charts.net.series %}<span><i style="background:{{ s.color }}"></i>{{ s.name }}</span>{% endfor %}</div></div>
     {% if host.charts.has.net %}<div class="chart tm-chart" data-chart="line" data-src="c-net"></div>{% else %}<div class="no-data">No network samples in this range</div>{% endif %}</div>
 </section>
 

@@ -95,10 +95,10 @@ STATUS_TONE = {
     "implemented": "ok", "rejected": "crit", "in_progress": "warn", "fulfilled": "ok",
 }
 STATUS_COLOR = {
-    "new": "#ef4444", "acknowledged": "#1d7cf2", "investigating": "#f5b400", "mitigated": "#4f46e5",
-    "known_error": "#8b5cf6", "resolved": "#16a34a", "closed": "#a3acb9", "draft": "#94a3b8", "submitted": "#f59e0b",
-    "approved": "#22c55e", "scheduled": "#0ea5e9", "implemented": "#15803d", "rejected": "#dc2626",
-    "in_progress": "#f5b400", "fulfilled": "#16a34a",
+    "new": "#d92d20", "acknowledged": "#2b4cff", "investigating": "#e08a00", "mitigated": "#7a4fd6",
+    "known_error": "#7a4fd6", "resolved": "#0f7a55", "closed": "#a8a398", "draft": "#d6cfc1", "submitted": "#e08a00",
+    "approved": "#0e8a7a", "scheduled": "#2b4cff", "implemented": "#0f7a55", "rejected": "#d92d20",
+    "in_progress": "#e08a00", "fulfilled": "#0f7a55",
 }
 PRIORITY_TONE = {"P1": "crit", "P2": "crit", "P3": "warn", "P4": "ok"}
 PRIORITY_DOT = {"P1": True, "P2": False, "P3": True, "P4": False}

@@ -30,8 +30,8 @@ PER_CHOICES = (10, 20, 50, 100)
 MIN_BASE_LOGS = 50
 MIN_BASE_EVENTS = 5
 EXPORT_LIMIT = 100_000
-LEGEND = [("active", "Active", "#16a34a"), ("inactive", "Inactive", "#94a3b8"), ("error", "Error", "#ef4444"),
-          ("not_configured", "Not Configured", "#f59e0b")]
+LEGEND = [("active", "Active", "#0f7a55"), ("inactive", "Inactive", "#a8a398"), ("error", "Error", "#d92d20"),
+          ("not_configured", "Not Configured", "#e08a00")]
 SEVERITIES = [("critical", "Critical"), ("warning", "Warning"), ("info", "Info"), ("ok", "Resolved")]
 
 

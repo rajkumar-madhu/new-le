@@ -37,7 +37,7 @@
     {% else %}<div class="tc-empty">{% icon "terminal" 28 %}<p>No enabled TCP checks yet.</p></div>{% endif %}
   </div>
   <div class="panel"><div class="panel-h nowrap"><h2>Connect Time Trend (Last 24 Hours)</h2>
-      <div class="right legend"><span><i style="background:#1565f0"></i>Average</span><span><i style="background:#16a34a"></i>Minimum</span><span><i style="background:#dc2626"></i>Maximum</span></div></div>
+      <div class="right legend"><span><i class="fill-info"></i>Average</span><span><i class="fill-ok"></i>Minimum</span><span><i class="fill-crit"></i>Maximum</span></div></div>
     {% if avg_response is not None %}<div class="chart" data-chart="line" data-src="d-trend" style="height:162px"></div>
     {% else %}<div class="tc-empty">{% icon "activity" 28 %}<p>No successful connections in the last 24 hours.</p></div>{% endif %}</div>
   <div class="panel"><div class="panel-h"><h2>Port Status History (Last 7 days)</h2>
@@ -61,7 +61,7 @@
       <a class="btn icon blue" href="{% url 'tcpcheck:index' %}" title="Clear filters" aria-label="Clear filters">{% icon "refresh" 16 %}</a>
     </form>
     <div class="table-wrap dense ports-table"><table>
-      <thead><tr><th>#</th><th>Name</th><th>Host</th><th>Port</th><th>Site</th><th>Status</th><th>Connect Time</th><th>Uptime (24h)</th><th>Last Check</th><th>Actions</th></tr></thead>
+      <thead><tr><th>#</th><th>Name</th><th>Host</th><th>Port</th><th>Site</th><th>Status</th><th title="TCP connect time">Connect</th><th>Uptime 24h</th><th>Last Check</th><th>Actions</th></tr></thead>
       <tbody>
       {% for c in page %}
         <tr class="{% if editing and editing.pk == c.pk %}sel{% endif %}{% if not c.enabled %} off{% endif %}">
@@ -73,7 +73,7 @@
           <td title="{{ c.last_error }}">{% if c.enabled %}{% badge c.last_status %}{% else %}{% badge "paused" "Disabled" %}{% endif %}</td>
           <td class="{% if c.last_status == 'degraded' %}t-warn{% elif c.last_status == 'down' %}t-crit{% endif %}">{{ c.last_response_ms|connect_ms }}</td>
           <td class="{% if c.uptime24 is None %}t-mute{% elif c.uptime24 < 99 %}t-crit{% else %}t-ok{% endif %}">{% if c.uptime24 is None %}–{% else %}{{ c.uptime24|pct }}{% endif %}</td>
-          <td title="{{ c.last_checked_at|date:'d M Y H:i:s' }}">{{ c.last_checked_at|short_dt }}</td>
+          <td class="ts" title="{{ c.last_checked_at|date:'d M Y H:i:s' }}">{{ c.last_checked_at|short_dt }}</td>
           <td><div class="row-actions">
             {% if c.can_manage %}
             <button class="btn icon blue" data-post="{% url 'tcpcheck:run' c.pk %}" title="Run check now" aria-label="Run check now for {{ c.name }}">{% icon "play" 14 %}</button>

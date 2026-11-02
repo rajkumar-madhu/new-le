@@ -372,9 +372,9 @@ def _history_chart(runs_qs, days=14):
         w.append(per[d]["warn"] or None)
         f.append(per[d]["fail"] or None)
     return {"labels": labels, "xLabelEvery": 2, "series": [
-        {"name": "Pass", "color": "#16a34a", "values": p},
-        {"name": "Warning", "color": "#f59e0b", "values": w},
-        {"name": "Fail", "color": "#dc2626", "values": f}]}
+        {"name": "Pass", "color": "#0f7a55", "values": p},
+        {"name": "Warning", "color": "#e08a00", "values": w},
+        {"name": "Fail", "color": "#d92d20", "values": f}]}
 
 
 @require_GET

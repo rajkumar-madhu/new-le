@@ -13,7 +13,7 @@ from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
-from . import promapi
+from . import palette as pal, promapi
 
 from .fmt import finite, promql_string
 
@@ -286,7 +286,7 @@ def fetch_host(instance, range_key="1h", use_cache=True):
     return h
 
 
-PALETTE = ["#1565f0", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#65a30d", "#ea580c", "#475569"]
+PALETTE = pal.SERIES
 
 
 def _labels(ts_list, seconds):
@@ -320,13 +320,13 @@ def host_charts(instance, range_key):
     def vals(name):
         rows = res.get(name) or []
         return rows[0]["values"] if rows else []
-    cpu = align([("CPU", PALETTE[0], vals("cpu"))], seconds)
+    cpu = align([("CPU", pal.BLUE, vals("cpu"))], seconds)
     cpu.update({"unit": "%", "yMax": 100})
-    mem = align([("Memory", PALETTE[4], vals("memory"))], seconds)
+    mem = align([("Memory", pal.PURPLE, vals("memory"))], seconds)
     mem.update({"unit": "%", "yMax": 100})
-    load = align([("1m", PALETTE[0], vals("load1")), ("5m", PALETTE[1], vals("load5")),
-                  ("15m", PALETTE[2], vals("load15"))], seconds)
-    net = align([("Receive", PALETTE[5], vals("rx")), ("Transmit", PALETTE[6], vals("tx"))], seconds)
+    load = align([("1m", pal.CORAL, vals("load1")), ("5m", pal.BLUE, vals("load5")),
+                  ("15m", pal.STONE, vals("load15"))], seconds)
+    net = align([("Receive", pal.TEAL, vals("rx")), ("Transmit", pal.CORAL, vals("tx"))], seconds)
     net["unit"] = "B/s"
     for c in (cpu, mem):
         for s in c["series"]:

@@ -1,13 +1,23 @@
 {% extends "core/base.html" %}{% load le %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="head"><div><h1>Dashboard</h1><p>What needs attention across monitoring, network and the service desk</p></div>
-  <div class="actions"><a class="btn" href="{{ heatmap_url }}">{% icon "activity" 16 %}Heatmap</a><a class="btn primary" href="{% url 'urlchecker:index' %}#form">{% icon "plus" 16 %}Add URL check</a></div></div>
+<section class="hero">
+  <div class="hero-main">
+    <div class="eyebrow">Operations · {% if le_site %}{{ le_site }}{% else %}All sites{% endif %}</div>
+    <h1>Dashboard</h1>
+    <p>What needs attention across monitoring, network and the service desk. Open any row to see the evidence behind it.</p>
+    <div class="actions"><a class="btn primary-light" href="{% url 'urlchecker:index' %}#form">{% icon "plus" 16 %}Add URL check</a><a class="btn dark" href="{{ heatmap_url }}">{% icon "activity" 16 %}Heatmap</a></div>
+  </div>
+  <div class="hero-stats">
+    <div class="hero-stat"><div class="k">Needs attention</div><div class="v{% if problems %} crit{% endif %}">{{ problems|length }}</div><div class="s">down or degraded</div></div>
+    <div class="hero-stat"><div class="k">URL uptime</div><div class="v">{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</div><div class="s">last 7 days</div></div>
+    <div class="hero-stat"><div class="k">Sites</div><div class="v">{{ le_sites|length }}</div><div class="s">{% if le_site %}showing {{ le_site }}{% else %}in scope{% endif %}</div></div>
+  </div>
+</section>
 <section class="kpis">
   {% for k in kpis %}
   <a class="kpi stacked" href="{{ k.href }}" style="color:inherit;text-decoration:none"><div class="kpi-top"><div class="tile {{ k.tile }}">{% icon k.icon 22 %}</div><div class="kpi-body"><div class="label">{{ k.label }}</div><div class="value">{{ k.value }}</div></div></div><div class="sub">{{ k.sub }}</div></a>
   {% endfor %}
-  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "clock" 22 %}</div><div class="kpi-body"><div class="label">URL uptime</div><div class="value">{% if uptime7 is None %}–{% else %}{{ uptime7|pct }}{% endif %}</div></div></div><div class="sub">Last 7 days</div></div>
 </section>
 <section class="grid g-main">
   <div class="panel"><div class="panel-h"><h2>Needs attention ({{ problems|length }})</h2></div>

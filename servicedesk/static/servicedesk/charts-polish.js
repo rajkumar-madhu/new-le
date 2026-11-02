@@ -36,7 +36,7 @@
       } else if (path.getAttribute('fill') === 'none' && path.getAttribute('stroke')) {
         var q = pts(d); if (q.length < 2) return;
         path.setAttribute('d', curve(q));
-        if (q.length <= 31) q.forEach(function (c) { mk('circle', { cx: c[0], cy: c[1], r: 3.2, fill: path.getAttribute('stroke'), stroke: '#fff', 'stroke-width': 1.4 }, svg, path.nextSibling); });
+        if (q.length <= 31) q.forEach(function (c) { mk('circle', { cx: c[0], cy: c[1], r: 3.2, fill: path.getAttribute('stroke'), stroke: '#fffcf7', 'stroke-width': 1.4 }, svg, path.nextSibling); });
       }
     });
   }
@@ -48,7 +48,7 @@
       var p = pts(path.getAttribute('d') || ''); if (!p.length) return;
       var w = +path.getAttribute('stroke-width'), dx = p[0][0] - c, dy = p[0][1] - c, R = Math.hypot(dx, dy), ux = dx / R, uy = dy / R;
       var r0 = R - w / 2 - 1, r1 = R + w / 2 + 1;
-      mk('line', { x1: c + ux * r0, y1: c + uy * r0, x2: c + ux * r1, y2: c + uy * r1, stroke: '#fff', 'stroke-width': 2.5 }, svg);
+      mk('line', { x1: c + ux * r0, y1: c + uy * r0, x2: c + ux * r1, y2: c + uy * r1, stroke: '#fffcf7', 'stroke-width': 2.5 }, svg);
     });
   }
   function polish(host) {

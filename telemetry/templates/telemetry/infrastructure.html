@@ -25,7 +25,7 @@
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-info">{% icon "server" 22 %}</div><div class="kpi-body"><div class="label">Hosts</div><div class="value">{{ summary.total }}</div></div></div><div class="sub">{{ jobs|length }} node job{{ jobs|length|pluralize }}</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-ok">{% icon "check" 22 %}</div><div class="kpi-body"><div class="label">Up</div><div class="value">{{ summary.up }}</div></div></div><div class="sub">{{ summary.healthy }} healthy</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-crit">{% icon "x" 22 %}</div><div class="kpi-body"><div class="label">Down</div><div class="value{% if summary.down %} t-crit{% endif %}">{{ summary.down }}</div></div></div><div class="sub">Scrape failing (up == 0)</div></div>
-  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warn / Crit</div><div class="value">{{ summary.warning }} <small>/</small> <span class="{% if summary.critical %}t-crit{% endif %}">{{ summary.critical }}</span></div></div></div><div class="sub">Over CPU/mem/disk/load limits</div></div>
+  <div class="kpi stacked"><div class="kpi-top"><div class="tile s-warn">{% icon "alert" 22 %}</div><div class="kpi-body"><div class="label">Warn / Crit</div><div class="value">{{ summary.warning }} <small>/</small> <span class="{% if summary.critical %}t-crit{% endif %}">{{ summary.critical }}</span></div></div></div><div class="sub">Over thresholds</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-purple">{% icon "cpu" 22 %}</div><div class="kpi-body"><div class="label">Avg CPU</div><div class="value">{{ summary.avg_cpu|pct1 }}</div></div></div><div class="sub">Busy, 5 min rate</div></div>
   <div class="kpi stacked"><div class="kpi-top"><div class="tile s-mute">{% icon "memory" 22 %}</div><div class="kpi-body"><div class="label">Avg Memory</div><div class="value">{{ summary.avg_memory|pct1 }}</div></div></div><div class="sub">Used (MemAvailable)</div></div>
 </section>
@@ -38,8 +38,8 @@
         <span><i class="dot fill-ok"></i>Healthy</span><b>{{ summary.counts.healthy }}</b>
         <span><i class="dot fill-warn"></i>Warning</span><b>{{ summary.counts.warning }}</b>
         <span><i class="dot fill-crit"></i>Critical</span><b>{{ summary.counts.critical }}</b>
-        <span><i class="dot" style="background:#7f1d1d"></i>Down</span><b>{{ summary.counts.down }}</b>
-        {% if summary.counts.unknown %}<span><i class="dot" style="background:#cbd5e1"></i>No data</span><b>{{ summary.counts.unknown }}</b>{% endif %}
+        <span><i class="dot fill-down"></i>Down</span><b>{{ summary.counts.down }}</b>
+        {% if summary.counts.unknown %}<span><i class="dot fill-nodata"></i>No data</span><b>{{ summary.counts.unknown }}</b>{% endif %}
       </div></div></div>
   <div class="panel"><div class="panel-h"><h2>Top CPU</h2><div class="right tm-meta">warn {{ thresholds.cpu.0|floatformat:0 }}% · crit {{ thresholds.cpu.1|floatformat:0 }}%</div></div>
     {% if top_cpu %}<div class="hbar">{% for h in top_cpu %}{% grade "cpu" h.cpu as g %}

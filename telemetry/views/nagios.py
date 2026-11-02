@@ -4,7 +4,7 @@ from django.shortcuts import render
 
 from core.access import require
 
-from .. import nagios as svc
+from .. import nagios as svc, palette as pal
 from .common import csv_response, matches, paginate, perms, query_without_page
 
 HOST_STATES = [("up", "Up"), ("down", "Down"), ("unreachable", "Unreachable"), ("pending", "Pending")]
@@ -48,12 +48,12 @@ def nagios_status(request):
         "query": query_without_page(request, "refresh"), "filtered": bool(q or state or only_problems),
         "tab_query": query_without_page(request, "refresh", "tab", "state"),
         "host_donut": {"segments": [
-            {"label": "Up", "value": hc["up"], "color": "#16a34a"}, {"label": "Down", "value": hc["down"], "color": "#dc2626"},
-            {"label": "Unreachable", "value": hc["unreachable"], "color": "#f97316"},
-            {"label": "Pending", "value": hc["pending"], "color": "#cbd5e1"}], "thickness": 12},
+            {"label": "Up", "value": hc["up"], "color": pal.OK}, {"label": "Down", "value": hc["down"], "color": pal.CRIT},
+            {"label": "Unreachable", "value": hc["unreachable"], "color": pal.CORAL},
+            {"label": "Pending", "value": hc["pending"], "color": pal.STONE_LIGHT}], "thickness": 12},
         "service_donut": {"segments": [
-            {"label": "OK", "value": sc["ok"], "color": "#16a34a"}, {"label": "Warning", "value": sc["warning"], "color": "#f59e0b"},
-            {"label": "Critical", "value": sc["critical"], "color": "#dc2626"}, {"label": "Unknown", "value": sc["unknown"], "color": "#94a3b8"},
-            {"label": "Pending", "value": sc["pending"], "color": "#cbd5e1"}], "thickness": 12},
+            {"label": "OK", "value": sc["ok"], "color": pal.OK}, {"label": "Warning", "value": sc["warning"], "color": pal.WARN},
+            {"label": "Critical", "value": sc["critical"], "color": pal.CRIT}, {"label": "Unknown", "value": sc["unknown"], "color": pal.STONE},
+            {"label": "Pending", "value": sc["pending"], "color": pal.STONE_LIGHT}], "thickness": 12},
     })
     return render(request, "telemetry/nagios.html", ctx)
